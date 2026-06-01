@@ -6,15 +6,15 @@ import SignaturePad from '../../../../src/features/audits/components/signature-p
 
 export default function ConclusionesRoutePage() {
   const router = useRouter();
-  const { id: reportId } = useLocalSearchParams();
+  const { id: reportId, region } = useLocalSearchParams();
 
   const [loading, setLoading] = useState(true);
   const [porcentaje, setPorcentaje] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Estados de firmas en formato Base64
-  const [firmaAuditor, setFirmaAuditor] = useState<string | null>(null);
-  const [firmaResponsable, setFirmaResponsable] = useState<string | null>(null);
+  // Estados locales para las firmas en formato Base64 temporal
+  const [firmaAuditorBase64, setFirmaAuditorBase64] = useState<string | null>(null);
+  const [firmaResponsableBase64, setFirmaResponsableBase64] = useState<string | null>(null);
 
   useEffect(() => {
     async function calcularResultados() {
@@ -30,37 +30,73 @@ export default function ConclusionesRoutePage() {
     if (reportId) calcularResultados();
   }, [reportId]);
 
+  // FUNCIÓN AUXILIAR: Convierte una cadena Base64 en un objeto Blob para Supabase Storage
+  const base64ToBlob = async (base64Data: string) => {
+    const response = await fetch(base64Data);
+    const blob = await response.blob();
+    return blob;
+  };
+
   const handleFinalizarAuditoria = async () => {
-    if (!firmaAuditor || !firmaResponsable) {
+    if (!firmaAuditorBase64 || !firmaResponsableBase64) {
       alert('Error: Ambas firmas son obligatorias para cerrar la auditoría.');
       return;
     }
 
     setIsSaving(true);
     try {
-      // Guardar firmas estructuradas en la tabla de auditorías de Supabase
-      const { error } = await supabase
+      // 1. Preparar las rutas del Storage: costa/2026-06-01/report-id/firmas/...
+      const folderRegion = String(region || 'general').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const folderDate = "2026-06-01";
+      const basePath = `${folderRegion}/${folderDate}/${reportId}/firmas`;
+
+      // 2. Convertir strings Base64 a Blobs binarios
+      const blobAuditor = await base64ToBlob(firmaAuditorBase64);
+      const blobResponsable = await base64ToBlob(firmaResponsableBase64);
+
+      // 3. Subir firma del Auditor al Storage
+      const pathAuditor = `${basePath}/firma_auditor.png`;
+      const { error: errStorageAuditor } = await supabase.storage
+        .from('evidencias')
+        .upload(pathAuditor, blobAuditor, { contentType: 'image/png', upsert: true });
+
+      if (errStorageAuditor) throw new Error(`Firma Auditor: ${errStorageAuditor.message}`);
+
+      // 4. Subir firma del Responsable al Storage
+      const pathResponsable = `${basePath}/firma_responsable.png`;
+      const { error: errStorageResponsable } = await supabase.storage
+        .from('evidencias')
+        .upload(pathResponsable, blobResponsable, { contentType: 'image/png', upsert: true });
+
+      if (errStorageResponsable) throw new Error(`Firma Responsable: ${errStorageResponsable.message}`);
+
+      // 5. Obtener las URLs públicas de las firmas guardadas
+      const { data: { publicUrl: urlAuditor } } = supabase.storage.from('evidencias').getPublicUrl(pathAuditor);
+      const { data: { publicUrl: urlResponsable } } = supabase.storage.from('evidencias').getPublicUrl(pathResponsable);
+
+      // 6. Actualizar el registro del reporte con los enlaces del Storage y marcar como finalizado
+      const { error: errUpdate } = await supabase
         .from('audit_reports')
         .update({
-          signature_auditor: firmaAuditor,
-          signature_responsible: firmaResponsable,
+          signature_auditor_url: urlAuditor,
+          signature_responsible_url: urlResponsable,
           status: 'finalizado',
           updated_at: new Date().toISOString()
         })
         .eq('id', reportId);
 
-      if (error) throw error;
+      if (errUpdate) throw errUpdate;
 
-      alert('¡Auditoría cerrada y firmada con éxito!');
+      alert('¡Firmas subidas al Storage y auditoría sellada con éxito!');
       router.replace('/nueva-auditoria');
     } catch (err: any) {
-      alert('Error al guardar reporte final: ' + err.message);
+      alert('Error al guardar reporte: ' + err.message);
     } finally {
       setIsSaving(false);
     }
   };
 
-  const ambosFirmados = firmaAuditor !== null && firmaResponsable !== null;
+  const ambosFirmados = firmaAuditorBase64 !== null && firmaResponsableBase64 !== null;
 
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" /></View>;
 
@@ -69,28 +105,28 @@ export default function ConclusionesRoutePage() {
       <Text style={styles.title}>Cierre y Firmas</Text>
       <Text style={styles.subtitle}>Resultado de Cumplimiento: {porcentaje}%</Text>
 
-      {/* 1. Firma del Auditor Evaluador */}
+      {/* Lienzo 1: Auditor */}
       <SignaturePad
         title="Firma del Auditor Evaluador"
-        onOK={(img) => { setFirmaAuditor(img); alert('✓ Firma de auditor registrada.'); }}
-        onClear={() => setFirmaAuditor(null)}
+        onOK={(img) => { setFirmaAuditorBase64(img); alert('✓ Firma de auditor capturada localmente.'); }}
+        onClear={() => setFirmaAuditorBase64(null)}
       />
 
-      {/* 2. Firma del Responsable del Establecimiento */}
+      {/* Lienzo 2: Responsable */}
       <SignaturePad
         title="Firma del Responsable del Local"
-        onOK={(img) => { setFirmaResponsable(img); alert('✓ Firma de responsable registrada.'); }}
-        onClear={() => setFirmaResponsable(null)}
+        onOK={(img) => { setFirmaResponsableBase64(img); alert('✓ Firma de responsable capturada localmente.'); }}
+        onClear={() => setFirmaResponsableBase64(null)}
       />
 
-      {/* Botón de envío bloqueado hasta recolectar ambas firmas */}
+      {/* Botón de Envío */}
       <TouchableOpacity 
         style={[styles.submitButton, !ambosFirmados && styles.disabledButton]} 
         onPress={handleFinalizarAuditoria}
         disabled={!ambosFirmados || isSaving}
       >
         <Text style={styles.submitButtonText}>
-          {isSaving ? 'Guardando Reporte...' : 'Finalizar y Sellar Auditoría 🔐'}
+          {isSaving ? 'Subiendo archivos a Storage...' : 'Subir Firmas y Sellar Auditoría 🔐'}
         </Text>
       </TouchableOpacity>
     </ScrollView>
