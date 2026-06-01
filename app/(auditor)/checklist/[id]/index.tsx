@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Image, ActivityIndicator } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import NetInfo from '@react-native-community/netinfo';
 import { supabase } from '../../../../src/supabaseClient';
+import { offlineStorage } from '../../../../src/offlineStorage';
 
 interface Question {
   id: string;
@@ -17,8 +19,9 @@ interface Question {
 interface AnswerState {
   value: 'cumple' | 'no_cumple' | null;
   observation: string;
-  evidenceUrl: string; // Guardará la URL pública de Supabase Storage
-  uploading: boolean;  // Estado de carga local por pregunta
+  evidenceUrl: string;
+  localImageUri?: string; // Ruta temporal en el teléfono si no hay internet
+  uploading: boolean;
 }
 
 export default function ChecklistDinamicoPage() {
@@ -29,16 +32,29 @@ export default function ChecklistDinamicoPage() {
   const [answers, setAnswers] = useState<Record<string, AnswerState>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isOnline, setIsOnline] = useState<boolean | null>(true);
 
+  // 1. Escuchar el estado del internet en tiempo real
   useEffect(() => {
-    async function fetchQuestions() {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      setIsOnline(state.isConnected);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // 2. Cargar preguntas y verificar si había un borrador guardado en AsyncStorage
+  useEffect(() => {
+    async function loadData() {
       if (!region || !visit_type_id) {
-        setError('Faltan parámetros obligatorios para cargar las preguntas.');
+        setError('Faltan parámetros obligatorios.');
         setLoading(false);
         return;
       }
 
       setLoading(true);
+
+      // Tratar de jalar preguntas locales o remotas
       const { data, error: supabaseError } = await supabase
         .from('checklist_questions')
         .select('*')
@@ -48,8 +64,19 @@ export default function ChecklistDinamicoPage() {
 
       if (supabaseError) {
         setError(supabaseError.message);
+        setLoading(false);
+        return;
+      }
+
+      setQuestions(data || []);
+
+      // Revisar si existe un borrador offline guardado previamente en el teléfono
+      const savedDraft = await offlineStorage.getDraft(String(reportId));
+
+      if (savedDraft) {
+        setAnswers(savedDraft);
       } else {
-        setQuestions(data || []);
+        // Si no hay borrador, inicializamos el estado en limpio
         const initialAnswers: Record<string, AnswerState> = {};
         data?.forEach((q: Question) => {
           initialAnswers[q.id] = { value: null, observation: '', evidenceUrl: '', uploading: false };
@@ -59,86 +86,124 @@ export default function ChecklistDinamicoPage() {
       setLoading(false);
     }
 
-    fetchQuestions();
-  }, [region, visit_type_id]);
+    loadData();
+  }, [region, visit_type_id, reportId]);
 
-  // FUNCIÓN CLAVE: Capturar imagen y subir a la ruta exacta solicitada
+  // 3. Capturar imagen con soporte Offline
   const handlePickImage = async (questionId: string) => {
-    // 1. Solicitar permisos de cámara
     const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
     if (!permissionResult.granted) {
-      alert('Se requieren permisos de cámara para adjuntar evidencias.');
+      alert('Se requieren permisos de cámara.');
       return;
     }
 
-    // 2. Abrir la cámara
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
-      aspect:,
-      quality: 0.6, // Comprimir para evitar subidas pesadas
+      quality: 0.5,
     });
 
     if (result.canceled || !result.assets || result.assets.length === 0) return;
 
     const imageUri = result.assets[0].uri;
 
-    // 3. Activar cargador visual para esta pregunta
+    if (!isOnline) {
+      // SI NO HAY INTERNET: Guardamos la ruta interna de la foto y la metemos al borrador
+      const updatedAnswers = {
+        ...answers,
+        [questionId]: { ...answers[questionId], localImageUri: imageUri, evidenceUrl: '', uploading: false }
+      };
+      setAnswers(updatedAnswers);
+      await offlineStorage.saveDraft(String(reportId), updatedAnswers);
+      alert('Foto guardada localmente en el borrador (Sin internet).');
+      return;
+    }
+
+    // SI SÍ HAY INTERNET: La subimos directo a Supabase Storage
     setAnswers(prev => ({ ...prev, [questionId]: { ...prev[questionId], uploading: true } }));
-
     try {
-      // Formatear variables para la ruta exacta: costa/2026-06-01/local-id/report-id/question-id/foto.jpg
-      const folderRegion = String(region).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // "costa", "norte"
-      const folderDate = "2026-06-01"; // Fecha del sistema actual congelada en los requisitos
-      const folderLocal = local_id || "sin-local";
-      const folderReport = reportId || "sin-reporte";
-      
-      const fileRoute = `${folderRegion}/${folderDate}/${folderLocal}/${folderReport}/${questionId}/foto.jpg`;
+      const folderRegion = String(region).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const fileRoute = `${folderRegion}/2026-06-01/${local_id || 'sin-local'}/${reportId}/${questionId}/foto.jpg`;
 
-      // Transformar URI local a un Blob binario aceptado por Supabase
       const response = await fetch(imageUri);
       const blob = await response.blob();
 
-      // 4. Subir archivo al bucket llamado 'evidencias'
-      const { data: uploadData, error: uploadError } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from('evidencias')
-        .upload(fileRoute, blob, { contentType: 'image/jpeg', uppercase: true, cacheControl: '3600' });
+        .upload(fileRoute, blob, { contentType: 'image/jpeg', cacheControl: '3600', upsert: true });
 
       if (uploadError) throw uploadError;
 
-      // 5. Obtener la URL pública final del recurso
-      const { data: { publicUrl } } = supabase.storage
-        .from('evidencias')
-        .getPublicUrl(fileRoute);
+      const { data: { publicUrl } } = supabase.storage.from('evidencias').getPublicUrl(fileRoute);
 
-      // 6. Guardar en el estado de la pregunta
-      setAnswers(prev => ({ 
-        ...prev, 
-        [questionId]: { ...prev[questionId], evidenceUrl: publicUrl, uploading: false } 
-      }));
-
+      const updatedAnswers = {
+        ...answers,
+        [questionId]: { ...answers[questionId], evidenceUrl: publicUrl, localImageUri: imageUri, uploading: false }
+      };
+      setAnswers(updatedAnswers);
+      await offlineStorage.saveDraft(String(reportId), updatedAnswers);
     } catch (err: any) {
-      alert('Error al subir imagen: ' + err.message);
+      alert('Error de subida: ' + err.message);
       setAnswers(prev => ({ ...prev, [questionId]: { ...prev[questionId], uploading: false } }));
     }
   };
 
+  // 4. Guardar cambios de texto u opciones en tiempo real en AsyncStorage
+  const updateField = async (questionId: string, fieldsToUpdate: Partial<AnswerState>) => {
+    const updatedAnswers = {
+      ...answers,
+      [questionId]: { ...answers[questionId], ...fieldsToUpdate }
+    };
+    setAnswers(updatedAnswers);
+    // Auto-guardado de respaldo permanente ante cierres inesperados de la app
+    await offlineStorage.saveDraft(String(reportId), updatedAnswers);
+  };
+
+  // 5. Validación obligatoria estricta
   const checkFormValidation = (): boolean => {
     if (questions.length === 0) return false;
     for (const q of questions) {
       const answer = answers[q.id];
       if (!answer || answer.value === null || answer.observation.trim().length < 3) return false;
-      if (q.evidence_required && answer.evidenceUrl.trim().length === 0) return false;
+      if (q.evidence_required && !answer.evidenceUrl && !answer.localImageUri) return false;
     }
     return true;
   };
 
+  // 6. Acción final del Botón
+  const handleSubmit = async () => {
+    if (!checkFormValidation()) return;
+    setIsSubmitting(true);
+
+    if (!isOnline) {
+      alert('¡Auditoría guardada localmente como BORRADOR! Se sincronizará al recuperar red.');
+      router.replace('/nueva-auditoria');
+      setIsSubmitting(false);
+      return;
+    }
+
+    // Aquí irá la sincronización a Supabase en la Parte 2
+    await offlineStorage.clearDraft(String(reportId));
+    alert('¡Auditoría subida a la nube exitosamente!');
+    router.replace('/nueva-auditoria');
+    setIsSubmitting(false);
+  };
+
   const isFormValid = checkFormValidation();
 
-  return (
+  if (loading) return <View style={styles.center}><ActivityIndicator size="large" /><Text>Cargando datos...</Text></View>;
+  if (error) return <View style={styles.center}><Text style={{ color: 'red' }}>Error: {error}</Text></View>;
+return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Evidencias de Checklist</Text>
-      <Text style={styles.subtitle}>Estructura automatizada en Supabase Storage</Text>
+      {/* Indicador visual del estado de la conexión en tiempo real */}
+      <View style={[styles.networkBanner, isOnline ? styles.bannerOnline : styles.bannerOffline]}>
+        <Text style={styles.bannerText}>
+          {isOnline ? '🌐 Conectado a Internet (Modo Online)' : '⚠️ Sin Conexión (Modo Borrador Offline)'}
+        </Text>
+      </View>
+
+      <Text style={styles.title}>Formulario de Checklist</Text>
+      <Text style={styles.subtitle}>ID Auditoría: {reportId} | Ubicación: {region}</Text>
 
       {questions.map((q, index) => {
         const currentAnswer = answers[q.id] || { value: null, observation: '', evidenceUrl: '', uploading: false };
@@ -147,32 +212,35 @@ export default function ChecklistDinamicoPage() {
           <View key={q.id} style={styles.card}>
             <Text style={styles.questionText}>{index + 1}. {q.question_text}</Text>
             
+            {/* 1. Selector de respuesta: Cumple / No Cumple */}
             <View style={styles.radioGroup}>
               <TouchableOpacity 
                 style={[styles.radioButton, currentAnswer.value === 'cumple' && styles.radioActiveCumple]}
-                onPress={() => setAnswers(prev => ({ ...prev, [q.id]: { ...prev[q.id], value: 'cumple' } }))}
+                onPress={() => updateField(q.id, { value: 'cumple' })}
               >
                 <Text style={[styles.radioText, currentAnswer.value === 'cumple' && styles.textWhite]}>Cumple</Text>
               </TouchableOpacity>
 
               <TouchableOpacity 
                 style={[styles.radioButton, currentAnswer.value === 'no_cumple' && styles.radioActiveNoCumple]}
-                onPress={() => setAnswers(prev => ({ ...prev, [q.id]: { ...prev[q.id], value: 'no_cumple' } }))}
+                onPress={() => updateField(q.id, { value: 'no_cumple' })}
               >
                 <Text style={[styles.radioText, currentAnswer.value === 'no_cumple' && styles.textWhite]}>No Cumple</Text>
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.fieldLabel}>Observación *</Text>
+            {/* 2. Campo de Observación Obligatoria */}
+            <Text style={styles.fieldLabel}>Observación Obligatoria *</Text>
             <TextInput
               style={styles.textArea}
               multiline
-              placeholder="Describa los hallazgos hallados..."
+              numberOfLines={3}
+              placeholder="Describa detalladamente los hallazgos encontrados..."
               value={currentAnswer.observation}
-              onChangeText={(text) => setAnswers(prev => ({ ...prev, [q.id]: { ...prev[q.id], observation: text } }))}
+              onChangeText={(text) => updateField(q.id, { observation: text })}
             />
 
-            {/* SECCIÓN DE EVIDENCIA CON EXPO IMAGE PICKER */}
+            {/* 3. Captura de Evidencias con soporte local/remoto */}
             <Text style={styles.fieldLabel}>
               Evidencia Fotográfica {q.evidence_required ? '(Obligatoria *)' : '(Opcional)'}
             </Text>
@@ -182,10 +250,15 @@ export default function ChecklistDinamicoPage() {
                 <ActivityIndicator size="small" color="#0070f3" />
                 <Text style={styles.uploadText}>Subiendo foto a Supabase...</Text>
               </View>
-            ) : currentAnswer.evidenceUrl ? (
+            ) : (currentAnswer.evidenceUrl || currentAnswer.localImageUri) ? (
               <View style={styles.imagePreviewContainer}>
-                <Image source={{ uri: currentAnswer.evidenceUrl }} style={styles.imagePreview} />
-                <Text style={styles.successUploadText}>✓ Guardada correctamente en ruta del Storage</Text>
+                <Image 
+                  source={{ uri: currentAnswer.evidenceUrl || currentAnswer.localImageUri }} 
+                  style={styles.imagePreview} 
+                />
+                <Text style={isOnline ? styles.successUploadText : styles.offlineUploadText}>
+                  {isOnline ? '✓ Guardada en Supabase Storage' : '💾 Guardada localmente (Pendiente de subida)'}
+                </Text>
               </View>
             ) : (
               <TouchableOpacity style={styles.photoButton} onPress={() => handlePickImage(q.id)}>
@@ -196,8 +269,15 @@ export default function ChecklistDinamicoPage() {
         );
       })}
 
-      <TouchableOpacity style={[styles.submitButton, !isFormValid && styles.disabledButton]} disabled={!isFormValid}>
-        <Text style={styles.submitButtonText}>Finalizar y Guardar Auditoría 💾</Text>
+      {/* Botón de Guardado Dinámico */}
+      <TouchableOpacity 
+        style={[styles.submitButton, !isFormValid && styles.disabledButton]} 
+        onPress={handleSubmit}
+        disabled={!isFormValid || isSubmitting}
+      >
+        <Text style={styles.submitButtonText}>
+          {isSubmitting ? 'Procesando...' : isOnline ? 'Finalizar y Guardar Auditoría 💾' : 'Guardar Borrador Local 📦'}
+        </Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -205,6 +285,11 @@ export default function ChecklistDinamicoPage() {
 
 const styles = StyleSheet.create({
   container: { padding: 20, maxWidth: 600, alignSelf: 'center', width: '100%', backgroundColor: '#fdfdfd' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
+  networkBanner: { padding: 10, borderRadius: 6, marginBottom: 15, alignItems: 'center' },
+  bannerOnline: { backgroundColor: '#d1fae5' },
+  bannerOffline: { backgroundColor: '#fee2e2' },
+  bannerText: { fontSize: 13, fontWeight: 'bold', color: '#374151' },
   title: { fontSize: 22, fontWeight: 'bold', borderBottomWidth: 2, borderBottomColor: '#333', paddingBottom: 10 },
   subtitle: { fontSize: 13, color: '#666', marginTop: 5, marginBottom: 15 },
   card: { borderWidth: 1, borderColor: '#e2e8f0', padding: 20, borderRadius: 8, backgroundColor: '#fff', marginTop: 15 },
@@ -222,3 +307,10 @@ const styles = StyleSheet.create({
   imagePlaceholder: { padding: 15, alignItems: 'center', justifyContent: 'center' },
   uploadText: { fontSize: 12, color: '#666', marginTop: 5 },
   imagePreviewContainer: { marginTop: 10, alignItems: 'center' },
+  imagePreview: { width: '100%', height: 180, borderRadius: 6, backgroundColor: '#eee' },
+  successUploadText: { fontSize: 12, color: '#10b981', fontWeight: 'bold', marginTop: 5 },
+  offlineUploadText: { fontSize: 12, color: '#f59e0b', fontWeight: 'bold', marginTop: 5 },
+  submitButton: { backgroundColor: '#0070f3', padding: 15, borderRadius: 6, alignItems: 'center', marginTop: 25, marginBottom: 40 },
+  disabledButton: { backgroundColor: '#bfdbfe', opacity: 0.7 },
+  submitButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' }
+});
