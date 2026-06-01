@@ -1,6 +1,16 @@
 {
-  "plugins": [
-    "expo-router",
-    "expo-status-bar"
-  ]
+  "expo": {
+    "name": "app-visitas-corporativa",
+    "slug": "app-visitas-corporativa",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "plugins": [
+      "expo-router",
+      "expo-status-bar"
+    ],
+    "web": {
+      "bundler": "metro"
+    }
+  }
 }
