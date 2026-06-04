@@ -1,0 +1,26 @@
+name: Desplegar Edge Functions a Supabase
+
+on:
+  push:
+    branches:
+      - main # Se activa automáticamente al hacer push a la rama main
+    paths:
+      - 'supabase/functions/**' # Solo se dispara si modificas archivos dentro de las funciones
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Clonar el repositorio de GitHub
+        uses: actions/checkout@v4
+
+      - name: Instalar Supabase CLI de forma interna
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Desplegar Edge Functions de forma automatizada
+        run: supabase functions deploy --all --project-ref ${{ secrets.SUPABASE_PROJECT_ID }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
