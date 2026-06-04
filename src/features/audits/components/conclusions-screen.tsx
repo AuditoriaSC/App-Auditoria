@@ -5,6 +5,7 @@ import {
   Text,
   TextInput,
   View,
+  Alert,
 } from "react-native";
 
 import { calculateAuditScore } from "../domain/score";
@@ -54,6 +55,41 @@ export function ConclusionsScreen({
   const canFinalize =
     score.isComplete && auditorSignatureReady && responsibleSignatureReady;
 
+  const handleFinalize = () => {
+    if (!canFinalize) {
+      Alert.alert(
+        "Auditoría incompleta",
+        "Por favor, completa todos los campos requeridos antes de finalizar."
+      );
+      return;
+    }
+
+    // Mostrar resumen antes de finalizar
+    const message =
+      score.status === "failed"
+        ? `⚠️ Esta auditoría ha sido REPROBADA con ${score.compliancePercent}% de cumplimiento.\n\n¿Estás seguro de que deseas guardar y finalizar?`
+        : `✓ Auditoría completada con ${score.compliancePercent}% de cumplimiento.\n\n¿Deseas guardar y finalizar?`;
+
+    Alert.alert(
+      "Confirmar finalización",
+      message,
+      [
+        {
+          text: "Cancelar",
+          onPress: () => {},
+          style: "cancel",
+        },
+        {
+          text: "Guardar y finalizar",
+          onPress: () => {
+            onFinalize({ generalObservations, score });
+          },
+          style: score.status === "failed" ? "destructive" : "default",
+        },
+      ]
+    );
+  };
+
   return (
     <ScrollView
       contentInsetAdjustmentBehavior="automatic"
@@ -91,7 +127,12 @@ export function ConclusionsScreen({
             Checklist incompleto
           </Text>
           <Text selectable style={{ color: "#7C2D12" }}>
-            Faltan {score.missingAnswerCount} respuestas y {score.missingObservationCount} observaciones obligatorias.
+            Faltan {score.missingAnswerCount} respuesta{score.missingAnswerCount !== 1 ? "s" : ""} obligatoria{score.missingAnswerCount !== 1 ? "s" : ""}.
+            {score.missingObservationCount > 0 && (
+              <>
+                {"\n"}También faltan {score.missingObservationCount} observación{score.missingObservationCount !== 1 ? "es" : ""} en preguntas respondidas.
+              </>
+            )}
           </Text>
         </View>
       ) : null}
@@ -130,7 +171,7 @@ export function ConclusionsScreen({
 
       <Pressable
         disabled={!canFinalize}
-        onPress={() => onFinalize({ generalObservations, score })}
+        onPress={handleFinalize}
         style={{
           minHeight: 52,
           borderRadius: 8,
