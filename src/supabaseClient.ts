@@ -11,3 +11,17 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
   },
 });
+
+export async function clearSupabaseSessionCache() {
+  const keys = await AsyncStorage.getAllKeys();
+  const authKeys = keys.filter(
+    (key) =>
+      key.startsWith('sb-') ||
+      key.includes('supabase.auth') ||
+      key.includes('auth-token'),
+  );
+
+  if (authKeys.length > 0) {
+    await AsyncStorage.multiRemove(authKeys);
+  }
+}

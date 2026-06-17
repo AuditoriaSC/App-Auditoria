@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 // Importación exacta apuntando a tu nueva carpeta src
-import { supabase } from '../src/supabaseClient';
+import { clearSupabaseSessionCache, supabase } from '../src/supabaseClient';
 
 export default function IndexPage() {
   const router = useRouter();
@@ -13,6 +13,9 @@ export default function IndexPage() {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
 
       if (userError || !user) {
+        if (userError?.message?.toLowerCase().includes('refresh token')) {
+          await clearSupabaseSessionCache();
+        }
         // Si no está logueado o hay error, lo mandamos directo al login de Expo
         router.replace('/login');
         return;

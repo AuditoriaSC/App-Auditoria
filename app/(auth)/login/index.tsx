@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 // IMPORTACIÓN CORRECTA: Reutilizamos la instancia centralizada
-import { supabase } from '../../../src/supabaseClient';
+import { clearSupabaseSessionCache, supabase } from '../../../src/supabaseClient';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -22,6 +22,9 @@ export default function LoginPage() {
     });
 
     if (authError) {
+      if (authError.message.toLowerCase().includes('refresh token')) {
+        await clearSupabaseSessionCache();
+      }
       setError(authError.message);
       setLoading(false);
       return;
