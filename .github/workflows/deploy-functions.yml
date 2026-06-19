@@ -20,7 +20,7 @@ jobs:
         with:
           version: latest
 
-      - name: Desplegar Edge Functions de forma automatizada
-        run: supabase functions deploy --all --project-ref ${{ secrets.SUPABASE_PROJECT_ID }}
+      - name: Desplegar finalize-report de forma automatizada
+        run: supabase functions deploy finalize-report --project-ref ${{ secrets.SUPABASE_PROJECT_ID }} --use-api --debug
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
