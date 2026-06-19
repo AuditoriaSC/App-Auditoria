@@ -59,6 +59,21 @@ ALTER TABLE public.audit_answers_draft ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_answers_final ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_invitations ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "profiles_select_own" ON public.profiles;
+DROP POLICY IF EXISTS "locales_select_authenticated" ON public.locales;
+DROP POLICY IF EXISTS "questions_select_authenticated" ON public.checklist_questions;
+DROP POLICY IF EXISTS "questions_admin_write" ON public.checklist_questions;
+DROP POLICY IF EXISTS "reports_select_own_or_admin" ON public.audit_reports;
+DROP POLICY IF EXISTS "reports_insert_own" ON public.audit_reports;
+DROP POLICY IF EXISTS "reports_update_own_or_admin" ON public.audit_reports;
+DROP POLICY IF EXISTS "draft_answers_owner_access" ON public.audit_answers_draft;
+DROP POLICY IF EXISTS "final_answers_select_own_or_admin" ON public.audit_answers_final;
+DROP POLICY IF EXISTS "final_answers_insert_owner" ON public.audit_answers_final;
+DROP POLICY IF EXISTS "invitations_admin_access" ON public.user_invitations;
+DROP POLICY IF EXISTS "evidencias_select_authenticated" ON storage.objects;
+DROP POLICY IF EXISTS "evidencias_insert_authenticated" ON storage.objects;
+DROP POLICY IF EXISTS "evidencias_update_authenticated" ON storage.objects;
+
 CREATE POLICY "profiles_select_own"
   ON public.profiles FOR SELECT
   TO authenticated
