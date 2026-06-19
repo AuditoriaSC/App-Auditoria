@@ -12,6 +12,11 @@ interface AnswerRecord {
   value: 'cumple' | 'no_cumple';
   observation: string;
   evidence_url: string | null;
+  numeric_value_theoretical?: number | null;
+  numeric_value_physical?: number | null;
+  numeric_value_current?: number | null;
+  numeric_value_previous?: number | null;
+  numeric_items?: unknown[] | null;
   checklist_questions?: {
     score_points: number;
     is_scored: boolean | null;
@@ -170,10 +175,17 @@ export default function FinalizarReportePage() {
         value: answer.value,
         observation: answer.observation,
         evidence_url: answer.evidence_url,
+        numeric_value_theoretical: answer.numeric_value_theoretical ?? null,
+        numeric_value_physical: answer.numeric_value_physical ?? null,
+        numeric_value_current: answer.numeric_value_current ?? null,
+        numeric_value_previous: answer.numeric_value_previous ?? null,
+        numeric_items: answer.numeric_items ?? [],
         created_at: new Date().toISOString(),
       }));
 
-      const { error: errInsertAnswers } = await supabase.from('audit_answers_final').insert(answersPayload);
+      const { error: errInsertAnswers } = await supabase
+        .from('audit_answers_final')
+        .upsert(answersPayload, { onConflict: 'report_id,question_id' });
       if (errInsertAnswers) throw errInsertAnswers;
 
       const { error: errFinalizeReport } = await supabase
@@ -199,10 +211,23 @@ export default function FinalizarReportePage() {
       if (errFinalizeReport) throw errFinalizeReport;
 
       if (shouldSend) {
-        const { error: sendError } = await supabase.functions.invoke('finalize-report', {
-          body: { reportId, region },
+        const { data: sessionData } = await supabase.auth.getSession();
+        const functionUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/finalize-report`;
+        const sendResponse = await fetch(functionUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+            Authorization: `Bearer ${sessionData.session?.access_token || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || ''}`,
+          },
+          body: JSON.stringify({ reportId, region }),
         });
-        if (sendError) throw sendError;
+
+        const sendData = await sendResponse.json().catch(() => null);
+        if (!sendResponse.ok) {
+          const detail = sendData && typeof sendData === 'object' && 'error' in sendData ? String(sendData.error) : `HTTP ${sendResponse.status}`;
+          throw new Error(`Envio de correo: ${detail}`);
+        }
       }
 
       await supabase.from('audit_answers_draft').delete().eq('report_id', reportId);
@@ -268,7 +293,7 @@ export default function FinalizarReportePage() {
           }}
         />
         <Text style={styles.signatureName}>{responsibleDisplay}</Text>
-        {!responsibleSignature && <Text style={styles.noSignatureText}>Sin firma del responsable</Text>}
+        {!responsibleSignature && <Text style={styles.noSignatureText}>Sin Firma</Text>}
       </View>
 
       <View style={styles.card}>

@@ -3,135 +3,351 @@ import { createClient } from "npm:@supabase/supabase-js@2"
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+const RESEND_FROM = Deno.env.get('RESEND_FROM') || 'Auditorias Corporativas <reportes@tu-dominio.com>'
+const RESEND_TEST_TO = Deno.env.get('RESEND_TEST_TO')
 
-Deno.serve(async (req) => {
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+type QuestionType = 'compliance' | 'cash_count' | 'pending_deposit' | 'inventory' | 'cup_count' | 'raw_material_count' | 'follow_up' | 'additional_novelty'
+
+type ReportRow = {
+  id: string
+  region: string | null
+  visit_type_id: string | null
+  status: string | null
+  final_grade: number | null
+  final_percentage: number | null
+  local_codigo: string | null
+  local_code_snapshot: string | null
+  local_name_snapshot: string | null
+  auditor_name_snapshot: string | null
+  responsible_code: string | null
+  responsible_name_snapshot: string | null
+  start_date: string | null
+  start_time: string | null
+  end_time: string | null
+  should_send: boolean | null
+  signature_auditor_url: string | null
+  signature_responsible_url: string | null
+  auditor_signature_url: string | null
+  responsible_signature_url: string | null
+  profiles?: { full_name: string | null; email: string | null } | null
+  locales?: { nombre_local: string | null } | null
+}
+
+type AnswerRow = {
+  question_id: string
+  value: 'cumple' | 'no_cumple'
+  observation: string | null
+  evidence_url: string | null
+  numeric_value_theoretical: number | null
+  numeric_value_physical: number | null
+  numeric_value_current: number | null
+  numeric_value_previous: number | null
+  numeric_items: Array<Record<string, unknown>> | null
+  checklist_questions?: {
+    question_text: string | null
+    score_points: number | null
+    question_type: QuestionType | string | null
+    is_scored: boolean | null
+  } | null
+}
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+function escapeHtml(value: unknown) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return 'Sin fecha'
+  return value
+}
+
+function formatTime(value?: string | null) {
+  if (!value) return 'Sin hora'
+  return String(value).slice(0, 5)
+}
+
+function formatNumber(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return ''
+  return Number(value).toFixed(2)
+}
+
+function questionType(answer: AnswerRow): string {
+  return answer.checklist_questions?.question_type || 'compliance'
+}
+
+function isScored(answer: AnswerRow) {
+  const question = answer.checklist_questions
+  if (!question) return true
+  if (question.is_scored === false) return false
+  return !['follow_up', 'additional_novelty'].includes(question.question_type || '')
+}
+
+function pointsFor(answer: AnswerRow) {
+  return Number(answer.checklist_questions?.score_points || 0)
+}
+
+function obtainedPoints(answer: AnswerRow) {
+  return isScored(answer) && answer.value === 'cumple' ? pointsFor(answer) : 0
+}
+
+function possiblePoints(answer: AnswerRow) {
+  return isScored(answer) ? pointsFor(answer) : 0
+}
+
+function imageHtml(url: string | null | undefined, alt: string) {
+  if (!url) return ''
+  return `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" style="max-width:220px; max-height:160px; object-fit:contain; border:1px solid #d9e2ec; border-radius:6px; margin:6px 8px 6px 0; background:#fff;" />`
+}
+
+function numericRows(answer: AnswerRow) {
+  const items = Array.isArray(answer.numeric_items) ? answer.numeric_items : []
+
+  if (items.length > 0) {
+    return items.map((item) => {
+      const label = String(item.label ?? item.description ?? item.name ?? 'Item')
+      const theoretical = Number(item.theoretical ?? item.system ?? 0)
+      const physical = Number(item.physical ?? 0)
+      const difference = item.difference !== undefined ? Number(item.difference) : physical - theoretical
+
+      return {
+        description: label,
+        theoretical,
+        physical,
+        difference,
+      }
+    })
   }
 
-  // Manejo de peticiones CORS preflight obligatorias para aplicaciones móviles
+  if (answer.numeric_value_theoretical !== null || answer.numeric_value_physical !== null) {
+    const theoretical = Number(answer.numeric_value_theoretical || 0)
+    const physical = Number(answer.numeric_value_physical || 0)
+    return [{
+      description: 'Registro',
+      theoretical,
+      physical,
+      difference: physical - theoretical,
+    }]
+  }
+
+  return []
+}
+
+function renderNumericTable(title: string, headers: [string, string, string, string], rows: ReturnType<typeof numericRows>) {
+  if (rows.length === 0) return ''
+
+  return `
+    <p style="margin:10px 0 6px 0; font-weight:700; color:#243b53;">${escapeHtml(title)}</p>
+    <table style="width:100%; border-collapse:collapse; font-size:13px; margin-bottom:8px;">
+      <thead>
+        <tr style="background:#eef2f7;">
+          ${headers.map((header) => `<th style="border:1px solid #d9e2ec; padding:7px; text-align:left;">${escapeHtml(header)}</th>`).join('')}
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((row) => `
+          <tr>
+            <td style="border:1px solid #d9e2ec; padding:7px;">${escapeHtml(row.description)}</td>
+            <td style="border:1px solid #d9e2ec; padding:7px;">${formatNumber(row.theoretical)}</td>
+            <td style="border:1px solid #d9e2ec; padding:7px;">${formatNumber(row.physical)}</td>
+            <td style="border:1px solid #d9e2ec; padding:7px;">${formatNumber(row.difference)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `
+}
+
+function renderDepositData(answer: AnswerRow) {
+  if (answer.numeric_value_current === null && answer.numeric_value_previous === null) return ''
+
+  return `
+    <div style="font-size:13px; background:#f8fafc; border:1px solid #d9e2ec; border-radius:6px; padding:8px; margin-top:8px;">
+      <div><strong>Turno actual:</strong> ${formatNumber(answer.numeric_value_current)}</div>
+      <div><strong>Turno anterior:</strong> ${formatNumber(answer.numeric_value_previous)}</div>
+    </div>
+  `
+}
+
+function renderQuestionDetail(answer: AnswerRow, index: number) {
+  const type = questionType(answer)
+  const questionText = answer.checklist_questions?.question_text || 'Pregunta'
+  const result = answer.value === 'cumple' ? 'SI CUMPLE' : 'NO CUMPLE'
+  const resultColor = answer.value === 'cumple' ? '#0f766e' : '#b91c1c'
+  const evidence = imageHtml(answer.evidence_url, `Evidencia pregunta ${index + 1}`)
+  const rows = numericRows(answer)
+  let numericBlock = ''
+
+  if (type === 'cash_count') {
+    numericBlock = renderNumericTable('Arqueo de caja', ['Concepto', 'Sistema', 'Físico', 'Diferencia'], rows)
+  } else if (type === 'pending_deposit') {
+    numericBlock = renderDepositData(answer)
+  } else if (type === 'inventory') {
+    numericBlock = renderNumericTable('Inventario', ['Descripción', 'Sistema', 'Físico', 'Diferencia'], rows)
+  } else if (type === 'cup_count') {
+    numericBlock = renderNumericTable('Vasos desechables', ['Descripción', 'Sistema', 'Físico', 'Diferencia'], rows)
+  } else if (type === 'raw_material_count') {
+    numericBlock = renderNumericTable('Materias primas', ['Descripción', 'Sistema', 'Físico', 'Diferencia'], rows)
+  }
+
+  return `
+    <div style="border:1px solid #d9e2ec; border-radius:8px; padding:12px; margin-bottom:10px; background:${answer.value === 'cumple' ? '#ffffff' : '#fff7f7'};">
+      <p style="margin:0 0 6px 0; font-weight:700; color:#102a43;">${index + 1}. ${escapeHtml(questionText)}</p>
+      <p style="margin:0 0 4px 0;"><strong>Resultado:</strong> <span style="color:${resultColor}; font-weight:700;">${result}</span></p>
+      <p style="margin:0 0 4px 0;"><strong>Puntaje:</strong> ${formatNumber(obtainedPoints(answer))} / ${formatNumber(possiblePoints(answer))}</p>
+      <p style="margin:0 0 6px 0;"><strong>Observaciones:</strong> ${escapeHtml(answer.observation || 'Sin observaciones')}</p>
+      ${numericBlock}
+      ${evidence ? `<div style="margin-top:8px;"><strong>Evidencias:</strong><br/>${evidence}</div>` : ''}
+    </div>
+  `
+}
+
+function renderNoveltySection(answers: AnswerRow[]) {
+  const novelties = answers.filter((answer) => questionType(answer) === 'additional_novelty' && ((answer.observation || '').trim() || answer.evidence_url))
+
+  if (novelties.length === 0) {
+    return `<p style="margin:0; color:#52606d;">Sin novedades adicionales.</p>`
+  }
+
+  return novelties.map((answer, index) => `
+    <div style="border:1px solid #d9e2ec; border-radius:8px; padding:10px; margin-bottom:8px;">
+      <p style="margin:0 0 6px 0;"><strong>Novedad ${index + 1}:</strong> ${escapeHtml(answer.observation || 'Sin texto')}</p>
+      ${imageHtml(answer.evidence_url, `Novedad ${index + 1}`)}
+    </div>
+  `).join('')
+}
+
+function buildHeaderTable(report: ReportRow, scoreText: string) {
+  const local = report.local_name_snapshot || report.locales?.nombre_local || report.local_codigo || 'Sin local'
+  const localWithCode = report.local_code_snapshot ? `${report.local_code_snapshot} · ${local}` : local
+  const responsible = report.responsible_code
+    ? `${report.responsible_code} · ${report.responsible_name_snapshot || 'Responsable'}`
+    : report.responsible_name_snapshot || 'Responsable'
+
+  const rows = [
+    ['Local', localWithCode],
+    ['Fecha', formatDate(report.start_date)],
+    ['Auditor', report.auditor_name_snapshot || report.profiles?.full_name || 'Auditor'],
+    ['Hora Inicio', formatTime(report.start_time)],
+    ['Responsable Auditado', responsible],
+    ['Hora de Término', formatTime(report.end_time)],
+    ['Calificación', scoreText],
+  ]
+
+  return `
+    <table style="width:100%; border-collapse:collapse; margin:14px 0 18px 0; font-size:14px;">
+      <tbody>
+        ${rows.map(([label, value]) => `
+          <tr>
+            <td style="width:38%; border:1px solid #d9e2ec; padding:8px; background:#eef2f7; font-weight:700;">${escapeHtml(label)}</td>
+            <td style="border:1px solid #d9e2ec; padding:8px;">${escapeHtml(value)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `
+}
+
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
     const { reportId } = await req.json()
-    if (!reportId) throw new Error("Falta el parámetro reportId obligatorio.")
+    if (!reportId) throw new Error('Falta el parametro reportId obligatorio.')
+    console.log('finalize-report:start', { reportId })
 
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       throw new Error('Faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY en variables de entorno.')
     }
 
-    // Inicializar cliente administrativo de Supabase
+    if (!RESEND_API_KEY) {
+      throw new Error('Falta RESEND_API_KEY en variables de entorno.')
+    }
+
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-    // 1. Obtener la metadata e información general del reporte finalizado
     const { data: report, error: errReport } = await supabase
       .from('audit_reports')
-      .select('*, profiles(full_name, email)')
+      .select('id, region, visit_type_id, status, final_grade, final_percentage, local_codigo, local_code_snapshot, local_name_snapshot, auditor_name_snapshot, responsible_code, responsible_name_snapshot, start_date, start_time, end_time, should_send, signature_auditor_url, signature_responsible_url, auditor_signature_url, responsible_signature_url, profiles(full_name, email), locales(nombre_local)')
       .eq('id', reportId)
-      .single()
+      .single<ReportRow>()
 
     if (errReport || !report) throw new Error(`Reporte no encontrado: ${errReport?.message}`)
+    console.log('finalize-report:report-loaded', {
+      reportId,
+      shouldSend: report.should_send,
+      to: RESEND_TEST_TO || report.profiles?.email || 'admin@tu-dominio.com',
+      visitType: report.visit_type_id,
+    })
 
-    // 2. Obtener las respuestas consolidadas con sus rutas de evidencias
     const { data: answers, error: errAnswers } = await supabase
       .from('audit_answers_final')
-      .select('*, checklist_questions(question_text)')
+      .select('question_id, value, observation, evidence_url, numeric_value_theoretical, numeric_value_physical, numeric_value_current, numeric_value_previous, numeric_items, checklist_questions(question_text, score_points, question_type, is_scored)')
       .eq('report_id', reportId)
 
     if (errAnswers) throw new Error(`Error leyendo respuestas: ${errAnswers.message}`)
 
-    // 3. Descargar las imágenes desde Supabase Storage y transformarlas a adjuntos CID en línea
-    const attachments = []
-    let htmlAnswersList = ""
+    const finalAnswers = (answers || []) as AnswerRow[]
+    const obtained = finalAnswers.reduce((total, answer) => total + obtainedPoints(answer), 0)
+    const possible = finalAnswers.reduce((total, answer) => total + possiblePoints(answer), 0)
+    const scoreText = `${formatNumber(obtained)} / ${formatNumber(possible)} puntos`
+    const visitType = report.visit_type_id || 'Visita'
+    const localName = report.local_name_snapshot || report.locales?.nombre_local || report.local_codigo || 'Local'
+    const sentDate = new Date().toISOString().slice(0, 10)
+    const subject = `REPORTE DE VISITA ${visitType.toUpperCase()} LOCAL ${localName.toUpperCase()} ENVIADO EL ${sentDate}`
+    const auditorSignatureUrl = report.auditor_signature_url || report.signature_auditor_url
+    const responsibleSignatureUrl = report.responsible_signature_url || report.signature_responsible_url
 
-    for (let i = 0; i < (answers || []).length; i++) {
-      const ans = answers[i]
-      let imageHtmlTag = ""
+    const questionDetails = finalAnswers
+      .filter((answer) => questionType(answer) !== 'additional_novelty')
+      .map(renderQuestionDetail)
+      .join('')
 
-      // Verificar si la respuesta guardó un archivo en el Storage
-      if (ans.evidence_url) {
-        // Extraer la ruta relativa quitando el dominio del bucket público
-        const pathParts = ans.evidence_url.split('/storage/v1/object/public/evidencias/')
-        const relativePath = pathParts[1]
-
-        if (relativePath) {
-          // Descargar binario de la imagen
-          const { data: fileData, error: errDownload } = await supabase.storage
-            .from('evidencias')
-            .download(relativePath)
-
-          if (!errDownload && fileData) {
-            const arrayBuffer = await fileData.arrayBuffer()
-            let binary = ''
-            const bytes = new Uint8Array(arrayBuffer)
-            for (const byte of bytes) binary += String.fromCharCode(byte)
-            const base64String = btoa(binary)
-            const cidName = `evidencia_pregunta_${ans.question_id}`
-
-            // Insertar el binario formateado en la matriz de adjuntos de Resend
-            attachments.push({
-              content: base64String,
-              filename: `evidencia_${i + 1}.jpg`,
-              content_id: cidName, // ID para referenciar en el HTML interno
-              disposition: 'inline'
-            })
-
-            // Generar la etiqueta HTML apuntando al CID interno embebido
-            imageHtmlTag = `<br/><img src="cid:${cidName}" alt="Evidencia" style="max-width:100%; height:auto; border-radius:6px; margin-top:8px; border:1px solid #ddd;" />`
-          }
-        }
-      }
-
-      htmlAnswersList += `
-        <div style="padding:12px; border-bottom:1px solid #edf2f7; background-color:${ans.value === 'no_cumple' ? '#fff5f5' : '#fff'};">
-          <p style="margin:0; font-weight:bold; color:#2d3748;">${i + 1}. ${ans.checklist_questions?.question_text || 'Pregunta'}</p>
-          <p style="margin:4px 0; font-size:14px;">
-            Resultado: <span style="font-weight:bold; color:${ans.value === 'no_cumple' ? '#e53e3e' : '#38a169'}">${ans.value.toUpperCase()}</span>
-          </p>
-          <p style="margin:0; font-size:13px; color:#4a5568; font-style:italic;">Obs: ${ans.observation || 'Sin observaciones'}</p>
-          ${imageHtmlTag}
-        </div>
-      `
-    }
-
-    // 4. Armar cuerpo estructurado del correo electrónico en formato HTML
     const emailHtmlBody = `
-      <div style="font-family:sans-serif; padding:20px; color:#2d3748; max-width:600px; margin:0 auto; background-color:#f7fafc;">
-        <div style="background-color:#0070f3; padding:20px; border-radius:8px 8px 0 0; color:#fff; text-align:center;">
-          <h2 style="margin:0;">Informe Oficial de Auditoría</h2>
-          <p style="margin:5px 0 0 0; opacity:0.9;">Estatus del Reporte: <strong>${report.status.toUpperCase()}</strong></p>
-        </div>
-        
-        <div style="background-color:#fff; padding:20px; border-radius:0 0 8px 8px; border:1px solid #e2e8f0; border-top:none;">
-          <h3>Resumen Ejecutivo</h3>
-          <table style="width:100%; border-collapse:collapse; margin-bottom:20px;">
-            <tr><td style="padding:5px 0; color:#718096;">ID Reporte:</td><td style="font-weight:bold;">${report.id}</td></tr>
-            <tr><td style="padding:5px 0; color:#718096;">Auditor:</td><td>${report.profiles?.full_name || 'No asignado'}</td></tr>
-            <tr><td style="padding:5px 0; color:#718096;">Fecha de Cierre:</td><td>2026-06-01</td></tr>
-            <tr style="border-top:2px solid #edf2f7;">
-              <td style="padding:10px 0; font-size:16px; color:#2d3748; font-weight:bold;">Nota Final:</td>
-              <td style="padding:10px 0; font-size:20px; font-weight:bold; color:${report.final_percentage >= 85 ? '#38a169' : '#e53e3e'};">
-                ${report.final_grade}/10 (${report.final_percentage}%)
+      <div style="font-family:Arial, sans-serif; color:#102a43; max-width:760px; margin:0 auto; background:#f8fafc; padding:18px;">
+        <div style="background:#ffffff; border:1px solid #d9e2ec; border-radius:8px; padding:18px;">
+          <p style="margin:0 0 12px 0;">Buen Día Estimados,</p>
+          <p style="margin:0 0 12px 0;">A continuación se presenta el resultado de la visita ${escapeHtml(visitType)} realizada:</p>
+
+          ${buildHeaderTable(report, scoreText)}
+
+          <h3 style="margin:18px 0 10px 0; color:#102a43;">Detalle de preguntas</h3>
+          ${questionDetails || '<p>Sin respuestas registradas.</p>'}
+
+          <h3 style="margin:18px 0 10px 0; color:#102a43;">Otras novedades</h3>
+          ${renderNoveltySection(finalAnswers)}
+
+          <h3 style="margin:18px 0 10px 0; color:#102a43;">Firmas</h3>
+          <table style="width:100%; border-collapse:collapse; font-size:14px;">
+            <tr>
+              <td style="width:50%; vertical-align:top; border:1px solid #d9e2ec; padding:10px;">
+                <strong>Firma Auditor:</strong><br/>
+                ${imageHtml(auditorSignatureUrl, 'Firma auditor') || '<p>Sin firma</p>'}
+                <p style="margin:6px 0 0 0;">${escapeHtml(report.auditor_name_snapshot || report.profiles?.full_name || 'Auditor')}</p>
+              </td>
+              <td style="width:50%; vertical-align:top; border:1px solid #d9e2ec; padding:10px;">
+                <strong>Firma Responsable:</strong><br/>
+                ${responsibleSignatureUrl ? imageHtml(responsibleSignatureUrl, 'Firma responsable') : '<p style="font-weight:700; color:#52606d;">Sin Firma</p>'}
+                <p style="margin:6px 0 0 0;">${escapeHtml(report.responsible_code ? `${report.responsible_code} · ${report.responsible_name_snapshot || 'Responsable'}` : report.responsible_name_snapshot || 'Responsable')}</p>
               </td>
             </tr>
           </table>
 
-          <h3 style="border-top:1px solid #edf2f7; padding-top:15px;">Evaluación Detallada</h3>
-          <div style="border:1px solid #e2e8f0; border-radius:6px; overflow:hidden;">
-            ${htmlAnswersList}
-          </div>
-
-          <p style="font-size:12px; color:#a0aec0; text-align:center; margin-top:25px;">
-            Este es un correo automático generado por el sistema Corporativo de Auditorías.
-          </p>
+          <p style="margin:18px 0 0 0;"><strong>Enviar:</strong> ${report.should_send ? 'SI' : 'NO'}</p>
         </div>
       </div>
     `
 
-    // 5. Enviar a la API REST de Resend incluyendo los binarios adjuntos
     const resendResponse = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -139,23 +355,31 @@ Deno.serve(async (req) => {
         'Authorization': `Bearer ${RESEND_API_KEY}`,
       },
       body: JSON.stringify({
-        from: 'Auditorias Corporativas <reportes@tu-dominio.com>', // Configura tu dominio verificado de Resend aquí
-        to: [report.profiles?.email || 'admin@tu-dominio.com'],
-        subject: `Informe de Auditoría Finalizado - Nota: ${report.final_grade}/10`,
+        from: RESEND_FROM,
+        to: [RESEND_TEST_TO || report.profiles?.email || 'admin@tu-dominio.com'],
+        subject,
         html: emailHtmlBody,
-        attachments: attachments // Inyección directa de las firmas e imágenes como recursos CID
       }),
     })
 
     const resendData = await resendResponse.json()
+    console.log('finalize-report:resend-response', {
+      status: resendResponse.status,
+      ok: resendResponse.ok,
+      data: resendData,
+    })
+    if (!resendResponse.ok) {
+      throw new Error(`Resend: ${JSON.stringify(resendData)}`)
+    }
 
     return new Response(JSON.stringify({ success: true, data: resendData }), {
       headers: { 'Content-Type': 'application/json', ...corsHeaders },
       status: 200,
     })
-
-  } catch (error: any) {
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error('finalize-report:error', { message })
+    return new Response(JSON.stringify({ success: false, error: message }), {
       headers: { 'Content-Type': 'application/json', ...corsHeaders },
       status: 500,
     })
