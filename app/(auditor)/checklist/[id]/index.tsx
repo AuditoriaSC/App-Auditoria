@@ -92,6 +92,16 @@ function requiresComplianceAnswer(type: QuestionType) {
   return type !== 'additional_novelty' && !isCountOnlyQuestion(type);
 }
 
+function isScoredQuestion(question: Question) {
+  const type = getQuestionType(question);
+  if (question.is_scored === false) return false;
+  return !['follow_up', 'additional_novelty', 'inventory', 'raw_material_count'].includes(type);
+}
+
+function formatPoints(points: number) {
+  return Number(points || 0).toFixed(2);
+}
+
 function buildInitialCountItems(question: Question): CountItem[] {
   const schema = Array.isArray(question.item_schema) ? question.item_schema : [];
   const items = schema
@@ -171,7 +181,9 @@ export default function ChecklistDinamicoPage() {
         .select('*')
         .eq('visit_type_id', visit_type_id)
         .eq('is_active', true)
-        .in('region', [String(region), 'Global']);
+        .in('region', [String(region), 'Global'])
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true });
 
       if (supabaseError) {
         setError(supabaseError.message);
@@ -421,7 +433,14 @@ export default function ChecklistDinamicoPage() {
 
         return (
           <View key={q.id} style={styles.card}>
-            <Text style={styles.questionText}>{index + 1}. {q.question_text}</Text>
+            <View style={styles.questionHeader}>
+              <Text style={styles.questionText}>{index + 1}. {q.question_text}</Text>
+              {isScoredQuestion(q) && (
+                <View style={styles.pointsBadge}>
+                  <Text style={styles.pointsBadgeText}>{formatPoints(q.score_points)} pts</Text>
+                </View>
+              )}
+            </View>
 
             {requiresComplianceAnswer(type) && (
               <View style={styles.radioGroup}>
@@ -616,7 +635,10 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: '900', color: '#111827' },
   subtitle: { fontSize: 13, color: '#64748b', marginTop: 5, marginBottom: 15 },
   card: { borderWidth: 1, borderColor: '#dde5eb', padding: 16, borderRadius: 8, backgroundColor: '#fff', marginTop: 14 },
-  questionText: { fontSize: 16, fontWeight: '900', color: '#111827', marginBottom: 12, lineHeight: 22 },
+  questionHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 12 },
+  questionText: { flex: 1, fontSize: 16, fontWeight: '900', color: '#111827', lineHeight: 22 },
+  pointsBadge: { minHeight: 28, borderRadius: 14, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ecfdf5', borderWidth: 1, borderColor: '#99f6e4' },
+  pointsBadgeText: { color: '#0f766e', fontWeight: '900', fontSize: 12 },
   radioGroup: { flexDirection: 'row', gap: 10, marginBottom: 14 },
   radioButton: { flex: 1, minHeight: 46, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc' },
   radioActiveCumple: { backgroundColor: '#0f766e', borderColor: '#0f766e' },

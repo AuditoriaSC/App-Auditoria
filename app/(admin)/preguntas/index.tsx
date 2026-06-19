@@ -35,7 +35,8 @@ export default function GestionPreguntasPage() {
     const { data, error } = await supabase
       .from('checklist_questions')
       .select('*')
-      .order('created_at', { ascending: false });
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
     
     if (!error && data) setQuestions(data);
     setLoading(false);

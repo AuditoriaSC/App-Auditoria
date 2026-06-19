@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { ActivityIndicator, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { Picker } from '@react-native-picker/picker';
 import { supabase } from '../../../src/supabaseClient';
 import { listActiveResponsibles, searchResponsibles } from '../../../src/services/responsiblesService';
 
@@ -103,7 +102,8 @@ export default function NuevaAuditoriaPage() {
     let localQueryBuilder = supabase
       .from('locales')
       .select('codigo_interno, nombre_local, region')
-      .order('nombre_local', { ascending: true });
+      .order('sort_order', { ascending: true })
+      .order('codigo_interno', { ascending: true });
 
     if (profileData.role !== 'super_admin' && profileData.region !== 'Global') {
       localQueryBuilder = localQueryBuilder.eq('region', profileData.region);
@@ -287,8 +287,7 @@ export default function NuevaAuditoriaPage() {
   return (
     <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>Flujo de visitas</Text>
-        <Text style={styles.title}>Nueva auditoria</Text>
+        <Text style={styles.title}>Creacion de visita</Text>
         <Text style={styles.subtitle}>Configura la visita antes de abrir el checklist correspondiente.</Text>
       </View>
 
@@ -300,13 +299,20 @@ export default function NuevaAuditoriaPage() {
 
       <FormSection step="1" title="Tipo, fecha y hora">
         <Text style={styles.label}>Tipo de visita</Text>
-        <View style={styles.pickerShell}>
-          <Picker selectedValue={tipoVisita} onValueChange={setTipoVisita}>
-            <Picker.Item label="Selecciona el tipo" value="" />
-            {visitTypes.map((type) => (
-              <Picker.Item key={type} label={type} value={type} />
-            ))}
-          </Picker>
+        <View style={styles.visitTypeSegment}>
+          {visitTypes.map((type) => {
+            const active = tipoVisita === type;
+            return (
+              <TouchableOpacity
+                key={type}
+                style={[styles.visitTypeButton, active && styles.visitTypeButtonActive]}
+                onPress={() => setTipoVisita(type)}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.visitTypeText, active && styles.visitTypeTextActive]}>{type}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         <View style={styles.dateTimeGrid}>
@@ -656,8 +662,7 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: '#f8fafc' },
   loadingText: { marginTop: 8, color: '#64748b' },
   header: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, padding: 18, marginBottom: 14 },
-  eyebrow: { fontSize: 12, color: '#0f766e', fontWeight: '900', textTransform: 'uppercase' },
-  title: { fontSize: 25, fontWeight: '900', color: '#111827', marginTop: 4 },
+  title: { fontSize: 25, fontWeight: '900', color: '#111827' },
   subtitle: { fontSize: 13, color: '#64748b', marginTop: 5, lineHeight: 18 },
   messageBox: { backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fed7aa', borderRadius: 8, padding: 12, marginBottom: 14 },
   messageText: { color: '#9a3412', fontWeight: '700' },
@@ -667,7 +672,11 @@ const styles = StyleSheet.create({
   stepText: { color: '#0f766e', fontWeight: '900' },
   sectionTitle: { fontSize: 16, fontWeight: '900', color: '#111827' },
   label: { fontSize: 12, fontWeight: '900', color: '#475569', marginBottom: 6 },
-  pickerShell: { minHeight: 52, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, overflow: 'hidden', backgroundColor: '#fff', marginBottom: 14 },
+  visitTypeSegment: { flexDirection: 'row', gap: 8, borderWidth: 1, borderColor: '#d7e1e7', borderRadius: 10, padding: 5, backgroundColor: '#f8fafc', marginBottom: 14 },
+  visitTypeButton: { flex: 1, minHeight: 42, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' },
+  visitTypeButtonActive: { backgroundColor: '#0f766e' },
+  visitTypeText: { color: '#475569', fontWeight: '900' },
+  visitTypeTextActive: { color: '#fff' },
   dateTimeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 2 },
   dateTimeItem: { flex: 1, minWidth: 145 },
   clockButton: { minHeight: 62, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, backgroundColor: '#f8fafc', paddingHorizontal: 12, justifyContent: 'center' },

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../../src/supabaseClient';
@@ -10,16 +10,26 @@ type ProfileRow = {
   region: string;
 };
 
+type VisibleStatus = 'EN_PROCESO' | 'FINALIZADA' | 'ENVIADA';
+
 type VisitRow = {
   id: string;
   region: string;
   visit_type_id: string;
-  responsible_name: string;
-  auditor_team: string;
+  responsible_name: string | null;
+  auditor_team: string | null;
   local_codigo: string | null;
-  status: 'draft' | 'finalized';
-  final_grade: number;
-  final_percentage: number;
+  local_code_snapshot: string | null;
+  local_name_snapshot: string | null;
+  responsible_code: string | null;
+  responsible_name_snapshot: string | null;
+  auditor_name_snapshot: string | null;
+  status: string;
+  should_send: boolean | null;
+  start_date: string | null;
+  start_time: string | null;
+  final_grade: number | null;
+  final_percentage: number | null;
   created_at: string;
   updated_at: string;
   locales?: { nombre_local: string | null } | { nombre_local: string | null }[] | null;
@@ -40,7 +50,7 @@ type SummaryRow = {
 };
 
 const visitTypes = ['TODOS', 'Sabatina', 'Nocturna'];
-const statusOptions = ['TODOS', 'draft', 'finalized'];
+const statusOptions = ['TODOS', 'EN_PROCESO', 'FINALIZADA', 'ENVIADA'];
 const regions = ['TODAS', 'Costa', 'Sierra'];
 
 const round = (value: number) => Math.round(value * 100) / 100;
@@ -53,6 +63,7 @@ export default function AdminDashboard() {
   const [regionFilter, setRegionFilter] = useState('TODAS');
   const [visitTypeFilter, setVisitTypeFilter] = useState('TODOS');
   const [statusFilter, setStatusFilter] = useState('TODOS');
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,7 +101,9 @@ export default function AdminDashboard() {
 
     const { data: visitRows, error: visitsError } = await supabase
       .from('audit_reports')
-      .select('id, region, visit_type_id, responsible_name, auditor_team, local_codigo, status, final_grade, final_percentage, created_at, updated_at, locales(nombre_local), profiles(full_name)')
+      .select('id, region, visit_type_id, responsible_name, auditor_team, local_codigo, local_code_snapshot, local_name_snapshot, responsible_code, responsible_name_snapshot, auditor_name_snapshot, status, should_send, start_date, start_time, final_grade, final_percentage, created_at, updated_at, locales(nombre_local), profiles(full_name)')
+      .order('start_date', { ascending: false })
+      .order('start_time', { ascending: false })
       .order('created_at', { ascending: false });
 
     if (visitsError) {
@@ -123,6 +136,8 @@ export default function AdminDashboard() {
   };
 
   const visibleVisits = useMemo(() => {
+    const term = normalize(searchQuery);
+
     return visits.filter((visit) => {
       const permittedRegion =
         profile?.role === 'super_admin' || profile?.region === 'Global'
@@ -131,11 +146,14 @@ export default function AdminDashboard() {
 
       const matchesRegion = permittedRegion === 'TODAS' || visit.region === permittedRegion;
       const matchesType = visitTypeFilter === 'TODOS' || visit.visit_type_id === visitTypeFilter;
-      const matchesStatus = statusFilter === 'TODOS' || visit.status === statusFilter;
+      const matchesStatus = statusFilter === 'TODOS' || getVisibleStatus(visit) === statusFilter;
+      const matchesSearch =
+        !term ||
+        normalize(`${getLocalName(visit)} ${getLocalCode(visit)} ${getAuditorName(visit)} ${getResponsibleName(visit)}`).includes(term);
 
-      return matchesRegion && matchesType && matchesStatus;
+      return matchesRegion && matchesType && matchesStatus && matchesSearch;
     });
-  }, [profile, regionFilter, statusFilter, visitTypeFilter, visits]);
+  }, [profile, regionFilter, searchQuery, statusFilter, visitTypeFilter, visits]);
 
   const incidentCountByReport = useMemo(() => {
     return answers.reduce<Record<string, number>>((acc, answer) => {
@@ -146,9 +164,9 @@ export default function AdminDashboard() {
     }, {});
   }, [answers]);
 
-  const finalizedVisits = visibleVisits.filter((visit) => visit.status === 'finalized');
+  const finalizedVisits = visibleVisits.filter((visit) => getVisibleStatus(visit) !== 'EN_PROCESO');
   const average = finalizedVisits.length > 0
-    ? round(finalizedVisits.reduce((total, visit) => total + Number(visit.final_percentage || 0), 0) / finalizedVisits.length)
+    ? round(finalizedVisits.reduce((total, visit) => total + Number(visit.final_grade || 0), 0) / finalizedVisits.length)
     : 0;
   const totalIncidents = visibleVisits.reduce((total, visit) => total + (incidentCountByReport[visit.id] || 0), 0);
 
@@ -156,6 +174,38 @@ export default function AdminDashboard() {
     () => buildSummary(visibleVisits, incidentCountByReport, (visit) => visit.visit_type_id),
     [incidentCountByReport, visibleVisits],
   );
+
+  const canDeleteVisits = profile?.role === 'admin' || profile?.role === 'super_admin';
+
+  const handleDeleteVisit = async (visit: VisitRow) => {
+    const visibleStatus = getVisibleStatus(visit);
+    if (!canDeleteVisits || visibleStatus === 'ENVIADA') return;
+
+    const local = getLocalName(visit);
+    const confirmed = typeof window === 'undefined'
+      ? true
+      : window.confirm(`Eliminar la visita de ${local}? Esta accion no se puede deshacer.`);
+
+    if (!confirmed) return;
+
+    const { error: deleteError } = await supabase
+      .from('audit_reports')
+      .delete()
+      .eq('id', visit.id);
+
+    if (deleteError) {
+      alert('No se pudo borrar la visita: ' + deleteError.message);
+      return;
+    }
+
+    setVisits((current) => current.filter((item) => item.id !== visit.id));
+    setAnswers((current) => current.filter((answer) => answer.report_id !== visit.id));
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.replace('/login');
+  };
 
   if (loading) {
     return (
@@ -177,7 +227,7 @@ export default function AdminDashboard() {
     );
   }
 
-  const canChooseRegion = profile?.role === 'super_admin' || profile?.region === 'Global';
+  const isSuperAdmin = profile?.role === 'super_admin' || profile?.region === 'Global';
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -186,24 +236,39 @@ export default function AdminDashboard() {
           <Text style={styles.welcome}>Bienvenido, {profile?.full_name || 'Usuario'}</Text>
           <Text style={styles.scope}>{formatRole(profile?.role)} · {getRegionScope(profile)}</Text>
         </View>
-        <TouchableOpacity style={styles.primaryButton} onPress={() => router.push('/nueva-auditoria')}>
-          <Text style={styles.primaryButtonText}>Nueva visita</Text>
-        </TouchableOpacity>
+        <View style={styles.heroActions}>
+          <TouchableOpacity style={styles.secondaryButton} onPress={handleSignOut}>
+            <Text style={styles.secondaryButtonText}>Cerrar sesion</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.primaryButton} onPress={() => router.push('/nueva-auditoria')}>
+            <Text style={styles.primaryButtonText}>Nueva visita</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.summaryGrid}>
         <SummaryCard label="Visitas visibles" value={String(visibleVisits.length)} />
         <SummaryCard label="Finalizadas" value={String(finalizedVisits.length)} />
-        <SummaryCard label="Promedio" value={`${average.toFixed(2)}%`} />
+        <SummaryCard label="Promedio" value={average.toFixed(2)} />
         <SummaryCard label="Incidencias" value={String(totalIncidents)} />
       </View>
 
       <View style={styles.filterBand}>
-        <FilterSelect label="Tipo de visita" value={visitTypeFilter} onChange={setVisitTypeFilter} options={visitTypes} />
-        <FilterSelect label="Estado" value={statusFilter} onChange={setStatusFilter} options={statusOptions} />
-        {canChooseRegion && (
-          <FilterSelect label="Region" value={regionFilter} onChange={setRegionFilter} options={regions} />
-        )}
+        <View style={styles.filterRow}>
+          <FilterSelect label="Tipo de visita" value={visitTypeFilter} onChange={setVisitTypeFilter} options={visitTypes} />
+          {isSuperAdmin && <FilterSelect label="Estado" value={statusFilter} onChange={setStatusFilter} options={statusOptions} />}
+          {isSuperAdmin && <FilterSelect label="Region" value={regionFilter} onChange={setRegionFilter} options={regions} />}
+        </View>
+        <View style={styles.searchItem}>
+          <Text style={styles.label}>Buscar</Text>
+          <TextInput
+            style={styles.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Local, codigo, auditor o responsable"
+            placeholderTextColor="#94a3b8"
+          />
+        </View>
       </View>
 
       <View style={styles.sectionHeader}>
@@ -223,14 +288,15 @@ export default function AdminDashboard() {
           <VisitCard
             key={visit.id}
             visit={visit}
-            incidents={incidentCountByReport[visit.id] || 0}
+            canDelete={canDeleteVisits && getVisibleStatus(visit) !== 'ENVIADA'}
+            onDelete={() => handleDeleteVisit(visit)}
             onPress={() => {
-              if (visit.status === 'draft') {
+              if (visit.status !== 'finalized') {
                 router.push({
                   pathname: `/checklist/${visit.id}`,
                   params: {
                     region: visit.region,
-                    local_id: visit.local_codigo || '',
+                    local_id: getLocalCode(visit),
                     visit_type_id: visit.visit_type_id,
                   },
                 });
@@ -251,7 +317,7 @@ export default function AdminDashboard() {
               <Text style={styles.summaryMeta}>{row.reports} visitas</Text>
             </View>
             <View style={styles.summaryNumbers}>
-              <Text style={styles.summaryAverage}>{row.average.toFixed(2)}%</Text>
+              <Text style={styles.summaryAverage}>{row.average.toFixed(2)}</Text>
               <Text style={styles.summaryIncident}>{row.incidents} inc.</Text>
             </View>
           </View>
@@ -275,7 +341,7 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
     <View style={styles.filterItem}>
       <Text style={styles.label}>{label}</Text>
       <View style={styles.pickerShell}>
-        <Picker selectedValue={value} onValueChange={onChange}>
+        <Picker selectedValue={value} onValueChange={onChange} style={styles.picker}>
           {options.map((option) => (
             <Picker.Item key={option} label={formatFilterLabel(option)} value={option} />
           ))}
@@ -285,60 +351,47 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
   );
 }
 
-function VisitCard({ visit, incidents, onPress }: { visit: VisitRow; incidents: number; onPress: () => void }) {
-  const local = getRelationName(visit.locales, 'nombre_local') || 'Local sin nombre';
-  const auditor = getRelationName(visit.profiles, 'full_name') || visit.auditor_team || 'Auditor no asignado';
-  const start = new Date(visit.created_at);
+function VisitCard({ visit, canDelete, onDelete, onPress }: { visit: VisitRow; canDelete: boolean; onDelete: () => void; onPress: () => void }) {
+  const visibleStatus = getVisibleStatus(visit);
+  const hasGrade = visibleStatus !== 'EN_PROCESO' && visit.final_grade !== null && visit.final_grade !== undefined;
 
   return (
-    <TouchableOpacity
-      style={[styles.visitCard, visit.status === 'finalized' && styles.visitCardFinalized]}
-      onPress={onPress}
-      disabled={visit.status !== 'draft'}
-      activeOpacity={0.82}
-    >
+    <TouchableOpacity style={styles.visitCard} onPress={onPress} activeOpacity={0.82}>
       <View style={styles.cardTop}>
         <View style={styles.cardTitleGroup}>
-          <Text style={styles.visitTitle}>{local}</Text>
-          <Text style={styles.visitSubtitle}>{visit.local_codigo || 'Sin codigo'} · {visit.region}</Text>
+          <Text style={styles.visitDate}>{formatVisitDateTime(visit)}</Text>
+          <Text style={styles.visitTitle}>{getLocalName(visit)}</Text>
+          <Text style={styles.visitSubtitle}>{getLocalCode(visit) || 'Sin codigo'} · {visit.visit_type_id}</Text>
         </View>
-        <StatusBadge status={visit.status} />
-      </View>
-
-      <View style={styles.detailGrid}>
-        <Detail label="Tipo" value={visit.visit_type_id} />
-        <Detail label="Inicio" value={`${formatDate(start)} · ${formatTime(start)}`} />
-        <Detail label="Auditor" value={auditor} />
-        <Detail label="Responsable" value={visit.responsible_name || 'Sin responsable'} />
+        <StatusBadge status={visibleStatus} />
       </View>
 
       <View style={styles.cardFooter}>
-        <Text style={styles.footerMetric}>
-          {visit.status === 'finalized'
-            ? `Nota ${Number(visit.final_grade || 0).toFixed(2)} / 10 (${Number(visit.final_percentage || 0).toFixed(2)}%)`
-            : 'Checklist pendiente'}
-        </Text>
-        <Text style={styles.footerIncident}>{incidents} incidencias</Text>
+        <Text style={styles.footerMetric}>{getAuditorName(visit)}</Text>
+        <View style={styles.footerActions}>
+          <Text style={styles.footerGrade}>{hasGrade ? `Calificacion ${Number(visit.final_grade || 0).toFixed(2)} / 10` : 'Sin calificacion'}</Text>
+          {canDelete && (
+            <TouchableOpacity
+              style={styles.deleteButton}
+              onPress={(event) => {
+                event.stopPropagation();
+                onDelete();
+              }}
+            >
+              <Text style={styles.deleteButtonText}>Borrar</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
     </TouchableOpacity>
   );
 }
 
-function Detail({ label, value }: { label: string; value: string }) {
+function StatusBadge({ status }: { status: VisibleStatus }) {
   return (
-    <View style={styles.detailItem}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue}>{value}</Text>
-    </View>
-  );
-}
-
-function StatusBadge({ status }: { status: VisitRow['status'] }) {
-  const finalized = status === 'finalized';
-  return (
-    <View style={[styles.badge, finalized ? styles.badgeFinalized : styles.badgeDraft]}>
-      <Text style={[styles.badgeText, finalized ? styles.badgeTextFinalized : styles.badgeTextDraft]}>
-        {finalized ? 'Finalizada' : 'Borrador'}
+    <View style={[styles.badge, status === 'ENVIADA' ? styles.badgeSent : status === 'FINALIZADA' ? styles.badgeFinalized : styles.badgeProcess]}>
+      <Text style={[styles.badgeText, status === 'ENVIADA' ? styles.badgeTextSent : status === 'FINALIZADA' ? styles.badgeTextFinalized : styles.badgeTextProcess]}>
+        {formatVisibleStatus(status)}
       </Text>
     </View>
   );
@@ -356,8 +409,8 @@ function buildSummary(
     const current = groups.get(label) || { total: 0, reports: 0, incidents: 0, finalized: 0 };
     current.reports += 1;
     current.incidents += incidents[visit.id] || 0;
-    if (visit.status === 'finalized') {
-      current.total += Number(visit.final_percentage || 0);
+    if (getVisibleStatus(visit) !== 'EN_PROCESO') {
+      current.total += Number(visit.final_grade || 0);
       current.finalized += 1;
     }
     groups.set(label, current);
@@ -377,6 +430,32 @@ function getRelationName<T extends string>(value: Record<T, string | null> | Rec
   return row?.[key] || null;
 }
 
+function getVisibleStatus(visit: VisitRow): VisibleStatus {
+  if (visit.status !== 'finalized') return 'EN_PROCESO';
+  return visit.should_send ? 'ENVIADA' : 'FINALIZADA';
+}
+
+function getLocalName(visit: VisitRow) {
+  return visit.local_name_snapshot || getRelationName(visit.locales, 'nombre_local') || 'Local sin nombre';
+}
+
+function getLocalCode(visit: VisitRow) {
+  return visit.local_code_snapshot || visit.local_codigo || '';
+}
+
+function getAuditorName(visit: VisitRow) {
+  return visit.auditor_name_snapshot || getRelationName(visit.profiles, 'full_name') || visit.auditor_team || 'Auditor no asignado';
+}
+
+function getResponsibleName(visit: VisitRow) {
+  const name = visit.responsible_name_snapshot || visit.responsible_name || '';
+  return visit.responsible_code ? `${visit.responsible_code} ${name}` : name;
+}
+
+function normalize(value: string) {
+  return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
 function getRegionScope(profile: ProfileRow | null) {
   if (!profile) return 'Sin region';
   if (profile.role === 'super_admin') return 'Todas las regiones';
@@ -392,9 +471,30 @@ function formatRole(role?: string) {
 function formatFilterLabel(value: string) {
   if (value === 'TODOS') return 'Todos';
   if (value === 'TODAS') return 'Todas';
-  if (value === 'draft') return 'Borrador';
-  if (value === 'finalized') return 'Finalizada';
+  if (value === 'EN_PROCESO') return 'En proceso';
+  if (value === 'FINALIZADA') return 'Finalizada';
+  if (value === 'ENVIADA') return 'Enviada';
   return value;
+}
+
+function formatVisibleStatus(status: VisibleStatus) {
+  if (status === 'EN_PROCESO') return 'EN PROCESO';
+  if (status === 'FINALIZADA') return 'FINALIZADA';
+  return 'ENVIADA';
+}
+
+function formatVisitDateTime(visit: VisitRow) {
+  if (visit.start_date) {
+    return `${formatDateString(visit.start_date)}${visit.start_time ? ` · ${String(visit.start_time).slice(0, 5)}` : ''}`;
+  }
+  const created = new Date(visit.created_at);
+  return `${formatDate(created)} · ${formatTime(created)}`;
+}
+
+function formatDateString(value: string) {
+  const [year, month, day] = value.split('-');
+  if (!year || !month || !day) return value;
+  return `${day}/${month}/${year}`;
 }
 
 function formatDate(date: Date) {
@@ -418,39 +518,47 @@ const styles = StyleSheet.create({
   scope: { marginTop: 4, fontSize: 13, color: '#64748b', fontWeight: '600' },
   primaryButton: { backgroundColor: '#0f766e', borderRadius: 7, paddingVertical: 13, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center' },
   primaryButtonText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  heroActions: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' },
+  secondaryButton: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, paddingVertical: 13, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
+  secondaryButtonText: { color: '#334155', fontWeight: '900', fontSize: 14 },
   summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },
   summaryCard: { flexGrow: 1, flexBasis: 150, backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, padding: 14 },
   summaryCardLabel: { fontSize: 12, color: '#64748b', fontWeight: '700' },
   summaryCardValue: { fontSize: 22, color: '#111827', fontWeight: '900', marginTop: 6 },
   filterBand: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, padding: 12, marginBottom: 14, gap: 10 },
-  filterItem: { minWidth: 180, flex: 1 },
+  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' },
+  filterItem: { minWidth: 150, flex: 1 },
+  searchItem: { width: '100%' },
   label: { fontSize: 12, fontWeight: '800', color: '#475569', marginBottom: 6 },
-  pickerShell: { minHeight: 48, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, overflow: 'hidden', backgroundColor: '#fff' },
+  pickerShell: { height: 42, borderWidth: 1, borderColor: '#d7e1e7', borderRadius: 10, overflow: 'hidden', backgroundColor: '#f8fafc', justifyContent: 'center' },
+  picker: { height: 42, color: '#111827', fontWeight: '700', backgroundColor: '#f8fafc' },
+  searchInput: { minHeight: 44, borderWidth: 1, borderColor: '#d7e1e7', borderRadius: 10, paddingHorizontal: 12, backgroundColor: '#fff', color: '#111827', fontWeight: '700' },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, marginBottom: 10 },
   sectionTitle: { fontSize: 17, color: '#111827', fontWeight: '900' },
   linkText: { color: '#0f766e', fontWeight: '800' },
   emptyCard: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, padding: 18, marginBottom: 14 },
   emptyTitle: { fontSize: 16, fontWeight: '800', color: '#111827' },
   emptyText: { marginTop: 4, color: '#64748b' },
-  visitCard: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#d7e1e7', borderRadius: 8, padding: 16, marginBottom: 12 },
-  visitCardFinalized: { borderColor: '#bbf7d0' },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', marginBottom: 12 },
+  visitCard: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#d7e1e7', borderRadius: 8, padding: 13, marginBottom: 9 },
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' },
   cardTitleGroup: { flex: 1 },
-  visitTitle: { fontSize: 17, fontWeight: '900', color: '#111827' },
-  visitSubtitle: { marginTop: 3, fontSize: 12, color: '#64748b', fontWeight: '700' },
+  visitDate: { fontSize: 12, color: '#64748b', fontWeight: '800', marginBottom: 3 },
+  visitTitle: { fontSize: 16, fontWeight: '900', color: '#111827' },
+  visitSubtitle: { marginTop: 2, fontSize: 12, color: '#64748b', fontWeight: '700' },
   badge: { borderRadius: 999, paddingVertical: 5, paddingHorizontal: 10 },
-  badgeDraft: { backgroundColor: '#fef3c7' },
-  badgeFinalized: { backgroundColor: '#dcfce7' },
+  badgeProcess: { backgroundColor: '#fef3c7' },
+  badgeFinalized: { backgroundColor: '#dbeafe' },
+  badgeSent: { backgroundColor: '#dcfce7' },
   badgeText: { fontSize: 11, fontWeight: '900' },
-  badgeTextDraft: { color: '#92400e' },
-  badgeTextFinalized: { color: '#166534' },
-  detailGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  detailItem: { flexBasis: '47%', flexGrow: 1, minHeight: 54, backgroundColor: '#f8fafc', borderRadius: 7, padding: 10 },
-  detailLabel: { fontSize: 11, color: '#64748b', fontWeight: '800' },
-  detailValue: { marginTop: 4, fontSize: 13, color: '#111827', fontWeight: '700' },
-  cardFooter: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#edf2f7', flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
-  footerMetric: { color: '#0f172a', fontWeight: '800' },
-  footerIncident: { color: '#b91c1c', fontWeight: '800' },
+  badgeTextProcess: { color: '#92400e' },
+  badgeTextFinalized: { color: '#1d4ed8' },
+  badgeTextSent: { color: '#166534' },
+  cardFooter: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#edf2f7', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
+  footerMetric: { flex: 1, color: '#0f172a', fontWeight: '800' },
+  footerGrade: { color: '#0f766e', fontWeight: '900' },
+  footerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  deleteButton: { borderWidth: 1, borderColor: '#fecaca', backgroundColor: '#fff1f2', borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10 },
+  deleteButtonText: { color: '#be123c', fontSize: 12, fontWeight: '900' },
   summaryList: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, paddingHorizontal: 14, marginBottom: 18 },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#edf2f7', paddingVertical: 12 },
   summaryLabel: { color: '#111827', fontWeight: '800' },

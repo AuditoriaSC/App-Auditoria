@@ -118,7 +118,10 @@ function possiblePoints(answer: AnswerRow) {
 
 function imageHtml(url: string | null | undefined, alt: string) {
   if (!url) return ''
-  return `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" style="max-width:220px; max-height:160px; object-fit:contain; border:1px solid #d9e2ec; border-radius:6px; margin:6px 8px 6px 0; background:#fff;" />`
+  const safeUrl = escapeHtml(url)
+  return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block; margin:8px 12px 8px 0; text-decoration:none;">
+    <img src="${safeUrl}" alt="${escapeHtml(alt)}" style="width:100%; max-width:450px; max-height:350px; object-fit:contain; border:1px solid #d9e2ec; border-radius:10px; background:#fff; display:block;" />
+  </a>`
 }
 
 function numericRows(answer: AnswerRow) {
@@ -187,19 +190,19 @@ function renderNumericTable(title: string, headers: [string, string, string, str
 
   return `
     <p style="margin:10px 0 6px 0; font-weight:700; color:#243b53;">${escapeHtml(title)}</p>
-    <table style="width:100%; border-collapse:collapse; font-size:13px; margin-bottom:8px;">
+    <table style="width:100%; border-collapse:collapse; font-size:15px; margin-bottom:10px;">
       <thead>
         <tr style="background:#eef2f7;">
-          ${headers.map((header) => `<th style="border:1px solid #d9e2ec; padding:7px; text-align:left;">${escapeHtml(header)}</th>`).join('')}
+          ${headers.map((header) => `<th style="border:1px solid #d9e2ec; padding:9px; text-align:left;">${escapeHtml(header)}</th>`).join('')}
         </tr>
       </thead>
       <tbody>
         ${rows.map((row) => `
           <tr>
-            <td style="border:1px solid #d9e2ec; padding:7px;">${escapeHtml(row.description)}</td>
-            <td style="border:1px solid #d9e2ec; padding:7px;">${formatNumber(row.theoretical)}</td>
-            <td style="border:1px solid #d9e2ec; padding:7px;">${formatNumber(row.physical)}</td>
-            <td style="border:1px solid #d9e2ec; padding:7px;">${formatNumber(row.difference)}</td>
+            <td style="border:1px solid #d9e2ec; padding:9px;">${escapeHtml(row.description)}</td>
+            <td style="border:1px solid #d9e2ec; padding:9px;">${formatNumber(row.theoretical)}</td>
+            <td style="border:1px solid #d9e2ec; padding:9px;">${formatNumber(row.physical)}</td>
+            <td style="border:1px solid #d9e2ec; padding:9px;">${formatNumber(row.difference)}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -212,18 +215,18 @@ function renderCrossTable(title: string, rows: ReturnType<typeof rawMaterialCros
 
   return `
     <p style="margin:10px 0 6px 0; font-weight:700; color:#243b53;">${escapeHtml(title)}</p>
-    <table style="width:100%; border-collapse:collapse; font-size:13px; margin-bottom:8px;">
+    <table style="width:100%; border-collapse:collapse; font-size:15px; margin-bottom:10px;">
       <thead>
         <tr style="background:#eef2f7;">
-          <th style="border:1px solid #d9e2ec; padding:7px; text-align:left;">Cruce</th>
-          <th style="border:1px solid #d9e2ec; padding:7px; text-align:left;">Resultado</th>
+          <th style="border:1px solid #d9e2ec; padding:9px; text-align:left;">Cruce</th>
+          <th style="border:1px solid #d9e2ec; padding:9px; text-align:left;">Resultado</th>
         </tr>
       </thead>
       <tbody>
         ${rows.map((row) => `
           <tr>
-            <td style="border:1px solid #d9e2ec; padding:7px;">${escapeHtml(row.description)}</td>
-            <td style="border:1px solid #d9e2ec; padding:7px;">${formatNumber(row.result)}</td>
+            <td style="border:1px solid #d9e2ec; padding:9px;">${escapeHtml(row.description)}</td>
+            <td style="border:1px solid #d9e2ec; padding:9px;">${formatNumber(row.result)}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -312,7 +315,7 @@ function renderNoveltySection(answers: AnswerRow[]) {
   }
 
   return novelties.map((answer, index) => `
-    <div style="border:1px solid #d9e2ec; border-radius:8px; padding:10px; margin-bottom:8px;">
+    <div style="border:1px solid #d9e2ec; border-radius:8px; padding:16px; margin-bottom:10px;">
       <p style="margin:0 0 6px 0;"><strong>Novedad ${index + 1}:</strong> ${escapeHtml(answer.observation || 'Sin texto')}</p>
       ${imageHtml(answer.evidence_url, `Novedad ${index + 1}`)}
     </div>
@@ -337,7 +340,7 @@ function buildHeaderTable(report: ReportRow, scoreText: string) {
   ]
 
   return `
-    <table style="width:100%; border-collapse:collapse; margin:14px 0 18px 0; font-size:14px;">
+    <table style="width:100%; border-collapse:collapse; margin:14px 0 18px 0; font-size:16px;">
       <tbody>
         ${rows.map(([label, value]) => `
           <tr>
@@ -409,8 +412,8 @@ Deno.serve(async (req) => {
       .join('')
 
     const emailHtmlBody = `
-      <div style="font-family:Arial, sans-serif; color:#102a43; max-width:760px; margin:0 auto; background:#f8fafc; padding:18px;">
-        <div style="background:#ffffff; border:1px solid #d9e2ec; border-radius:8px; padding:18px;">
+      <div style="font-family:Arial, sans-serif; color:#102a43; max-width:1040px; margin:0 auto; background:#f8fafc; padding:28px; font-size:16px; line-height:1.55;">
+        <div style="background:#ffffff; border:1px solid #d9e2ec; border-radius:12px; padding:28px;">
           <p style="margin:0 0 12px 0;">Buen Día Estimados,</p>
           <p style="margin:0 0 12px 0;">A continuación se presenta el resultado de la visita ${escapeHtml(visitType)} realizada:</p>
 
@@ -423,14 +426,14 @@ Deno.serve(async (req) => {
           ${renderNoveltySection(finalAnswers)}
 
           <h3 style="margin:18px 0 10px 0; color:#102a43;">Firmas</h3>
-          <table style="width:100%; border-collapse:collapse; font-size:14px;">
+          <table style="width:100%; border-collapse:collapse; font-size:16px;">
             <tr>
-              <td style="width:50%; vertical-align:top; border:1px solid #d9e2ec; padding:10px;">
+              <td style="width:50%; vertical-align:top; border:1px solid #d9e2ec; padding:16px;">
                 <strong>Firma Auditor:</strong><br/>
                 ${imageHtml(auditorSignatureUrl, 'Firma auditor') || '<p>Sin firma</p>'}
                 <p style="margin:6px 0 0 0;">${escapeHtml(report.auditor_name_snapshot || report.profiles?.full_name || 'Auditor')}</p>
               </td>
-              <td style="width:50%; vertical-align:top; border:1px solid #d9e2ec; padding:10px;">
+              <td style="width:50%; vertical-align:top; border:1px solid #d9e2ec; padding:16px;">
                 <strong>Firma Responsable:</strong><br/>
                 ${responsibleSignatureUrl ? imageHtml(responsibleSignatureUrl, 'Firma responsable') : '<p style="font-weight:700; color:#52606d;">Sin Firma</p>'}
                 <p style="margin:6px 0 0 0;">${escapeHtml(report.responsible_code ? `${report.responsible_code} · ${report.responsible_name_snapshot || 'Responsable'}` : report.responsible_name_snapshot || 'Responsable')}</p>
@@ -480,3 +483,4 @@ Deno.serve(async (req) => {
     })
   }
 })
+

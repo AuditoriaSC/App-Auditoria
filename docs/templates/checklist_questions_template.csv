@@ -1,33 +1,33 @@
-question_text;region;visit_type_id;score_points;is_active;evidence_required;question_type;is_scored;requires_observation;requires_observation_on_fail;requires_evidence;min_evidence;max_evidence;numeric_mode;item_schema
-Usos de metodos de rotacion MP/PT;Global;Sabatina;1.00;true;false;compliance;true;false;true;false;0;2;;[]
-Revision Depositos Pendientes;Global;Sabatina;0.50;true;false;pending_deposit;true;false;true;false;0;2;shift_values;[]
-Evaluacion control de Bajas MP/PT;Global;Sabatina;2.00;true;false;compliance;true;false;true;false;0;2;;[]
-Verificacion de Bajas anticipadas;Global;Sabatina;0.5;true;false;compliance;true;false;true;false;0;2;;[]
-arqueo de Efectivo Caja Chica;Global;Sabatina;0.75;true;false;cash_count;true;false;true;false;0;2;cash_difference;[]
-arqueo de Efectivo Caja General;Global;Sabatina;1.00;true;false;cash_count;true;false;true;false;0;2;cash_difference;[]
-Inventario de Vasos Pet y Termicos;Global;Sabatina;1.00;true;false;cup_count;true;false;true;false;0;2;multi_item_difference;"[{""label"":""Vaso 4 oz""},{""label"":""Vaso 9 oz""},{""label"":""Vaso 12 oz""},{""label"":""Vaso 12 oz PET""},{""label"":""Vaso 16 oz PET""},{""label"":""Vaso 20 oz PET""},{""label"":""Vaso 10 oz RAT""}]"
-arqueo de MP;Global;Sabatina;0.00;true;false;raw_material_count;false;false;false;false;0;0;multi_item_difference;"[{""label"":""Leche de Avena"",""cross_group"":""Leches vegetales"",""conversion_factor"":1},{""label"":""Leche de Almendras"",""cross_group"":""Leches vegetales"",""conversion_factor"":1},{""label"":""Tapas Domo 12 Oz Pet""},{""label"":""Tapa Domo 16 Oz Pet""},{""label"":""Tapa Domo 20 Oz Pet""}]"
-Inventario de Producto Terminado;Global;Sabatina;1.00;true;false;compliance;true;false;true;false;0;2;;[]
-autorizacion de Traspasos ;Global;Sabatina;0.25;true;false;compliance;true;false;true;false;0;2;;[]
-Evaluacion de Stocks en 0;Global;Sabatina;1.00;true;false;compliance;true;false;true;false;0;2;;[]
-Extraccion Cafe y Shot (Peso y Tiempo);Global;Sabatina;1.00;true;false;compliance;true;false;true;false;0;3;;[]
-La materia prima y la formula de matcha se almacenan en refrigeracion continua;Global;Sabatina;0.00;true;false;follow_up;false;false;false;false;0;0;;[]
-Se asegura que la baja diaria de las formulas sobrantes se ejecute al finalizar la jornada (o a las 05:00 en locales 24 horas), evitando mantener formulas con mas de un dia desde su preparacion;Global;Sabatina;0.00;true;false;follow_up;false;false;false;false;0;0;;[]
-Novedad adicional 1;Global;Sabatina;0.00;true;false;additional_novelty;false;false;false;false;0;2;;[]
-Novedad adicional 2;Global;Sabatina;0.00;true;false;additional_novelty;false;false;false;false;0;2;;[]
-Usos de metodos de rotacion MP/PT;Global;Nocturna;1.00;true;false;compliance;true;false;true;false;0;2;;[]
-Revision Depositos Pendientes;Global;Nocturna;0.5;true;false;pending_deposit;true;false;true;false;0;2;shift_values;[]
-Evaluacion control de Bajas MP/PT;Global;Nocturna;2.00;true;false;compliance;true;false;true;false;0;2;;[]
-Verificacion de Bajas anticipadas;Global;Nocturna;0.5;true;false;compliance;true;false;true;false;0;2;;[]
-arqueo de Efectivo Caja Chica;Global;Nocturna;0.75;true;false;cash_count;true;false;true;false;0;2;cash_difference;[]
-arqueo de Efectivo Caja General;Global;Nocturna;1.00;true;false;cash_count;true;false;true;false;0;2;cash_difference;[]
-Inventario de Vasos Pet y Termicos;Global;Nocturna;1.00;true;false;cup_count;true;false;true;false;0;2;multi_item_difference;"[{""label"":""Vaso 4 oz""},{""label"":""Vaso 9 oz""},{""label"":""Vaso 12 oz""},{""label"":""Vaso 12 oz PET""},{""label"":""Vaso 16 oz PET""},{""label"":""Vaso 20 oz PET""},{""label"":""Vaso 10 oz RAT""}]"
-arqueo de MP;Global;Nocturna;0.00;true;false;raw_material_count;false;false;false;false;0;0;multi_item_difference;"[{""label"":""Helado Topsy Vainilla""},{""label"":""Helado Topsy Frutilla""},{""label"":""Helado Topsy Cafe""},{""label"":""Café Sweet&Coffee MP"",""cross_group"":""CAFE MP"",""conversion_factor"":1},{""label"":""Café Filtrado 90 gr MP"",""cross_group"":""CAFE MP"",""conversion_factor"":0.09},{""label"":""Café Descafeinado 300 gr MP"",""cross_group"":""CAFE MP"",""conversion_factor"":0.3},{""label"":""Silkpak""},{""label"":""Te Helado""}]"
-Inventario de Producto Terminado;Global;Nocturna;1.00;true;false;compliance;true;false;true;false;0;2;;[]
-autorizacion de Traspasos ;Global;Nocturna;0.25;true;false;compliance;true;false;true;false;0;2;;[]
-Evaluacion de Stocks en 0;Global;Nocturna;1.00;true;false;compliance;true;false;true;false;0;2;;[]
-Evaluacion de bebidas;Global;Nocturna;1.00;true;false;compliance;true;false;true;false;0;3;;[]
-La materia prima y la formula de matcha se almacenan en refrigeracion continua;Global;Nocturna;0.00;true;false;follow_up;false;false;false;false;0;0;;[]
-Se asegura que la baja diaria de las formulas sobrantes se ejecute al finalizar la jornada (o a las 05:00 en locales 24 horas), evitando mantener formulas con mas de un dia desde su preparacion;Global;Nocturna;0.00;true;false;follow_up;false;false;false;false;0;0;;[]
-Novedad adicional 1;Global;Nocturna;0.00;true;false;additional_novelty;false;false;false;false;0;2;;[]
-Novedad adicional 2;Global;Nocturna;0.00;true;false;additional_novelty;false;false;false;false;0;2;;[]
+question_text;region;visit_type_id;score_points;is_active;evidence_required;question_type;is_scored;requires_observation;requires_observation_on_fail;requires_evidence;min_evidence;max_evidence;numeric_mode;item_schema;sort_order
+Usos de metodos de rotacion MP/PT;Global;Sabatina;1.00;true;false;compliance;true;false;true;false;0;2;;[];1
+Revision Depositos Pendientes;Global;Sabatina;0.50;true;false;pending_deposit;true;false;true;false;0;2;shift_values;[];2
+Evaluacion control de Bajas MP/PT;Global;Sabatina;2.00;true;false;compliance;true;false;true;false;0;2;;[];3
+Verificacion de Bajas anticipadas;Global;Sabatina;0.5;true;false;compliance;true;false;true;false;0;2;;[];4
+arqueo de Efectivo Caja Chica;Global;Sabatina;0.75;true;false;cash_count;true;false;true;false;0;2;cash_difference;[];5
+arqueo de Efectivo Caja General;Global;Sabatina;1.00;true;false;cash_count;true;false;true;false;0;2;cash_difference;[];6
+Inventario de Vasos Pet y Termicos;Global;Sabatina;1.00;true;false;cup_count;true;false;true;false;0;2;multi_item_difference;"[{""label"":""Vaso 4 oz""},{""label"":""Vaso 9 oz""},{""label"":""Vaso 12 oz""},{""label"":""Vaso 12 oz PET""},{""label"":""Vaso 16 oz PET""},{""label"":""Vaso 20 oz PET""},{""label"":""Vaso 10 oz RAT""}]";7
+arqueo de MP;Global;Sabatina;0.00;true;false;raw_material_count;false;false;false;false;0;0;multi_item_difference;"[{""label"":""Leche de Avena"",""cross_group"":""Leches vegetales"",""conversion_factor"":1},{""label"":""Leche de Almendras"",""cross_group"":""Leches vegetales"",""conversion_factor"":1},{""label"":""Tapas Domo 12 Oz Pet""},{""label"":""Tapa Domo 16 Oz Pet""},{""label"":""Tapa Domo 20 Oz Pet""}]";8
+Inventario de Producto Terminado;Global;Sabatina;1.00;true;false;compliance;true;false;true;false;0;2;;[];9
+autorizacion de Traspasos ;Global;Sabatina;0.25;true;false;compliance;true;false;true;false;0;2;;[];10
+Evaluacion de Stocks en 0;Global;Sabatina;1.00;true;false;compliance;true;false;true;false;0;2;;[];11
+Extraccion Cafe y Shot (Peso y Tiempo);Global;Sabatina;1.00;true;false;compliance;true;false;true;false;0;3;;[];12
+La materia prima y la formula de matcha se almacenan en refrigeracion continua;Global;Sabatina;0.00;true;false;follow_up;false;false;false;false;0;0;;[];13
+Se asegura que la baja diaria de las formulas sobrantes se ejecute al finalizar la jornada (o a las 05:00 en locales 24 horas), evitando mantener formulas con mas de un dia desde su preparacion;Global;Sabatina;0.00;true;false;follow_up;false;false;false;false;0;0;;[];14
+Novedad adicional 1;Global;Sabatina;0.00;true;false;additional_novelty;false;false;false;false;0;2;;[];15
+Novedad adicional 2;Global;Sabatina;0.00;true;false;additional_novelty;false;false;false;false;0;2;;[];16
+Usos de metodos de rotacion MP/PT;Global;Nocturna;1.00;true;false;compliance;true;false;true;false;0;2;;[];1
+Revision Depositos Pendientes;Global;Nocturna;0.5;true;false;pending_deposit;true;false;true;false;0;2;shift_values;[];2
+Evaluacion control de Bajas MP/PT;Global;Nocturna;2.00;true;false;compliance;true;false;true;false;0;2;;[];3
+Verificacion de Bajas anticipadas;Global;Nocturna;0.5;true;false;compliance;true;false;true;false;0;2;;[];4
+arqueo de Efectivo Caja Chica;Global;Nocturna;0.75;true;false;cash_count;true;false;true;false;0;2;cash_difference;[];5
+arqueo de Efectivo Caja General;Global;Nocturna;1.00;true;false;cash_count;true;false;true;false;0;2;cash_difference;[];6
+Inventario de Vasos Pet y Termicos;Global;Nocturna;1.00;true;false;cup_count;true;false;true;false;0;2;multi_item_difference;"[{""label"":""Vaso 4 oz""},{""label"":""Vaso 9 oz""},{""label"":""Vaso 12 oz""},{""label"":""Vaso 12 oz PET""},{""label"":""Vaso 16 oz PET""},{""label"":""Vaso 20 oz PET""},{""label"":""Vaso 10 oz RAT""}]";7
+arqueo de MP;Global;Nocturna;0.00;true;false;raw_material_count;false;false;false;false;0;0;multi_item_difference;"[{""label"":""Helado Topsy Vainilla""},{""label"":""Helado Topsy Frutilla""},{""label"":""Helado Topsy Cafe""},{""label"":""Café Sweet&Coffee MP"",""cross_group"":""CAFE MP"",""conversion_factor"":1},{""label"":""Café Filtrado 90 gr MP"",""cross_group"":""CAFE MP"",""conversion_factor"":0.09},{""label"":""Café Descafeinado 300 gr MP"",""cross_group"":""CAFE MP"",""conversion_factor"":0.3},{""label"":""Silkpak""},{""label"":""Te Helado""}]";8
+Inventario de Producto Terminado;Global;Nocturna;1.00;true;false;compliance;true;false;true;false;0;2;;[];9
+autorizacion de Traspasos ;Global;Nocturna;0.25;true;false;compliance;true;false;true;false;0;2;;[];10
+Evaluacion de Stocks en 0;Global;Nocturna;1.00;true;false;compliance;true;false;true;false;0;2;;[];11
+Evaluacion de bebidas;Global;Nocturna;1.00;true;false;compliance;true;false;true;false;0;3;;[];12
+La materia prima y la formula de matcha se almacenan en refrigeracion continua;Global;Nocturna;0.00;true;false;follow_up;false;false;false;false;0;0;;[];13
+Se asegura que la baja diaria de las formulas sobrantes se ejecute al finalizar la jornada (o a las 05:00 en locales 24 horas), evitando mantener formulas con mas de un dia desde su preparacion;Global;Nocturna;0.00;true;false;follow_up;false;false;false;false;0;0;;[];14
+Novedad adicional 1;Global;Nocturna;0.00;true;false;additional_novelty;false;false;false;false;0;2;;[];15
+Novedad adicional 2;Global;Nocturna;0.00;true;false;additional_novelty;false;false;false;false;0;2;;[];16

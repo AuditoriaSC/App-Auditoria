@@ -361,9 +361,9 @@ function ColorPicker({ label, value, onChange }: { label: string; value: string;
             key={color.value}
             style={[styles.colorButton, value === color.value && styles.colorButtonActive]}
             onPress={() => onChange(color.value)}
+            accessibilityLabel={`Color ${color.label}`}
           >
             <View style={[styles.colorSwatch, { backgroundColor: color.value }]} />
-            <Text style={styles.colorText}>{color.label}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -395,11 +395,10 @@ const styles = StyleSheet.create({
   timeButton: { minHeight: 50, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, justifyContent: 'center', paddingHorizontal: 12, backgroundColor: '#fff' },
   timeValue: { fontSize: 18, fontWeight: '900', color: '#111827' },
   colorSection: { marginBottom: 10 },
-  colorGroup: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  colorButton: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: '#dbe4ea', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10, backgroundColor: '#f8fafc' },
-  colorButtonActive: { borderColor: '#0f766e', backgroundColor: '#f0fdfa' },
-  colorSwatch: { width: 14, height: 14, borderRadius: 7 },
-  colorText: { color: '#334155', fontWeight: '800', fontSize: 12 },
+  colorGroup: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  colorButton: { width: 34, height: 34, borderWidth: 2, borderColor: '#dbe4ea', borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc' },
+  colorButtonActive: { borderColor: '#0f766e', backgroundColor: '#ecfdf5' },
+  colorSwatch: { width: 22, height: 22, borderRadius: 11, borderWidth: 1, borderColor: 'rgba(15, 23, 42, 0.18)' },
   signatureName: { color: '#111827', fontWeight: '900', marginTop: 2 },
   noSignatureText: { color: '#64748b', fontWeight: '800', marginTop: 4 },
   sendGroup: { flexDirection: 'row', gap: 10 },
