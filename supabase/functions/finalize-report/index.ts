@@ -70,6 +70,15 @@ function formatDate(value?: string | null) {
   return value
 }
 
+function formatSentDate() {
+  return new Intl.DateTimeFormat('es-EC', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    timeZone: 'America/Guayaquil',
+  }).format(new Date())
+}
+
 function formatTime(value?: string | null) {
   if (!value) return 'Sin hora'
   return String(value).slice(0, 5)
@@ -84,11 +93,15 @@ function questionType(answer: AnswerRow): string {
   return answer.checklist_questions?.question_type || 'compliance'
 }
 
+function isCountOnlyType(type: string) {
+  return ['inventory', 'raw_material_count'].includes(type)
+}
+
 function isScored(answer: AnswerRow) {
   const question = answer.checklist_questions
   if (!question) return true
   if (question.is_scored === false) return false
-  return !['follow_up', 'additional_novelty'].includes(question.question_type || '')
+  return !['follow_up', 'additional_novelty', 'inventory', 'raw_material_count'].includes(question.question_type || '')
 }
 
 function pointsFor(answer: AnswerRow) {
@@ -141,6 +154,34 @@ function numericRows(answer: AnswerRow) {
   return []
 }
 
+function rawMaterialCrossRows(answer: AnswerRow) {
+  const items = Array.isArray(answer.numeric_items) ? answer.numeric_items : []
+  const groups = new Map<string, { result: number; items: number }>()
+
+  items.forEach((item) => {
+    const groupName = String(item.cross_group ?? item.crossGroup ?? '').trim()
+    if (!groupName) return
+
+    const theoretical = Number(item.theoretical ?? item.system ?? 0)
+    const physical = Number(item.physical ?? 0)
+    const difference = physical - theoretical
+    const factor = Number(item.conversion_factor ?? item.conversionFactor ?? 1)
+    const current = groups.get(groupName) || { result: 0, items: 0 }
+
+    groups.set(groupName, {
+      result: current.result + difference * (Number.isFinite(factor) ? factor : 1),
+      items: current.items + 1,
+    })
+  })
+
+  return Array.from(groups.entries())
+    .filter(([, group]) => group.items > 1)
+    .map(([description, group]) => ({
+      description: `Cruce de ${description}`,
+      result: group.result,
+    }))
+}
+
 function renderNumericTable(title: string, headers: [string, string, string, string], rows: ReturnType<typeof numericRows>) {
   if (rows.length === 0) return ''
 
@@ -159,6 +200,30 @@ function renderNumericTable(title: string, headers: [string, string, string, str
             <td style="border:1px solid #d9e2ec; padding:7px;">${formatNumber(row.theoretical)}</td>
             <td style="border:1px solid #d9e2ec; padding:7px;">${formatNumber(row.physical)}</td>
             <td style="border:1px solid #d9e2ec; padding:7px;">${formatNumber(row.difference)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `
+}
+
+function renderCrossTable(title: string, rows: ReturnType<typeof rawMaterialCrossRows>) {
+  if (rows.length === 0) return ''
+
+  return `
+    <p style="margin:10px 0 6px 0; font-weight:700; color:#243b53;">${escapeHtml(title)}</p>
+    <table style="width:100%; border-collapse:collapse; font-size:13px; margin-bottom:8px;">
+      <thead>
+        <tr style="background:#eef2f7;">
+          <th style="border:1px solid #d9e2ec; padding:7px; text-align:left;">Cruce</th>
+          <th style="border:1px solid #d9e2ec; padding:7px; text-align:left;">Resultado</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((row) => `
+          <tr>
+            <td style="border:1px solid #d9e2ec; padding:7px;">${escapeHtml(row.description)}</td>
+            <td style="border:1px solid #d9e2ec; padding:7px;">${formatNumber(row.result)}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -185,6 +250,35 @@ function renderQuestionDetail(answer: AnswerRow, index: number) {
   const evidence = imageHtml(answer.evidence_url, `Evidencia pregunta ${index + 1}`)
   const rows = numericRows(answer)
   let numericBlock = ''
+
+  if (type === 'follow_up') {
+    return `
+      <div style="border:1px solid #d9e2ec; border-radius:8px; padding:12px; margin-bottom:10px; background:${answer.value === 'cumple' ? '#ffffff' : '#fff7f7'};">
+        <p style="margin:0 0 6px 0; font-weight:700; color:#102a43;">${index + 1}. ${escapeHtml(questionText)}: <span style="color:${resultColor};">${result}</span></p>
+        <p style="margin:0 0 6px 0;"><strong>Observaciones:</strong> ${escapeHtml(answer.observation || 'Sin observaciones')}</p>
+        ${evidence ? `<div style="margin-top:8px;"><strong>Evidencias:</strong><br/>${evidence}</div>` : ''}
+      </div>
+    `
+  }
+
+  if (isCountOnlyType(type)) {
+    const countTitle = type === 'raw_material_count' ? 'Materias primas' : 'Inventario'
+    const countBlock = renderNumericTable(countTitle, ['Descripcion', 'Sistema', 'Fisico', 'Diferencia'], rows)
+    const crossBlock = type === 'raw_material_count'
+      ? renderCrossTable('Cruces aplicables', rawMaterialCrossRows(answer))
+      : ''
+
+    return `
+      <div style="border:1px solid #d9e2ec; border-radius:8px; padding:12px; margin-bottom:10px; background:#ffffff;">
+        <p style="margin:0 0 6px 0; font-weight:700; color:#102a43;">${index + 1}. ${escapeHtml(questionText)}</p>
+        <p style="margin:0 0 4px 0;"><strong>Resultado:</strong> No aplica</p>
+        ${countBlock || '<p style="margin:0 0 6px 0; color:#52606d;">Sin conteos registrados.</p>'}
+        ${crossBlock}
+        <p style="margin:0 0 6px 0;"><strong>Observaciones:</strong> ${escapeHtml(answer.observation || 'Sin observaciones')}</p>
+        ${evidence ? `<div style="margin-top:8px;"><strong>Evidencias:</strong><br/>${evidence}</div>` : ''}
+      </div>
+    `
+  }
 
   if (type === 'cash_count') {
     numericBlock = renderNumericTable('Arqueo de caja', ['Concepto', 'Sistema', 'Físico', 'Diferencia'], rows)
@@ -303,8 +397,9 @@ Deno.serve(async (req) => {
     const scoreText = `${formatNumber(obtained)} / ${formatNumber(possible)} puntos`
     const visitType = report.visit_type_id || 'Visita'
     const localName = report.local_name_snapshot || report.locales?.nombre_local || report.local_codigo || 'Local'
-    const sentDate = new Date().toISOString().slice(0, 10)
-    const subject = `REPORTE DE VISITA ${visitType.toUpperCase()} LOCAL ${localName.toUpperCase()} ENVIADO EL ${sentDate}`
+    const localCode = report.local_code_snapshot || report.local_codigo || ''
+    const sentDate = formatSentDate()
+    const subject = `REPORTE DE VISITA ${visitType.toUpperCase()} LOCAL ${localName.toUpperCase()}${localCode ? ` ${localCode.toUpperCase()}` : ''} ENVIADO EL ${sentDate}`
     const auditorSignatureUrl = report.auditor_signature_url || report.signature_auditor_url
     const responsibleSignatureUrl = report.responsible_signature_url || report.signature_responsible_url
 

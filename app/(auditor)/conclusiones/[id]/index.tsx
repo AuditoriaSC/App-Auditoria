@@ -54,7 +54,7 @@ function isScoredAnswer(answer: AnswerRecord) {
   const question = answer.checklist_questions;
   if (!question) return true;
   if (question.is_scored === false) return false;
-  return !['follow_up', 'additional_novelty'].includes(question.question_type || '');
+  return !['follow_up', 'additional_novelty', 'inventory', 'raw_material_count'].includes(question.question_type || '');
 }
 
 export default function FinalizarReportePage() {

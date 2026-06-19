@@ -13,6 +13,10 @@ interface CountItem {
   label: string;
   theoreticalValue: string;
   physicalValue: string;
+  locked?: boolean;
+  unit?: string;
+  crossGroup?: string;
+  conversionFactor?: number;
 }
 
 interface Question {
@@ -28,7 +32,7 @@ interface Question {
   min_evidence?: number | null;
   max_evidence?: number | null;
   numeric_mode?: string | null;
-  item_schema?: { label?: string; name?: string }[] | null;
+  item_schema?: { label?: string; name?: string; unit?: string; cross_group?: string; crossGroup?: string; conversion_factor?: number; conversionFactor?: number }[] | null;
 }
 
 interface AnswerState {
@@ -80,20 +84,58 @@ function isMultiItemCount(type: QuestionType) {
   return type === 'inventory' || type === 'cup_count' || type === 'raw_material_count';
 }
 
-function buildInitialCountItems(question: Question) {
+function isCountOnlyQuestion(type: QuestionType) {
+  return type === 'inventory' || type === 'raw_material_count';
+}
+
+function requiresComplianceAnswer(type: QuestionType) {
+  return type !== 'additional_novelty' && !isCountOnlyQuestion(type);
+}
+
+function buildInitialCountItems(question: Question): CountItem[] {
   const schema = Array.isArray(question.item_schema) ? question.item_schema : [];
   const items = schema
-    .map((item) => item.label || item.name || '')
-    .filter(Boolean)
-    .map((label) => ({ label, theoreticalValue: '', physicalValue: '' }));
+    .map((item) => ({
+      label: item.label || item.name || '',
+      unit: item.unit,
+      crossGroup: item.cross_group || item.crossGroup,
+      conversionFactor: item.conversion_factor ?? item.conversionFactor ?? 1,
+    }))
+    .filter((item) => item.label)
+    .map((item) => ({ ...item, theoreticalValue: '', physicalValue: '', locked: true }));
 
-  return items.length > 0 ? items : [{ label: '', theoreticalValue: '', physicalValue: '' }];
+  return items.length > 0 ? items : [{ label: '', theoreticalValue: '', physicalValue: '', locked: false }];
 }
 
 function countItemDifference(item: CountItem) {
   const theoretical = toNumber(item.theoreticalValue);
   const physical = toNumber(item.physicalValue);
   return theoretical !== null && physical !== null ? physical - theoretical : null;
+}
+
+function rawMaterialCrossGroups(items: CountItem[]) {
+  const groups = new Map<string, { result: number; items: number }>();
+
+  items.forEach((item) => {
+    const groupName = item.crossGroup?.trim();
+    const difference = countItemDifference(item);
+
+    if (!groupName || difference === null) return;
+
+    const factor = Number.isFinite(Number(item.conversionFactor)) ? Number(item.conversionFactor) : 1;
+    const current = groups.get(groupName) || { result: 0, items: 0 };
+    groups.set(groupName, {
+      result: current.result + difference * factor,
+      items: current.items + 1,
+    });
+  });
+
+  return Array.from(groups.entries())
+    .filter(([, group]) => group.items > 1)
+    .map(([name, group]) => ({
+      name,
+      result: group.result,
+    }));
 }
 
 export default function ChecklistDinamicoPage() {
@@ -237,19 +279,22 @@ export default function ChecklistDinamicoPage() {
     const observationRequired = answer.value === 'no_cumple' && question.requires_observation_on_fail !== false;
 
     if (type === 'additional_novelty') return null;
-    if (!answer.value) return 'Selecciona CUMPLE o NO CUMPLE.';
-    if (observationRequired && !answer.observation.trim()) return 'Agrega una observacion para NO CUMPLE.';
 
     if (type === 'cash_count' && (!answer.theoreticalValue.trim() || !answer.physicalValue.trim())) {
       return 'Completa valor teorico y valor fisico.';
     }
 
     if (isMultiItemCount(type)) {
-      const usedItems = answer.countItems.filter((item) => item.label.trim() || item.theoreticalValue.trim() || item.physicalValue.trim());
+      const countItems = answer.countItems.length > 0 ? answer.countItems : buildInitialCountItems(question);
+      const usedItems = countItems.filter((item) => item.locked || item.label.trim() || item.theoreticalValue.trim() || item.physicalValue.trim());
       if (usedItems.length === 0) return 'Registra al menos un item con stock teorico y fisico.';
       const incompleteItem = usedItems.find((item) => !item.label.trim() || !item.theoreticalValue.trim() || !item.physicalValue.trim());
       if (incompleteItem) return 'Completa nombre, stock teorico y stock fisico en cada item registrado.';
+      if (isCountOnlyQuestion(type)) return null;
     }
+
+    if (!answer.value) return 'Selecciona CUMPLE o NO CUMPLE.';
+    if (observationRequired && !answer.observation.trim()) return 'Agrega una observacion para NO CUMPLE.';
 
     if (type === 'pending_deposit' && (!answer.currentShift.trim() || !answer.previousShift.trim())) {
       return 'Completa turno actual y turno anterior.';
@@ -282,14 +327,18 @@ export default function ChecklistDinamicoPage() {
         return [];
       }
 
+      const countItems = answer.countItems.length > 0 ? answer.countItems : buildInitialCountItems(q);
       const numericItems = isMultiItemCount(type)
-        ? answer.countItems
-            .filter((item) => item.label.trim() || item.theoreticalValue.trim() || item.physicalValue.trim())
+        ? countItems
+            .filter((item) => item.locked || item.label.trim() || item.theoreticalValue.trim() || item.physicalValue.trim())
             .map((item) => ({
               label: item.label.trim(),
               theoretical: toNumber(item.theoreticalValue),
               physical: toNumber(item.physicalValue),
               difference: countItemDifference(item),
+              unit: item.unit || null,
+              cross_group: item.crossGroup || null,
+              conversion_factor: item.conversionFactor ?? 1,
             }))
         : [];
       const firstNumericItem = numericItems[0];
@@ -297,7 +346,7 @@ export default function ChecklistDinamicoPage() {
       return [{
         report_id: reportId,
         question_id: q.id,
-        value: type === 'additional_novelty' ? 'cumple' : answer.value,
+        value: type === 'additional_novelty' || isCountOnlyQuestion(type) ? 'cumple' : answer.value,
         observation: answer.observation.trim(),
         evidence_url: answer.evidenceUrls[0] || null,
         numeric_value_theoretical: firstNumericItem?.theoretical ?? toNumber(answer.theoreticalValue),
@@ -374,7 +423,7 @@ export default function ChecklistDinamicoPage() {
           <View key={q.id} style={styles.card}>
             <Text style={styles.questionText}>{index + 1}. {q.question_text}</Text>
 
-            {type !== 'additional_novelty' && (
+            {requiresComplianceAnswer(type) && (
               <View style={styles.radioGroup}>
                 <TouchableOpacity
                   style={[styles.radioButton, currentAnswer.value === 'cumple' && styles.radioActiveCumple]}
@@ -425,6 +474,7 @@ export default function ChecklistDinamicoPage() {
                 title={type === 'cup_count' ? 'Conteo de vasos' : type === 'raw_material_count' ? 'Conteo de materias primas' : 'Conteo de inventario'}
                 items={currentAnswer.countItems.length > 0 ? currentAnswer.countItems : buildInitialCountItems(q)}
                 onChange={(items) => updateField(q.id, { countItems: items })}
+                showCrossSummary={type === 'raw_material_count'}
               />
             )}
 
@@ -488,10 +538,12 @@ function CountItemsEditor({
   title,
   items,
   onChange,
+  showCrossSummary = false,
 }: {
   title: string;
   items: CountItem[];
   onChange: (items: CountItem[]) => void;
+  showCrossSummary?: boolean;
 }) {
   const updateItem = (index: number, fields: Partial<CountItem>) => {
     onChange(items.map((item, itemIndex) => (itemIndex === index ? { ...item, ...fields } : item)));
@@ -501,6 +553,9 @@ function CountItemsEditor({
     onChange([...items, { label: '', theoreticalValue: '', physicalValue: '' }]);
   };
 
+  const canAddItems = !items.some((item) => item.locked);
+  const crossGroups = showCrossSummary ? rawMaterialCrossGroups(items) : [];
+
   return (
     <View style={styles.countBox}>
       <Text style={styles.countTitle}>{title}</Text>
@@ -509,12 +564,19 @@ function CountItemsEditor({
 
         return (
           <View key={`${index}-${item.label}`} style={styles.countRow}>
-            <TextInput
-              style={[styles.input, styles.itemNameInput]}
-              value={item.label}
-              onChangeText={(text) => updateItem(index, { label: text })}
-              placeholder="Item"
-            />
+            {item.locked ? (
+              <View style={styles.itemLabelLocked}>
+                <Text style={styles.itemLabelText}>{item.label}</Text>
+                {item.unit ? <Text style={styles.itemMetaText}>Unidad: {item.unit}</Text> : null}
+              </View>
+            ) : (
+              <TextInput
+                style={[styles.input, styles.itemNameInput]}
+                value={item.label}
+                onChangeText={(text) => updateItem(index, { label: text })}
+                placeholder="Item"
+              />
+            )}
             <View style={styles.countNumbers}>
               <NumberField label="Teorico" value={item.theoreticalValue} onChangeText={(text) => updateItem(index, { theoreticalValue: text })} />
               <NumberField label="Fisico" value={item.physicalValue} onChangeText={(text) => updateItem(index, { physicalValue: text })} />
@@ -523,9 +585,22 @@ function CountItemsEditor({
           </View>
         );
       })}
-      <TouchableOpacity style={styles.addItemButton} onPress={addItem}>
-        <Text style={styles.addItemText}>+ Agregar item</Text>
-      </TouchableOpacity>
+      {canAddItems && (
+        <TouchableOpacity style={styles.addItemButton} onPress={addItem}>
+          <Text style={styles.addItemText}>+ Agregar item</Text>
+        </TouchableOpacity>
+      )}
+      {showCrossSummary && crossGroups.length > 0 && (
+        <View style={styles.crossBox}>
+          <Text style={styles.crossTitle}>Cruces aplicables</Text>
+          {crossGroups.map((group) => (
+            <View key={group.name} style={styles.crossRow}>
+              <Text style={styles.crossName}>Cruce de {group.name}</Text>
+              <Text style={styles.crossValue}>Resultado {group.result.toFixed(2)}</Text>
+            </View>
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -557,11 +632,19 @@ const styles = StyleSheet.create({
   countBox: { marginTop: 10, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 10, backgroundColor: '#f8fafc' },
   countTitle: { color: '#111827', fontWeight: '900', marginBottom: 8 },
   countRow: { borderTopWidth: 1, borderTopColor: '#e2e8f0', paddingTop: 10, marginTop: 8 },
+  itemLabelLocked: { minHeight: 48, borderWidth: 1, borderColor: '#dbe4ea', borderRadius: 8, paddingHorizontal: 10, backgroundColor: '#eef2f7', justifyContent: 'center', marginBottom: 4 },
+  itemLabelText: { color: '#111827', fontWeight: '900', fontSize: 15 },
+  itemMetaText: { color: '#64748b', fontWeight: '800', fontSize: 12, marginTop: 2 },
   itemNameInput: { marginBottom: 4 },
   countNumbers: { flexDirection: 'row', gap: 8 },
   itemDifference: { color: '#0f766e', fontWeight: '900', marginTop: 6 },
   addItemButton: { minHeight: 42, borderRadius: 8, borderWidth: 1, borderColor: '#0f766e', alignItems: 'center', justifyContent: 'center', marginTop: 10, backgroundColor: '#f0fdfa' },
   addItemText: { color: '#0f766e', fontWeight: '900' },
+  crossBox: { borderWidth: 1, borderColor: '#bae6fd', borderRadius: 8, backgroundColor: '#f0f9ff', padding: 10, marginTop: 10, gap: 6 },
+  crossTitle: { color: '#075985', fontWeight: '900' },
+  crossRow: { borderTopWidth: 1, borderTopColor: '#bae6fd', paddingTop: 6 },
+  crossName: { color: '#0f172a', fontWeight: '900' },
+  crossValue: { color: '#0369a1', fontWeight: '800', marginTop: 2 },
   evidenceHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 },
   evidenceCounter: { color: '#64748b', fontWeight: '800', fontSize: 12 },
   imageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 4 },
