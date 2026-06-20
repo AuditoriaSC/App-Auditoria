@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
+import { brandColors } from '../../../constants/theme';
 import { supabase } from '../../../src/supabaseClient';
 
 type ProfileRow = {
@@ -52,6 +53,21 @@ type SummaryRow = {
 const visitTypes = ['TODOS', 'Sabatina', 'Nocturna'];
 const statusOptions = ['TODOS', 'EN_PROCESO', 'FINALIZADA', 'ENVIADA'];
 const regions = ['TODAS', 'Costa', 'Sierra'];
+const monthOptions = ['TODOS', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+const monthLabels: Record<string, string> = {
+  '01': 'Enero',
+  '02': 'Febrero',
+  '03': 'Marzo',
+  '04': 'Abril',
+  '05': 'Mayo',
+  '06': 'Junio',
+  '07': 'Julio',
+  '08': 'Agosto',
+  '09': 'Septiembre',
+  '10': 'Octubre',
+  '11': 'Noviembre',
+  '12': 'Diciembre',
+};
 
 const round = (value: number) => Math.round(value * 100) / 100;
 
@@ -63,6 +79,8 @@ export default function AdminDashboard() {
   const [regionFilter, setRegionFilter] = useState('TODAS');
   const [visitTypeFilter, setVisitTypeFilter] = useState('TODOS');
   const [statusFilter, setStatusFilter] = useState('TODOS');
+  const [monthFilter, setMonthFilter] = useState('TODOS');
+  const [yearFilter, setYearFilter] = useState('TODOS');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -89,7 +107,7 @@ export default function AdminDashboard() {
       .single<ProfileRow>();
 
     if (profileError || !profileData) {
-      setError('No se encontro el perfil del usuario.');
+      setError(buildMissingProfileMessage(user.email, user.id, profileError?.message));
       setLoading(false);
       return;
     }
@@ -147,13 +165,26 @@ export default function AdminDashboard() {
       const matchesRegion = permittedRegion === 'TODAS' || visit.region === permittedRegion;
       const matchesType = visitTypeFilter === 'TODOS' || visit.visit_type_id === visitTypeFilter;
       const matchesStatus = statusFilter === 'TODOS' || getVisibleStatus(visit) === statusFilter;
+      const matchesMonth = monthFilter === 'TODOS' || getVisitMonth(visit) === monthFilter;
+      const matchesYear = yearFilter === 'TODOS' || getVisitYear(visit) === yearFilter;
       const matchesSearch =
         !term ||
         normalize(`${getLocalName(visit)} ${getLocalCode(visit)} ${getAuditorName(visit)} ${getResponsibleName(visit)}`).includes(term);
 
-      return matchesRegion && matchesType && matchesStatus && matchesSearch;
+      return matchesRegion && matchesType && matchesStatus && matchesMonth && matchesYear && matchesSearch;
     });
-  }, [profile, regionFilter, searchQuery, statusFilter, visitTypeFilter, visits]);
+  }, [monthFilter, profile, regionFilter, searchQuery, statusFilter, visitTypeFilter, visits, yearFilter]);
+
+  const yearOptions = useMemo(() => {
+    const years = new Set<string>();
+
+    visits.forEach((visit) => {
+      const year = getVisitYear(visit);
+      if (year) years.add(year);
+    });
+
+    return ['TODOS', ...Array.from(years).sort((left, right) => Number(right) - Number(left))];
+  }, [visits]);
 
   const incidentCountByReport = useMemo(() => {
     return answers.reduce<Record<string, number>>((acc, answer) => {
@@ -210,7 +241,7 @@ export default function AdminDashboard() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#0f766e" />
+        <ActivityIndicator size="large" color={brandColors.greenDark} />
         <Text style={styles.loadingText}>Cargando visitas...</Text>
       </View>
     );
@@ -253,11 +284,23 @@ export default function AdminDashboard() {
         <SummaryCard label="Incidencias" value={String(totalIncidents)} />
       </View>
 
+      {canDeleteVisits && (
+        <View style={styles.adminSection}>
+          <AdminCard
+            title="Administrador de Recursos"
+            description="Gestionar preguntas, locales, responsables, invitaciones y usuarios."
+            onPress={() => router.push('/administrador-recursos')}
+          />
+        </View>
+      )}
+
       <View style={styles.filterBand}>
         <View style={styles.filterRow}>
           <FilterSelect label="Tipo de visita" value={visitTypeFilter} onChange={setVisitTypeFilter} options={visitTypes} />
           {isSuperAdmin && <FilterSelect label="Estado" value={statusFilter} onChange={setStatusFilter} options={statusOptions} />}
           {isSuperAdmin && <FilterSelect label="Region" value={regionFilter} onChange={setRegionFilter} options={regions} />}
+          <FilterSelect label="Mes" value={monthFilter} onChange={setMonthFilter} options={monthOptions} />
+          <FilterSelect label="Año" value={yearFilter} onChange={setYearFilter} options={yearOptions} />
         </View>
         <View style={styles.searchItem}>
           <Text style={styles.label}>Buscar</Text>
@@ -333,6 +376,16 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
       <Text style={styles.summaryCardLabel}>{label}</Text>
       <Text style={styles.summaryCardValue}>{value}</Text>
     </View>
+  );
+}
+
+function AdminCard({ title, description, onPress }: { title: string; description: string; onPress: () => void }) {
+  return (
+    <TouchableOpacity style={styles.adminCard} onPress={onPress} activeOpacity={0.84}>
+      <Text style={styles.adminCardTitle}>{title}</Text>
+      <Text style={styles.adminCardDescription}>{description}</Text>
+      <Text style={styles.adminCardAction}>Abrir</Text>
+    </TouchableOpacity>
   );
 }
 
@@ -430,6 +483,15 @@ function getRelationName<T extends string>(value: Record<T, string | null> | Rec
   return row?.[key] || null;
 }
 
+function buildMissingProfileMessage(email?: string | null, uid?: string, detail?: string) {
+  return [
+    'No se encontro el perfil del usuario autenticado.',
+    `Correo: ${email || 'sin correo'}`,
+    `UID Auth: ${uid || 'sin uid'}`,
+    detail ? `Detalle: ${detail}` : null,
+  ].filter(Boolean).join('\n');
+}
+
 function getVisibleStatus(visit: VisitRow): VisibleStatus {
   if (visit.status !== 'finalized') return 'EN_PROCESO';
   return visit.should_send ? 'ENVIADA' : 'FINALIZADA';
@@ -450,6 +512,18 @@ function getAuditorName(visit: VisitRow) {
 function getResponsibleName(visit: VisitRow) {
   const name = visit.responsible_name_snapshot || visit.responsible_name || '';
   return visit.responsible_code ? `${visit.responsible_code} ${name}` : name;
+}
+
+function getVisitDateKey(visit: VisitRow) {
+  return visit.start_date || String(visit.created_at || '').slice(0, 10);
+}
+
+function getVisitMonth(visit: VisitRow) {
+  return getVisitDateKey(visit).slice(5, 7);
+}
+
+function getVisitYear(visit: VisitRow) {
+  return getVisitDateKey(visit).slice(0, 4);
 }
 
 function normalize(value: string) {
@@ -474,6 +548,7 @@ function formatFilterLabel(value: string) {
   if (value === 'EN_PROCESO') return 'En proceso';
   if (value === 'FINALIZADA') return 'Finalizada';
   if (value === 'ENVIADA') return 'Enviada';
+  if (monthLabels[value]) return monthLabels[value];
   return value;
 }
 
@@ -508,55 +583,60 @@ function formatTime(date: Date) {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 18, paddingBottom: 36, backgroundColor: '#f3f6f8', width: '100%', maxWidth: 980, alignSelf: 'center' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: '#f8fafc' },
-  loadingText: { marginTop: 8, color: '#64748b' },
-  errorText: { color: '#b91c1c', fontWeight: '700', textAlign: 'center', marginBottom: 12 },
-  hero: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, padding: 18, marginBottom: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
-  heroText: { flex: 1 },
-  welcome: { fontSize: 24, fontWeight: '800', color: '#111827' },
-  scope: { marginTop: 4, fontSize: 13, color: '#64748b', fontWeight: '600' },
-  primaryButton: { backgroundColor: '#0f766e', borderRadius: 7, paddingVertical: 13, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center' },
-  primaryButtonText: { color: '#fff', fontWeight: '800', fontSize: 14 },
-  heroActions: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' },
-  secondaryButton: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, paddingVertical: 13, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
-  secondaryButtonText: { color: '#334155', fontWeight: '900', fontSize: 14 },
+  container: { padding: 14, paddingBottom: 36, backgroundColor: brandColors.background, width: '100%', maxWidth: 980, alignSelf: 'center' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.creamSoft },
+  loadingText: { marginTop: 8, color: brandColors.textSecondary },
+  errorText: { color: brandColors.danger, fontWeight: '700', textAlign: 'center', marginBottom: 12 },
+  hero: { backgroundColor: brandColors.greenDark, borderWidth: 1, borderColor: brandColors.greenDark, borderRadius: 8, padding: 16, marginBottom: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
+  heroText: { flex: 1, minWidth: 220 },
+  welcome: { fontSize: 22, fontWeight: '800', color: brandColors.logoWhite },
+  scope: { marginTop: 4, fontSize: 13, color: brandColors.logoWhite, fontWeight: '600' },
+  primaryButton: { backgroundColor: brandColors.greenDark, borderRadius: 7, paddingVertical: 12, paddingHorizontal: 15, alignItems: 'center', justifyContent: 'center', flexGrow: 1 },
+  primaryButtonText: { color: brandColors.white, fontWeight: '800', fontSize: 14 },
+  heroActions: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', flexGrow: 1 },
+  secondaryButton: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.border, borderRadius: 7, paddingVertical: 12, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', flexGrow: 1 },
+  secondaryButtonText: { color: brandColors.greenDark, fontWeight: '900', fontSize: 14 },
   summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },
-  summaryCard: { flexGrow: 1, flexBasis: 150, backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, padding: 14 },
-  summaryCardLabel: { fontSize: 12, color: '#64748b', fontWeight: '700' },
-  summaryCardValue: { fontSize: 22, color: '#111827', fontWeight: '900', marginTop: 6 },
-  filterBand: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, padding: 12, marginBottom: 14, gap: 10 },
+  summaryCard: { flexGrow: 1, flexBasis: 135, minWidth: 0, backgroundColor: brandColors.surface, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12 },
+  summaryCardLabel: { fontSize: 12, color: brandColors.textSecondary, fontWeight: '700' },
+  summaryCardValue: { fontSize: 22, color: brandColors.textPrimary, fontWeight: '900', marginTop: 6 },
+  adminSection: { backgroundColor: brandColors.surface, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, marginBottom: 14 },
+  adminCard: { width: '100%', borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, backgroundColor: brandColors.creamSoft, padding: 14 },
+  adminCardTitle: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 15 },
+  adminCardDescription: { color: brandColors.textSecondary, fontWeight: '700', fontSize: 12, lineHeight: 17, marginTop: 5 },
+  adminCardAction: { color: brandColors.greenDark, fontWeight: '900', marginTop: 10 },
+  filterBand: { backgroundColor: brandColors.surface, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, marginBottom: 14, gap: 10 },
   filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' },
-  filterItem: { minWidth: 150, flex: 1 },
+  filterItem: { minWidth: 125, flex: 1 },
   searchItem: { width: '100%' },
-  label: { fontSize: 12, fontWeight: '800', color: '#475569', marginBottom: 6 },
-  pickerShell: { height: 42, borderWidth: 1, borderColor: '#d7e1e7', borderRadius: 10, overflow: 'hidden', backgroundColor: '#f8fafc', justifyContent: 'center' },
-  picker: { height: 42, color: '#111827', fontWeight: '700', backgroundColor: '#f8fafc' },
-  searchInput: { minHeight: 44, borderWidth: 1, borderColor: '#d7e1e7', borderRadius: 10, paddingHorizontal: 12, backgroundColor: '#fff', color: '#111827', fontWeight: '700' },
+  label: { fontSize: 12, fontWeight: '800', color: brandColors.textSecondary, marginBottom: 6 },
+  pickerShell: { height: 42, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, overflow: 'hidden', backgroundColor: brandColors.white, justifyContent: 'center' },
+  picker: { height: 42, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.white },
+  searchInput: { minHeight: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.textPrimary, fontWeight: '700' },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, marginBottom: 10 },
-  sectionTitle: { fontSize: 17, color: '#111827', fontWeight: '900' },
-  linkText: { color: '#0f766e', fontWeight: '800' },
+  sectionTitle: { fontSize: 17, color: brandColors.textPrimary, fontWeight: '900' },
+  linkText: { color: brandColors.greenDark, fontWeight: '800' },
   emptyCard: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, padding: 18, marginBottom: 14 },
   emptyTitle: { fontSize: 16, fontWeight: '800', color: '#111827' },
   emptyText: { marginTop: 4, color: '#64748b' },
   visitCard: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#d7e1e7', borderRadius: 8, padding: 13, marginBottom: 9 },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' },
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' },
   cardTitleGroup: { flex: 1 },
   visitDate: { fontSize: 12, color: '#64748b', fontWeight: '800', marginBottom: 3 },
   visitTitle: { fontSize: 16, fontWeight: '900', color: '#111827' },
   visitSubtitle: { marginTop: 2, fontSize: 12, color: '#64748b', fontWeight: '700' },
-  badge: { borderRadius: 999, paddingVertical: 5, paddingHorizontal: 10 },
-  badgeProcess: { backgroundColor: '#fef3c7' },
-  badgeFinalized: { backgroundColor: '#dbeafe' },
-  badgeSent: { backgroundColor: '#dcfce7' },
+  badge: { borderRadius: 999, paddingVertical: 5, paddingHorizontal: 10, alignSelf: 'flex-start' },
+  badgeProcess: { backgroundColor: '#F7E6B5' },
+  badgeFinalized: { backgroundColor: brandColors.creamSoft },
+  badgeSent: { backgroundColor: brandColors.greenSoft },
   badgeText: { fontSize: 11, fontWeight: '900' },
-  badgeTextProcess: { color: '#92400e' },
-  badgeTextFinalized: { color: '#1d4ed8' },
-  badgeTextSent: { color: '#166534' },
-  cardFooter: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#edf2f7', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
+  badgeTextProcess: { color: brandColors.coffeeDark },
+  badgeTextFinalized: { color: brandColors.coffee },
+  badgeTextSent: { color: brandColors.greenDark },
+  cardFooter: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#edf2f7', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
   footerMetric: { flex: 1, color: '#0f172a', fontWeight: '800' },
   footerGrade: { color: '#0f766e', fontWeight: '900' },
-  footerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  footerActions: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' },
   deleteButton: { borderWidth: 1, borderColor: '#fecaca', backgroundColor: '#fff1f2', borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10 },
   deleteButtonText: { color: '#be123c', fontSize: 12, fontWeight: '900' },
   summaryList: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, paddingHorizontal: 14, marginBottom: 18 },

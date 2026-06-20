@@ -18,6 +18,8 @@ export default function SignaturePad({ title, penColor, previewUri, onOK, onClea
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isDrawingRef = useRef(false);
   const [hasWebSignature, setHasWebSignature] = useState(false);
+  const showUploadedPreview = Boolean(previewUri && !previewUri.startsWith('data:image/'));
+  const uploadedPreviewUri = showUploadedPreview ? previewUri : null;
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -133,8 +135,8 @@ export default function SignaturePad({ title, penColor, previewUri, onOK, onClea
       <Text style={styles.title}>{title}</Text>
 
       <View style={styles.canvasContainer}>
-        {previewUri ? (
-          <Image source={{ uri: previewUri }} style={styles.previewImage} resizeMode="contain" />
+        {uploadedPreviewUri ? (
+          <Image source={{ uri: uploadedPreviewUri }} style={styles.previewImage} resizeMode="contain" />
         ) : Platform.OS === 'web' ? (
           React.createElement('canvas', {
             ref: canvasRef,

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { brandColors } from '../../../constants/theme';
 import { clearSupabaseSessionCache, supabase } from '../../../src/supabaseClient';
 
 const REMEMBER_EMAIL_KEY = '@login_remembered_email';
@@ -42,6 +43,22 @@ export default function LoginPage() {
       setError(authError.message);
       setLoading(false);
       return;
+    }
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('is_active')
+        .eq('id', user.id)
+        .single();
+
+      if (!profileError && profile?.is_active === false) {
+        await supabase.auth.signOut();
+        setError('Tu usuario se encuentra inactivo. Contacta al administrador.');
+        setLoading(false);
+        return;
+      }
     }
 
     if (rememberUser) {
@@ -95,18 +112,18 @@ export default function LoginPage() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' },
-  form: { width: 300, gap: 10 },
-  title: { fontSize: 20, fontWeight: 'bold', marginBottom: 10, textAlign: 'center', color: '#111827' },
-  label: { fontWeight: '600', color: '#334155' },
-  input: { padding: 8, borderRadius: 4, borderWidth: 1, borderColor: '#ccc' },
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: brandColors.background, padding: 18 },
+  form: { width: '100%', maxWidth: 340, gap: 10, backgroundColor: brandColors.surface, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, padding: 18 },
+  title: { fontSize: 20, fontWeight: 'bold', marginBottom: 10, textAlign: 'center', color: brandColors.greenDark },
+  label: { fontWeight: '600', color: brandColors.textSecondary },
+  input: { padding: 10, borderRadius: 8, borderWidth: 1, borderColor: brandColors.border, backgroundColor: brandColors.white, color: brandColors.textPrimary },
   rememberRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2, marginBottom: 4 },
-  checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1, borderColor: '#94a3b8', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
-  checkboxActive: { backgroundColor: '#0070f3', borderColor: '#0070f3' },
-  checkboxMark: { color: '#fff', fontWeight: '900', fontSize: 13, lineHeight: 16 },
-  rememberText: { color: '#334155', fontWeight: '700' },
-  button: { padding: 12, backgroundColor: '#0070f3', borderRadius: 4, alignItems: 'center', marginTop: 5 },
+  checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1, borderColor: brandColors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: brandColors.white },
+  checkboxActive: { backgroundColor: brandColors.greenDark, borderColor: brandColors.greenDark },
+  checkboxMark: { color: brandColors.white, fontWeight: '900', fontSize: 13, lineHeight: 16 },
+  rememberText: { color: brandColors.textSecondary, fontWeight: '700' },
+  button: { padding: 12, backgroundColor: brandColors.greenDark, borderRadius: 8, alignItems: 'center', marginTop: 5 },
   buttonDisabled: { opacity: 0.7 },
-  buttonText: { color: 'white', fontWeight: 'bold' },
-  errorText: { color: 'red', fontSize: 14, textAlign: 'center' },
+  buttonText: { color: brandColors.white, fontWeight: 'bold' },
+  errorText: { color: brandColors.danger, fontSize: 14, textAlign: 'center' },
 });

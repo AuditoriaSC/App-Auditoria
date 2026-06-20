@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { ActivityIndicator, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { brandColors } from '../../../constants/theme';
 import { supabase } from '../../../src/supabaseClient';
 import { listActiveResponsibles, searchResponsibles } from '../../../src/services/responsiblesService';
 
@@ -15,6 +16,7 @@ type LocalComercial = {
   codigo_interno: string;
   nombre_local: string;
   region: string;
+  sort_order?: number | null;
 };
 
 type ResponsableOption = {
@@ -69,6 +71,9 @@ export default function NuevaAuditoriaPage() {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [localSearchOpen, setLocalSearchOpen] = useState(false);
   const [responsableSearchOpen, setResponsableSearchOpen] = useState(false);
+  const [newLocalOpen, setNewLocalOpen] = useState(false);
+  const [newLocalSaving, setNewLocalSaving] = useState(false);
+  const [newLocalDraft, setNewLocalDraft] = useState({ codigo_interno: '', nombre_local: '', region: '' });
 
   useEffect(() => {
     loadInitialData();
@@ -92,7 +97,7 @@ export default function NuevaAuditoriaPage() {
       .single<ProfileRow>();
 
     if (profileError || !profileData) {
-      setMessage('No se encontro el perfil del auditor.');
+      setMessage(buildMissingProfileMessage(user.email, user.id, profileError?.message));
       setLoading(false);
       return;
     }
@@ -151,6 +156,7 @@ export default function NuevaAuditoriaPage() {
   }, [responsableQuery, responsables]);
 
   const regionVisita = localSeleccionado?.region || (profile?.region === 'Global' ? '' : profile?.region || '');
+  const canCreateLocal = profile?.role === 'admin' || profile?.role === 'super_admin';
   const responsableCompleto = responsableSeleccionado
     ? `${responsableSeleccionado.codigo} - ${responsableSeleccionado.nombre}`
     : '';
@@ -205,6 +211,60 @@ export default function NuevaAuditoriaPage() {
     setLocalSeleccionado(local);
     setLocalQuery(`${local.codigo_interno} · ${local.nombre_local}`);
     setLocalSearchOpen(false);
+  };
+
+  const openNewLocalForm = () => {
+    const defaultRegion = profile?.role === 'super_admin' || profile?.region === 'Global' ? '' : profile?.region || '';
+    setNewLocalDraft({
+      codigo_interno: localQuery.trim().toUpperCase(),
+      nombre_local: '',
+      region: defaultRegion,
+    });
+    setLocalSearchOpen(false);
+    setNewLocalOpen(true);
+  };
+
+  const createLocal = async () => {
+    if (!profile) return;
+
+    const codigo = newLocalDraft.codigo_interno.trim().toUpperCase();
+    const nombre = newLocalDraft.nombre_local.trim();
+    const region = newLocalDraft.region.trim();
+
+    if (!codigo || !nombre || !region) {
+      setMessage('Completa codigo, nombre y region del nuevo local.');
+      return;
+    }
+
+    if (profile.role !== 'super_admin' && profile.region !== 'Global' && region !== profile.region) {
+      setMessage('Solo puedes crear locales dentro de tu region.');
+      return;
+    }
+
+    if (locales.some((local) => local.codigo_interno === codigo)) {
+      setMessage('Ya existe un local con ese codigo.');
+      return;
+    }
+
+    setNewLocalSaving(true);
+    setMessage(null);
+
+    const local: LocalComercial = { codigo_interno: codigo, nombre_local: nombre, region };
+    const { error } = await supabase
+      .from('locales')
+      .insert([local]);
+
+    if (error) {
+      setMessage('No se pudo crear el local. Revisa permisos o si el codigo ya existe.');
+      setNewLocalSaving(false);
+      return;
+    }
+
+    setLocales((current) => [...current, local].sort((left, right) => left.codigo_interno.localeCompare(right.codigo_interno)));
+    selectLocal(local);
+    setNewLocalOpen(false);
+    setNewLocalSaving(false);
+    setMessage('Local creado y seleccionado.');
   };
 
   const selectResponsable = (responsable: ResponsableOption) => {
@@ -278,7 +338,7 @@ export default function NuevaAuditoriaPage() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#0f766e" />
+        <ActivityIndicator size="large" color={brandColors.greenDark} />
         <Text style={styles.loadingText}>Preparando nueva visita...</Text>
       </View>
     );
@@ -428,7 +488,23 @@ export default function NuevaAuditoriaPage() {
             <Text style={styles.optionMeta}>Region {local.region}</Text>
           </TouchableOpacity>
         ))}
+        {canCreateLocal && localQuery.trim().length > 0 && filteredLocales.length === 0 && (
+          <TouchableOpacity style={styles.addOptionCard} onPress={openNewLocalForm}>
+            <Text style={styles.addOptionTitle}>+ Agregar nuevo local</Text>
+            <Text style={styles.optionMeta}>Crear local y seleccionarlo para esta visita</Text>
+          </TouchableOpacity>
+        )}
       </SearchOverlay>
+
+      <NewLocalModal
+        visible={newLocalOpen}
+        draft={newLocalDraft}
+        canChooseRegion={profile?.role === 'super_admin' || profile?.region === 'Global'}
+        saving={newLocalSaving}
+        onChange={setNewLocalDraft}
+        onClose={() => setNewLocalOpen(false)}
+        onSave={createLocal}
+      />
 
       <SearchOverlay
         visible={responsableSearchOpen}
@@ -540,6 +616,80 @@ function OverlaySelectTrigger({
   );
 }
 
+function NewLocalModal({
+  visible,
+  draft,
+  canChooseRegion,
+  saving,
+  onChange,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  draft: { codigo_interno: string; nombre_local: string; region: string };
+  canChooseRegion: boolean;
+  saving: boolean;
+  onChange: (value: { codigo_interno: string; nombre_local: string; region: string }) => void;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Agregar nuevo local</Text>
+            <TouchableOpacity style={styles.modalCloseButton} onPress={onClose}>
+              <Text style={styles.modalCloseText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.label}>Codigo del local</Text>
+          <TextInput
+            style={styles.modalSearchInput}
+            value={draft.codigo_interno}
+            onChangeText={(value) => onChange({ ...draft, codigo_interno: value.toUpperCase() })}
+            placeholder="Ej: GM"
+            autoCapitalize="characters"
+          />
+
+          <Text style={styles.label}>Nombre del local</Text>
+          <TextInput
+            style={styles.modalSearchInput}
+            value={draft.nombre_local}
+            onChangeText={(value) => onChange({ ...draft, nombre_local: value })}
+            placeholder="Nombre comercial"
+          />
+
+          <Text style={styles.label}>Region</Text>
+          {canChooseRegion ? (
+            <View style={styles.modalSegment}>
+              {['Costa', 'Sierra'].map((region) => {
+                const active = draft.region === region;
+                return (
+                  <TouchableOpacity
+                    key={region}
+                    style={[styles.modalSegmentButton, active && styles.modalSegmentButtonActive]}
+                    onPress={() => onChange({ ...draft, region })}
+                  >
+                    <Text style={[styles.modalSegmentText, active && styles.modalSegmentTextActive]}>{region}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : (
+            <TextInput style={styles.modalSearchInput} value={draft.region} editable={false} />
+          )}
+
+          <TouchableOpacity style={[styles.createButton, saving && styles.createButtonDisabled]} onPress={onSave} disabled={saving}>
+            <Text style={styles.createButtonText}>{saving ? 'Guardando...' : 'Guardar local'}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function SearchOverlay({
   visible,
   title,
@@ -644,69 +794,85 @@ function mapResponsibleRow(row: {
   };
 }
 
+function buildMissingProfileMessage(email?: string | null, uid?: string, detail?: string) {
+  return [
+    'No se encontro el perfil del auditor autenticado.',
+    `Correo: ${email || 'sin correo'}`,
+    `UID Auth: ${uid || 'sin uid'}`,
+    detail ? `Detalle: ${detail}` : null,
+  ].filter(Boolean).join('\n');
+}
+
 const webInputStyle = {
   width: '100%',
   height: 46,
-  border: '1px solid #cbd5e1',
+  border: `1px solid ${brandColors.border}`,
   borderRadius: 8,
   boxSizing: 'border-box',
   padding: '0 10px',
   fontSize: 14,
   fontWeight: 800,
-  color: '#111827',
-  backgroundColor: '#fff',
+  color: brandColors.textPrimary,
+  backgroundColor: brandColors.white,
 };
 
 const styles = StyleSheet.create({
-  container: { padding: 18, paddingBottom: 40, backgroundColor: '#f3f6f8', width: '100%', maxWidth: 760, alignSelf: 'center' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: '#f8fafc' },
-  loadingText: { marginTop: 8, color: '#64748b' },
-  header: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, padding: 18, marginBottom: 14 },
-  title: { fontSize: 25, fontWeight: '900', color: '#111827' },
-  subtitle: { fontSize: 13, color: '#64748b', marginTop: 5, lineHeight: 18 },
-  messageBox: { backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fed7aa', borderRadius: 8, padding: 12, marginBottom: 14 },
-  messageText: { color: '#9a3412', fontWeight: '700' },
-  section: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, padding: 16, marginBottom: 14 },
+  container: { padding: 18, paddingBottom: 40, backgroundColor: brandColors.background, width: '100%', maxWidth: 760, alignSelf: 'center' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.creamSoft },
+  loadingText: { marginTop: 8, color: brandColors.textSecondary },
+  header: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 18, marginBottom: 14 },
+  title: { fontSize: 25, fontWeight: '900', color: brandColors.textPrimary },
+  subtitle: { fontSize: 13, color: brandColors.textSecondary, marginTop: 5, lineHeight: 18 },
+  messageBox: { backgroundColor: '#fff7ed', borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, padding: 12, marginBottom: 14 },
+  messageText: { color: brandColors.coffeeDark, fontWeight: '700' },
+  section: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 16, marginBottom: 14 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 14, gap: 10 },
-  stepCircle: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#ccfbf1', alignItems: 'center', justifyContent: 'center' },
-  stepText: { color: '#0f766e', fontWeight: '900' },
-  sectionTitle: { fontSize: 16, fontWeight: '900', color: '#111827' },
-  label: { fontSize: 12, fontWeight: '900', color: '#475569', marginBottom: 6 },
-  visitTypeSegment: { flexDirection: 'row', gap: 8, borderWidth: 1, borderColor: '#d7e1e7', borderRadius: 10, padding: 5, backgroundColor: '#f8fafc', marginBottom: 14 },
+  stepCircle: { width: 30, height: 30, borderRadius: 15, backgroundColor: brandColors.greenSoft, alignItems: 'center', justifyContent: 'center' },
+  stepText: { color: brandColors.greenDark, fontWeight: '900' },
+  sectionTitle: { fontSize: 16, fontWeight: '900', color: brandColors.textPrimary },
+  label: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 6 },
+  visitTypeSegment: { flexDirection: 'row', gap: 8, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, padding: 5, backgroundColor: brandColors.creamSoft, marginBottom: 14 },
   visitTypeButton: { flex: 1, minHeight: 42, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' },
-  visitTypeButtonActive: { backgroundColor: '#0f766e' },
-  visitTypeText: { color: '#475569', fontWeight: '900' },
-  visitTypeTextActive: { color: '#fff' },
+  visitTypeButtonActive: { backgroundColor: brandColors.greenDark },
+  visitTypeText: { color: brandColors.textSecondary, fontWeight: '900' },
+  visitTypeTextActive: { color: brandColors.white },
   dateTimeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 2 },
   dateTimeItem: { flex: 1, minWidth: 145 },
-  clockButton: { minHeight: 62, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, backgroundColor: '#f8fafc', paddingHorizontal: 12, justifyContent: 'center' },
-  clockValue: { fontSize: 19, fontWeight: '900', color: '#111827' },
-  clockHint: { fontSize: 11, fontWeight: '700', color: '#0f766e', marginTop: 2 },
-  searchInput: { minHeight: 54, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, paddingHorizontal: 12, backgroundColor: '#fff', fontSize: 15, marginBottom: 8 },
-  searchInputSelected: { borderColor: '#0f766e', backgroundColor: '#f0fdfa' },
-  triggerText: { color: '#111827', fontSize: 15, fontWeight: '800' },
+  clockButton: { minHeight: 62, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, backgroundColor: brandColors.creamSoft, paddingHorizontal: 12, justifyContent: 'center' },
+  clockValue: { fontSize: 19, fontWeight: '900', color: brandColors.textPrimary },
+  clockHint: { fontSize: 11, fontWeight: '700', color: brandColors.greenDark, marginTop: 2 },
+  searchInput: { minHeight: 54, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingHorizontal: 12, backgroundColor: brandColors.white, fontSize: 15, marginBottom: 8 },
+  searchInputSelected: { borderColor: brandColors.greenDark, backgroundColor: brandColors.greenSoft },
+  triggerText: { color: brandColors.textPrimary, fontSize: 15, fontWeight: '800' },
   triggerPlaceholder: { color: '#94a3b8', fontWeight: '700' },
-  helperText: { color: '#64748b', fontSize: 12, fontWeight: '700', lineHeight: 17, marginTop: 4 },
+  helperText: { color: brandColors.textSecondary, fontSize: 12, fontWeight: '700', lineHeight: 17, marginTop: 4 },
   optionsList: { gap: 8 },
-  optionCard: { borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, padding: 12, backgroundColor: '#f8fafc' },
-  optionTitle: { color: '#111827', fontWeight: '900', fontSize: 14 },
-  optionMeta: { color: '#64748b', fontWeight: '700', fontSize: 12, marginTop: 3 },
-  emptyText: { color: '#64748b', fontStyle: 'italic', paddingVertical: 8 },
+  optionCard: { borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, backgroundColor: brandColors.creamSoft },
+  optionTitle: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 14 },
+  optionMeta: { color: brandColors.textSecondary, fontWeight: '700', fontSize: 12, marginTop: 3 },
+  addOptionCard: { borderWidth: 1, borderColor: '#99f6e4', borderRadius: 8, padding: 12, backgroundColor: brandColors.greenSoft, marginTop: 8 },
+  addOptionTitle: { color: brandColors.greenDark, fontWeight: '900', fontSize: 14 },
+  emptyText: { color: brandColors.textSecondary, fontStyle: 'italic', paddingVertical: 8 },
   twoColumns: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  input: { flex: 1, minHeight: 52, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, paddingHorizontal: 12, backgroundColor: '#fff', fontSize: 15 },
-  confirmCard: { backgroundColor: '#f8fafc', borderRadius: 8, padding: 12 },
+  input: { flex: 1, minHeight: 52, borderWidth: 1, borderColor: brandColors.border, borderRadius: 7, paddingHorizontal: 12, backgroundColor: brandColors.white, fontSize: 15 },
+  confirmCard: { backgroundColor: brandColors.creamSoft, borderRadius: 8, padding: 12 },
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#e5edf3', gap: 12 },
-  infoLabel: { color: '#64748b', fontSize: 12, fontWeight: '900' },
-  infoValue: { flex: 1, textAlign: 'right', color: '#111827', fontWeight: '800' },
-  createButton: { minHeight: 54, borderRadius: 8, backgroundColor: '#0f766e', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  createButtonDisabled: { backgroundColor: '#99c9c2', opacity: 0.8 },
-  createButtonText: { color: '#fff', fontWeight: '900', fontSize: 16 },
+  infoLabel: { color: brandColors.textSecondary, fontSize: 12, fontWeight: '900' },
+  infoValue: { flex: 1, textAlign: 'right', color: brandColors.textPrimary, fontWeight: '800' },
+  createButton: { minHeight: 54, borderRadius: 8, backgroundColor: brandColors.greenDark, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+  createButtonDisabled: { backgroundColor: brandColors.green, opacity: 0.8 },
+  createButtonText: { color: brandColors.white, fontWeight: '900', fontSize: 16 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.42)', justifyContent: 'center', padding: 18 },
-  modalCard: { width: '100%', maxWidth: 560, alignSelf: 'center', maxHeight: '82%', backgroundColor: '#fff', borderRadius: 10, padding: 16, borderWidth: 1, borderColor: '#dbe4ea' },
+  modalCard: { width: '100%', maxWidth: 560, alignSelf: 'center', maxHeight: '82%', backgroundColor: brandColors.white, borderRadius: 10, padding: 16, borderWidth: 1, borderColor: '#dbe4ea' },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14 },
-  modalTitle: { fontSize: 18, fontWeight: '900', color: '#111827' },
+  modalTitle: { fontSize: 18, fontWeight: '900', color: brandColors.textPrimary },
   modalCloseButton: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 7, backgroundColor: '#f1f5f9' },
   modalCloseText: { color: '#334155', fontWeight: '800' },
-  modalSearchInput: { minHeight: 54, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, paddingHorizontal: 12, backgroundColor: '#fff', fontSize: 15, marginBottom: 12 },
+  modalSearchInput: { minHeight: 54, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingHorizontal: 12, backgroundColor: brandColors.white, fontSize: 15, marginBottom: 12 },
+  modalSegment: { flexDirection: 'row', gap: 8, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, padding: 5, backgroundColor: brandColors.creamSoft, marginBottom: 14 },
+  modalSegmentButton: { flex: 1, minHeight: 42, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  modalSegmentButtonActive: { backgroundColor: brandColors.greenDark },
+  modalSegmentText: { color: brandColors.textSecondary, fontWeight: '900' },
+  modalSegmentTextActive: { color: brandColors.white },
   modalOptions: { maxHeight: 360 },
 });
