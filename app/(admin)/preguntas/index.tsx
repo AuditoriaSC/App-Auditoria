@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
+import { brandColors } from '../../../constants/theme';
 import { supabase } from '../../../src/supabaseClient';
 
 type ProfileRow = {
@@ -388,36 +389,37 @@ function formatQuestionType(value: string) {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 18, paddingBottom: 36, backgroundColor: '#f3f6f8', width: '100%', maxWidth: 980, alignSelf: 'center' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: '#f8fafc' },
-  loadingText: { marginTop: 8, color: '#64748b' },
-  errorText: { color: '#b91c1c', fontWeight: '800', marginBottom: 12 },
-  header: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, padding: 18, marginBottom: 14, flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'center' },
-  title: { fontSize: 25, fontWeight: '900', color: '#111827' },
-  subtitle: { marginTop: 4, color: '#64748b', fontWeight: '600', lineHeight: 18 },
-  message: { backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fed7aa', borderRadius: 8, padding: 12, marginBottom: 14, color: '#9a3412', fontWeight: '800' },
-  filterBand: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, padding: 12, marginBottom: 14, gap: 10 },
+  container: { padding: 18, paddingBottom: 36, backgroundColor: brandColors.background, width: '100%', maxWidth: 980, alignSelf: 'center' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.creamSoft },
+  loadingText: { marginTop: 8, color: brandColors.textSecondary },
+  errorText: { color: brandColors.danger, fontWeight: '800', marginBottom: 12 },
+  header: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 18, marginBottom: 14, flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'center' },
+  title: { fontSize: 25, fontWeight: '900', color: brandColors.textPrimary },
+  subtitle: { marginTop: 4, color: brandColors.textSecondary, fontWeight: '600', lineHeight: 18 },
+  message: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, padding: 12, marginBottom: 14, color: brandColors.coffeeDark, fontWeight: '800' },
+  filterBand: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, marginBottom: 14, gap: 10 },
   filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   filterItem: { flex: 1, minWidth: 170 },
-  label: { fontSize: 12, fontWeight: '900', color: '#475569', marginBottom: 6 },
-  searchInput: { minHeight: 44, borderWidth: 1, borderColor: '#d7e1e7', borderRadius: 10, paddingHorizontal: 12, backgroundColor: '#fff', color: '#111827', fontWeight: '700' },
-  pickerShell: { height: 44, borderWidth: 1, borderColor: '#d7e1e7', borderRadius: 10, overflow: 'hidden', backgroundColor: '#f8fafc', justifyContent: 'center' },
-  picker: { height: 44, color: '#111827', fontWeight: '700', backgroundColor: '#f8fafc' },
-  card: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, padding: 14, marginBottom: 10 },
-  disabledCard: { opacity: 0.65, backgroundColor: '#f8fafc' },
+  label: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 6 },
+  searchInput: { minHeight: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.textPrimary, fontWeight: '700' },
+  pickerShell: { height: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, overflow: 'hidden', backgroundColor: brandColors.creamSoft, justifyContent: 'center' },
+  picker: { height: 44, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
+  card: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 10 },
+  disabledCard: { opacity: 0.65, backgroundColor: brandColors.creamSoft },
   cardHeader: { flexDirection: 'row', gap: 12, justifyContent: 'space-between' },
   cardTitleArea: { flex: 1 },
-  questionText: { color: '#111827', fontWeight: '900', fontSize: 15, lineHeight: 20 },
-  meta: { marginTop: 5, color: '#64748b', fontSize: 12, fontWeight: '700', textTransform: 'capitalize' },
+  questionText: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 15, lineHeight: 20 },
+  meta: { marginTop: 5, color: brandColors.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'capitalize' },
   statusColumn: { alignItems: 'center' },
-  statusText: { color: '#475569', fontWeight: '900', fontSize: 11 },
+  statusText: { color: brandColors.textSecondary, fontWeight: '900', fontSize: 11 },
   editGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
   fieldGroup: { flex: 1, minWidth: 150 },
-  input: { minHeight: 44, borderWidth: 1, borderColor: '#d7e1e7', borderRadius: 10, paddingHorizontal: 12, backgroundColor: '#fff', color: '#111827', fontWeight: '700', flex: 1, minWidth: 130 },
+  input: { minHeight: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.textPrimary, fontWeight: '700', flex: 1, minWidth: 130 },
   textArea: { minHeight: 84, paddingTop: 10 },
   cardActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 12 },
-  primaryButton: { backgroundColor: '#0f766e', borderRadius: 8, paddingVertical: 11, paddingHorizontal: 16, alignItems: 'center' },
-  primaryButtonText: { color: '#fff', fontWeight: '900' },
-  secondaryButton: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, paddingVertical: 11, paddingHorizontal: 16, alignItems: 'center' },
-  secondaryButtonText: { color: '#334155', fontWeight: '900' },
+  primaryButton: { backgroundColor: brandColors.greenDark, borderRadius: 8, paddingVertical: 11, paddingHorizontal: 16, alignItems: 'center' },
+  primaryButtonText: { color: brandColors.white, fontWeight: '900' },
+  secondaryButton: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingVertical: 11, paddingHorizontal: 16, alignItems: 'center' },
+  secondaryButtonText: { color: brandColors.textSecondary, fontWeight: '900' },
 });
+

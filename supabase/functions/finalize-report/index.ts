@@ -3,8 +3,30 @@ import { createClient } from "npm:@supabase/supabase-js@2"
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-const RESEND_FROM = Deno.env.get('RESEND_FROM') || 'Auditorias Corporativas <reportes@tu-dominio.com>'
-const RESEND_TEST_TO = Deno.env.get('RESEND_TEST_TO')
+const REPORT_FROM_EMAIL = Deno.env.get('REPORT_FROM_EMAIL') || Deno.env.get('RESEND_FROM') || 'Auditorias Sweet & Coffee <onboarding@resend.dev>'
+const REPORT_TO_EMAILS = Deno.env.get('REPORT_TO_EMAILS') || Deno.env.get('RESEND_TEST_TO') || ''
+const REPORT_CC_EMAILS = Deno.env.get('REPORT_CC_EMAILS') || ''
+const REPORT_BCC_EMAILS = Deno.env.get('REPORT_BCC_EMAILS') || ''
+const WEB_APP_URL = Deno.env.get('WEB_APP_URL') || ''
+const ANDROID_DOWNLOAD_URL = Deno.env.get('ANDROID_DOWNLOAD_URL') || ''
+const IOS_TESTFLIGHT_URL = Deno.env.get('IOS_TESTFLIGHT_URL') || ''
+const SUPPORT_EMAIL = Deno.env.get('SUPPORT_EMAIL') || ''
+
+const emailColors = {
+  greenDark: '#165034',
+  green: '#1F6B47',
+  greenSoft: '#E7F1EC',
+  cream: '#F7F1E7',
+  creamSoft: '#FBF8F1',
+  coffee: '#6B4A32',
+  coffeeDark: '#3A2618',
+  white: '#FFFFFF',
+  logoWhite: '#EEEEEE',
+  border: '#DED2C2',
+  textPrimary: '#2B2118',
+  textSecondary: '#6B5B4B',
+  danger: '#B23B32',
+}
 
 type QuestionType = 'compliance' | 'cash_count' | 'pending_deposit' | 'inventory' | 'cup_count' | 'raw_material_count' | 'follow_up' | 'additional_novelty'
 
@@ -89,6 +111,47 @@ function formatNumber(value: number | null | undefined) {
   return Number(value).toFixed(2)
 }
 
+function parseEmailList(value?: string | null) {
+  return String(value || '')
+    .split(/[;,]/)
+    .map((email) => email.trim())
+    .filter(Boolean)
+}
+
+function uniqueEmails(values: string[]) {
+  return Array.from(new Set(values.map((email) => email.trim()).filter(Boolean)))
+}
+
+function reportRecipients(report: ReportRow) {
+  const to = parseEmailList(REPORT_TO_EMAILS)
+  if (to.length === 0 && report.profiles?.email) {
+    to.push(report.profiles.email)
+  }
+
+  return {
+    to: uniqueEmails(to),
+    cc: uniqueEmails(parseEmailList(REPORT_CC_EMAILS)),
+    bcc: uniqueEmails(parseEmailList(REPORT_BCC_EMAILS)),
+  }
+}
+
+function renderFooterLinks() {
+  const links = [
+    WEB_APP_URL ? `<a href="${escapeHtml(WEB_APP_URL)}" target="_blank" rel="noopener noreferrer" style="color:${emailColors.greenDark}; font-weight:700;">Abrir plataforma</a>` : '',
+    ANDROID_DOWNLOAD_URL ? `<a href="${escapeHtml(ANDROID_DOWNLOAD_URL)}" target="_blank" rel="noopener noreferrer" style="color:${emailColors.greenDark}; font-weight:700;">Android</a>` : '',
+    IOS_TESTFLIGHT_URL ? `<a href="${escapeHtml(IOS_TESTFLIGHT_URL)}" target="_blank" rel="noopener noreferrer" style="color:${emailColors.greenDark}; font-weight:700;">iOS TestFlight</a>` : '',
+    SUPPORT_EMAIL ? `<a href="mailto:${escapeHtml(SUPPORT_EMAIL)}" style="color:${emailColors.greenDark}; font-weight:700;">Soporte</a>` : '',
+  ].filter(Boolean)
+
+  if (links.length === 0) return ''
+
+  return `
+    <div style="margin-top:20px; padding-top:14px; border-top:1px solid ${emailColors.border}; color:${emailColors.textSecondary}; font-size:13px;">
+      ${links.join(' &nbsp;|&nbsp; ')}
+    </div>
+  `
+}
+
 function questionType(answer: AnswerRow): string {
   return answer.checklist_questions?.question_type || 'compliance'
 }
@@ -120,7 +183,7 @@ function imageHtml(url: string | null | undefined, alt: string) {
   if (!url) return ''
   const safeUrl = escapeHtml(url)
   return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block; margin:8px 12px 8px 0; text-decoration:none;">
-    <img src="${safeUrl}" alt="${escapeHtml(alt)}" style="width:100%; max-width:450px; max-height:350px; object-fit:contain; border:1px solid #d9e2ec; border-radius:10px; background:#fff; display:block;" />
+    <img src="${safeUrl}" alt="${escapeHtml(alt)}" style="width:100%; max-width:450px; max-height:350px; object-fit:contain; border:1px solid ${emailColors.border}; border-radius:10px; background:${emailColors.white}; display:block;" />
   </a>`
 }
 
@@ -189,20 +252,20 @@ function renderNumericTable(title: string, headers: [string, string, string, str
   if (rows.length === 0) return ''
 
   return `
-    <p style="margin:10px 0 6px 0; font-weight:700; color:#243b53;">${escapeHtml(title)}</p>
+    <p style="margin:10px 0 6px 0; font-weight:700; color:${emailColors.coffeeDark};">${escapeHtml(title)}</p>
     <table style="width:100%; border-collapse:collapse; font-size:15px; margin-bottom:10px;">
       <thead>
-        <tr style="background:#eef2f7;">
-          ${headers.map((header) => `<th style="border:1px solid #d9e2ec; padding:9px; text-align:left;">${escapeHtml(header)}</th>`).join('')}
+        <tr style="background:${emailColors.cream};">
+          ${headers.map((header) => `<th style="border:1px solid ${emailColors.border}; padding:9px; text-align:left;">${escapeHtml(header)}</th>`).join('')}
         </tr>
       </thead>
       <tbody>
         ${rows.map((row) => `
           <tr>
-            <td style="border:1px solid #d9e2ec; padding:9px;">${escapeHtml(row.description)}</td>
-            <td style="border:1px solid #d9e2ec; padding:9px;">${formatNumber(row.theoretical)}</td>
-            <td style="border:1px solid #d9e2ec; padding:9px;">${formatNumber(row.physical)}</td>
-            <td style="border:1px solid #d9e2ec; padding:9px;">${formatNumber(row.difference)}</td>
+            <td style="border:1px solid ${emailColors.border}; padding:9px;">${escapeHtml(row.description)}</td>
+            <td style="border:1px solid ${emailColors.border}; padding:9px;">${formatNumber(row.theoretical)}</td>
+            <td style="border:1px solid ${emailColors.border}; padding:9px;">${formatNumber(row.physical)}</td>
+            <td style="border:1px solid ${emailColors.border}; padding:9px;">${formatNumber(row.difference)}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -214,19 +277,19 @@ function renderCrossTable(title: string, rows: ReturnType<typeof rawMaterialCros
   if (rows.length === 0) return ''
 
   return `
-    <p style="margin:10px 0 6px 0; font-weight:700; color:#243b53;">${escapeHtml(title)}</p>
+    <p style="margin:10px 0 6px 0; font-weight:700; color:${emailColors.coffeeDark};">${escapeHtml(title)}</p>
     <table style="width:100%; border-collapse:collapse; font-size:15px; margin-bottom:10px;">
       <thead>
-        <tr style="background:#eef2f7;">
-          <th style="border:1px solid #d9e2ec; padding:9px; text-align:left;">Cruce</th>
-          <th style="border:1px solid #d9e2ec; padding:9px; text-align:left;">Resultado</th>
+        <tr style="background:${emailColors.cream};">
+          <th style="border:1px solid ${emailColors.border}; padding:9px; text-align:left;">Cruce</th>
+          <th style="border:1px solid ${emailColors.border}; padding:9px; text-align:left;">Resultado</th>
         </tr>
       </thead>
       <tbody>
         ${rows.map((row) => `
           <tr>
-            <td style="border:1px solid #d9e2ec; padding:9px;">${escapeHtml(row.description)}</td>
-            <td style="border:1px solid #d9e2ec; padding:9px;">${formatNumber(row.result)}</td>
+            <td style="border:1px solid ${emailColors.border}; padding:9px;">${escapeHtml(row.description)}</td>
+            <td style="border:1px solid ${emailColors.border}; padding:9px;">${formatNumber(row.result)}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -238,7 +301,7 @@ function renderDepositData(answer: AnswerRow) {
   if (answer.numeric_value_current === null && answer.numeric_value_previous === null) return ''
 
   return `
-    <div style="font-size:13px; background:#f8fafc; border:1px solid #d9e2ec; border-radius:6px; padding:8px; margin-top:8px;">
+    <div style="font-size:13px; background:${emailColors.creamSoft}; border:1px solid ${emailColors.border}; border-radius:6px; padding:8px; margin-top:8px;">
       <div><strong>Turno actual:</strong> ${formatNumber(answer.numeric_value_current)}</div>
       <div><strong>Turno anterior:</strong> ${formatNumber(answer.numeric_value_previous)}</div>
     </div>
@@ -249,15 +312,15 @@ function renderQuestionDetail(answer: AnswerRow, index: number) {
   const type = questionType(answer)
   const questionText = answer.checklist_questions?.question_text || 'Pregunta'
   const result = answer.value === 'cumple' ? 'SI CUMPLE' : 'NO CUMPLE'
-  const resultColor = answer.value === 'cumple' ? '#0f766e' : '#b91c1c'
+  const resultColor = answer.value === 'cumple' ? emailColors.greenDark : emailColors.danger
   const evidence = imageHtml(answer.evidence_url, `Evidencia pregunta ${index + 1}`)
   const rows = numericRows(answer)
   let numericBlock = ''
 
   if (type === 'follow_up') {
     return `
-      <div style="border:1px solid #d9e2ec; border-radius:8px; padding:12px; margin-bottom:10px; background:${answer.value === 'cumple' ? '#ffffff' : '#fff7f7'};">
-        <p style="margin:0 0 6px 0; font-weight:700; color:#102a43;">${index + 1}. ${escapeHtml(questionText)}: <span style="color:${resultColor};">${result}</span></p>
+      <div style="border:1px solid ${emailColors.border}; border-radius:8px; padding:12px; margin-bottom:10px; background:${answer.value === 'cumple' ? emailColors.white : emailColors.creamSoft};">
+        <p style="margin:0 0 6px 0; font-weight:700; color:${emailColors.textPrimary};">${index + 1}. ${escapeHtml(questionText)}: <span style="color:${resultColor};">${result}</span></p>
         <p style="margin:0 0 6px 0;"><strong>Observaciones:</strong> ${escapeHtml(answer.observation || 'Sin observaciones')}</p>
         ${evidence ? `<div style="margin-top:8px;"><strong>Evidencias:</strong><br/>${evidence}</div>` : ''}
       </div>
@@ -272,10 +335,10 @@ function renderQuestionDetail(answer: AnswerRow, index: number) {
       : ''
 
     return `
-      <div style="border:1px solid #d9e2ec; border-radius:8px; padding:12px; margin-bottom:10px; background:#ffffff;">
-        <p style="margin:0 0 6px 0; font-weight:700; color:#102a43;">${index + 1}. ${escapeHtml(questionText)}</p>
+      <div style="border:1px solid ${emailColors.border}; border-radius:8px; padding:12px; margin-bottom:10px; background:${emailColors.white};">
+        <p style="margin:0 0 6px 0; font-weight:700; color:${emailColors.textPrimary};">${index + 1}. ${escapeHtml(questionText)}</p>
         <p style="margin:0 0 4px 0;"><strong>Resultado:</strong> No aplica</p>
-        ${countBlock || '<p style="margin:0 0 6px 0; color:#52606d;">Sin conteos registrados.</p>'}
+        ${countBlock || `<p style="margin:0 0 6px 0; color:${emailColors.textSecondary};">Sin conteos registrados.</p>`}
         ${crossBlock}
         <p style="margin:0 0 6px 0;"><strong>Observaciones:</strong> ${escapeHtml(answer.observation || 'Sin observaciones')}</p>
         ${evidence ? `<div style="margin-top:8px;"><strong>Evidencias:</strong><br/>${evidence}</div>` : ''}
@@ -296,8 +359,8 @@ function renderQuestionDetail(answer: AnswerRow, index: number) {
   }
 
   return `
-    <div style="border:1px solid #d9e2ec; border-radius:8px; padding:12px; margin-bottom:10px; background:${answer.value === 'cumple' ? '#ffffff' : '#fff7f7'};">
-      <p style="margin:0 0 6px 0; font-weight:700; color:#102a43;">${index + 1}. ${escapeHtml(questionText)}</p>
+    <div style="border:1px solid ${emailColors.border}; border-radius:8px; padding:12px; margin-bottom:10px; background:${answer.value === 'cumple' ? emailColors.white : emailColors.creamSoft};">
+      <p style="margin:0 0 6px 0; font-weight:700; color:${emailColors.textPrimary};">${index + 1}. ${escapeHtml(questionText)}</p>
       <p style="margin:0 0 4px 0;"><strong>Resultado:</strong> <span style="color:${resultColor}; font-weight:700;">${result}</span></p>
       <p style="margin:0 0 4px 0;"><strong>Puntaje:</strong> ${formatNumber(obtainedPoints(answer))} / ${formatNumber(possiblePoints(answer))}</p>
       <p style="margin:0 0 6px 0;"><strong>Observaciones:</strong> ${escapeHtml(answer.observation || 'Sin observaciones')}</p>
@@ -311,11 +374,11 @@ function renderNoveltySection(answers: AnswerRow[]) {
   const novelties = answers.filter((answer) => questionType(answer) === 'additional_novelty' && ((answer.observation || '').trim() || answer.evidence_url))
 
   if (novelties.length === 0) {
-    return `<p style="margin:0; color:#52606d;">Sin novedades adicionales.</p>`
+    return `<p style="margin:0; color:${emailColors.textSecondary};">Sin novedades adicionales.</p>`
   }
 
   return novelties.map((answer, index) => `
-    <div style="border:1px solid #d9e2ec; border-radius:8px; padding:16px; margin-bottom:10px;">
+    <div style="border:1px solid ${emailColors.border}; border-radius:8px; padding:16px; margin-bottom:10px;">
       <p style="margin:0 0 6px 0;"><strong>Novedad ${index + 1}:</strong> ${escapeHtml(answer.observation || 'Sin texto')}</p>
       ${imageHtml(answer.evidence_url, `Novedad ${index + 1}`)}
     </div>
@@ -344,8 +407,8 @@ function buildHeaderTable(report: ReportRow, scoreText: string) {
       <tbody>
         ${rows.map(([label, value]) => `
           <tr>
-            <td style="width:38%; border:1px solid #d9e2ec; padding:8px; background:#eef2f7; font-weight:700;">${escapeHtml(label)}</td>
-            <td style="border:1px solid #d9e2ec; padding:8px;">${escapeHtml(value)}</td>
+            <td style="width:38%; border:1px solid ${emailColors.border}; padding:8px; background:${emailColors.cream}; font-weight:700;">${escapeHtml(label)}</td>
+            <td style="border:1px solid ${emailColors.border}; padding:8px;">${escapeHtml(value)}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -367,10 +430,6 @@ Deno.serve(async (req) => {
       throw new Error('Faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY en variables de entorno.')
     }
 
-    if (!RESEND_API_KEY) {
-      throw new Error('Falta RESEND_API_KEY en variables de entorno.')
-    }
-
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
     const { data: report, error: errReport } = await supabase
@@ -380,12 +439,35 @@ Deno.serve(async (req) => {
       .single<ReportRow>()
 
     if (errReport || !report) throw new Error(`Reporte no encontrado: ${errReport?.message}`)
+    const recipients = reportRecipients(report)
     console.log('finalize-report:report-loaded', {
       reportId,
       shouldSend: report.should_send,
-      to: RESEND_TEST_TO || report.profiles?.email || 'admin@tu-dominio.com',
+      to: recipients.to,
+      cc: recipients.cc,
+      bccCount: recipients.bcc.length,
       visitType: report.visit_type_id,
     })
+
+    if (report.should_send !== true) {
+      console.log('finalize-report:skip-send', { reportId, shouldSend: report.should_send })
+      return new Response(JSON.stringify({
+        success: true,
+        skipped: true,
+        message: 'Reporte consolidado sin envio de correo.',
+      }), {
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        status: 200,
+      })
+    }
+
+    if (!RESEND_API_KEY) {
+      throw new Error('CONFIG_RESEND_API_KEY')
+    }
+
+    if (recipients.to.length === 0) {
+      throw new Error('CONFIG_REPORT_TO_EMAILS')
+    }
 
     const { data: answers, error: errAnswers } = await supabase
       .from('audit_answers_final')
@@ -412,36 +494,42 @@ Deno.serve(async (req) => {
       .join('')
 
     const emailHtmlBody = `
-      <div style="font-family:Arial, sans-serif; color:#102a43; max-width:1040px; margin:0 auto; background:#f8fafc; padding:28px; font-size:16px; line-height:1.55;">
-        <div style="background:#ffffff; border:1px solid #d9e2ec; border-radius:12px; padding:28px;">
+      <div style="font-family:Arial, sans-serif; color:${emailColors.textPrimary}; max-width:1080px; margin:0 auto; background:${emailColors.creamSoft}; padding:30px; font-size:16px; line-height:1.55;">
+        <div style="background:${emailColors.greenDark}; color:${emailColors.logoWhite}; border-radius:12px 12px 0 0; padding:22px 28px;">
+          <p style="margin:0 0 6px 0; font-size:12px; letter-spacing:0.08em; text-transform:uppercase; font-weight:700;">Sweet & Coffee</p>
+          <h2 style="margin:0; font-size:22px; color:${emailColors.white};">Reporte de visita ${escapeHtml(visitType)}</h2>
+          <p style="margin:8px 0 0 0; color:${emailColors.logoWhite};">${escapeHtml(localName)}${localCode ? ` · ${escapeHtml(localCode)}` : ''} · ${scoreText}</p>
+        </div>
+        <div style="background:${emailColors.white}; border:1px solid ${emailColors.border}; border-top:0; border-radius:0 0 12px 12px; padding:28px;">
           <p style="margin:0 0 12px 0;">Buen Día Estimados,</p>
           <p style="margin:0 0 12px 0;">A continuación se presenta el resultado de la visita ${escapeHtml(visitType)} realizada:</p>
 
           ${buildHeaderTable(report, scoreText)}
 
-          <h3 style="margin:18px 0 10px 0; color:#102a43;">Detalle de preguntas</h3>
+          <h3 style="margin:18px 0 10px 0; color:${emailColors.greenDark};">Detalle de preguntas</h3>
           ${questionDetails || '<p>Sin respuestas registradas.</p>'}
 
-          <h3 style="margin:18px 0 10px 0; color:#102a43;">Otras novedades</h3>
+          <h3 style="margin:18px 0 10px 0; color:${emailColors.greenDark};">Otras novedades</h3>
           ${renderNoveltySection(finalAnswers)}
 
-          <h3 style="margin:18px 0 10px 0; color:#102a43;">Firmas</h3>
+          <h3 style="margin:18px 0 10px 0; color:${emailColors.greenDark};">Firmas</h3>
           <table style="width:100%; border-collapse:collapse; font-size:16px;">
             <tr>
-              <td style="width:50%; vertical-align:top; border:1px solid #d9e2ec; padding:16px;">
+              <td style="width:50%; vertical-align:top; border:1px solid ${emailColors.border}; padding:16px;">
                 <strong>Firma Auditor:</strong><br/>
                 ${imageHtml(auditorSignatureUrl, 'Firma auditor') || '<p>Sin firma</p>'}
                 <p style="margin:6px 0 0 0;">${escapeHtml(report.auditor_name_snapshot || report.profiles?.full_name || 'Auditor')}</p>
               </td>
-              <td style="width:50%; vertical-align:top; border:1px solid #d9e2ec; padding:16px;">
+              <td style="width:50%; vertical-align:top; border:1px solid ${emailColors.border}; padding:16px;">
                 <strong>Firma Responsable:</strong><br/>
-                ${responsibleSignatureUrl ? imageHtml(responsibleSignatureUrl, 'Firma responsable') : '<p style="font-weight:700; color:#52606d;">Sin Firma</p>'}
+                ${responsibleSignatureUrl ? imageHtml(responsibleSignatureUrl, 'Firma responsable') : `<p style="font-weight:700; color:${emailColors.textSecondary};">Sin firma del responsable</p>`}
                 <p style="margin:6px 0 0 0;">${escapeHtml(report.responsible_code ? `${report.responsible_code} · ${report.responsible_name_snapshot || 'Responsable'}` : report.responsible_name_snapshot || 'Responsable')}</p>
               </td>
             </tr>
           </table>
 
           <p style="margin:18px 0 0 0;"><strong>Enviar:</strong> ${report.should_send ? 'SI' : 'NO'}</p>
+          ${renderFooterLinks()}
         </div>
       </div>
     `
@@ -453,8 +541,10 @@ Deno.serve(async (req) => {
         'Authorization': `Bearer ${RESEND_API_KEY}`,
       },
       body: JSON.stringify({
-        from: RESEND_FROM,
-        to: [RESEND_TEST_TO || report.profiles?.email || 'admin@tu-dominio.com'],
+        from: REPORT_FROM_EMAIL,
+        to: recipients.to,
+        cc: recipients.cc.length > 0 ? recipients.cc : undefined,
+        bcc: recipients.bcc.length > 0 ? recipients.bcc : undefined,
         subject,
         html: emailHtmlBody,
       }),
@@ -467,17 +557,27 @@ Deno.serve(async (req) => {
       data: resendData,
     })
     if (!resendResponse.ok) {
-      throw new Error(`Resend: ${JSON.stringify(resendData)}`)
+      console.error('finalize-report:resend-error', { status: resendResponse.status, data: resendData })
+      throw new Error('RESEND_SEND_FAILED')
     }
 
-    return new Response(JSON.stringify({ success: true, data: resendData }), {
+    return new Response(JSON.stringify({ success: true, data: resendData, recipients: { to: recipients.to, cc: recipients.cc, bccCount: recipients.bcc.length } }), {
       headers: { 'Content-Type': 'application/json', ...corsHeaders },
       status: 200,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.error('finalize-report:error', { message })
-    return new Response(JSON.stringify({ success: false, error: message }), {
+    const friendlyMessage =
+      message === 'CONFIG_RESEND_API_KEY'
+        ? 'No se pudo enviar el correo porque falta configurar Resend.'
+        : message === 'CONFIG_REPORT_TO_EMAILS'
+          ? 'No se pudo enviar el correo porque no hay destinatarios configurados.'
+          : message === 'RESEND_SEND_FAILED'
+            ? 'No se pudo enviar el correo. Revisa la configuracion de Resend.'
+            : 'No se pudo consolidar el reporte. Intenta nuevamente.'
+
+    return new Response(JSON.stringify({ success: false, error: friendlyMessage }), {
       headers: { 'Content-Type': 'application/json', ...corsHeaders },
       status: 500,
     })

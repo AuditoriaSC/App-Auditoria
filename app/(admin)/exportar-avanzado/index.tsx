@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { Picker } from '@react-native-picker/picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import { brandColors } from '../../../constants/theme';
 import { supabase } from '../../../src/supabaseClient';
 
 // Definición estricta de Roles Autorizados para esta descarga
@@ -131,7 +132,7 @@ export default function ExportacionAvanzadaPage() {
   };
 
   if (checkingAuth) {
-    return <View style={styles.center}><ActivityIndicator size="large" color="#0070f3" /><Text style={styles.loadingText}>Validando Credenciales VIP...</Text></View>;
+    return <View style={styles.center}><ActivityIndicator size="large" color={brandColors.greenDark} /><Text style={styles.loadingText}>Validando Credenciales VIP...</Text></View>;
   }
 
   // VALIDACIÓN ESTRICTA DE ACCESO POR ROL ADMINISTRATIVO REQUERIDO
@@ -199,22 +200,22 @@ export default function ExportacionAvanzadaPage() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, maxWidth: 550, alignSelf: 'center', width: '100%', backgroundColor: '#f8fafc' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 60 },
-  loadingText: { marginTop: 10, fontSize: 14, color: '#475569', fontWeight: '500' },
-  title: { fontSize: 22, fontWeight: 'bold', color: '#0f172a' },
-  subtitle: { fontSize: 13, color: '#64748b', marginTop: 4, marginBottom: 20 },
-  filterCard: { backgroundColor: '#fff', padding: 20, borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', boxShadow: '0px 2px 8px rgba(0,0,0,0.05)' },
-  cardTitle: { fontSize: 15, fontWeight: 'bold', color: '#1e293b', marginBottom: 15 },
-  label: { fontSize: 13, fontWeight: '600', color: '#475569', marginBottom: 6, marginTop: 8 },
-  pickerContainer: { borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, backgroundColor: '#fff', marginBottom: 15, overflow: 'hidden' },
-  downloadButton: { backgroundColor: '#0070f3', padding: 14, borderRadius: 6, alignItems: 'center', marginTop: 10 },
-  disabledButton: { backgroundColor: '#93c5fd', opacity: 0.7 },
-  downloadButtonText: { color: '#fff', fontSize: 15, fontWeight: 'bold' },
-  infoBox: { marginTop: 15, padding: 12, backgroundColor: '#f0fdf4', borderRadius: 6, borderWidth: 1, borderColor: '#bbf7d0' },
-  infoText: { fontSize: 12, color: '#166534', lineHeight: 17 },
-  deniedContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40, textAlign: 'center', backgroundColor: '#fff', marginTop: 50 },
+  container: { padding: 20, maxWidth: 550, alignSelf: 'center', width: '100%', backgroundColor: brandColors.background },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 60, backgroundColor: brandColors.background },
+  loadingText: { marginTop: 10, fontSize: 14, color: brandColors.textSecondary, fontWeight: '500' },
+  title: { fontSize: 22, fontWeight: 'bold', color: brandColors.greenDark },
+  subtitle: { fontSize: 13, color: brandColors.textSecondary, marginTop: 4, marginBottom: 20 },
+  filterCard: { backgroundColor: brandColors.white, padding: 20, borderRadius: 10, borderWidth: 1, borderColor: brandColors.border, boxShadow: '0px 2px 8px rgba(58,38,24,0.08)' },
+  cardTitle: { fontSize: 15, fontWeight: 'bold', color: brandColors.textPrimary, marginBottom: 15 },
+  label: { fontSize: 13, fontWeight: '600', color: brandColors.textSecondary, marginBottom: 6, marginTop: 8 },
+  pickerContainer: { borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, backgroundColor: brandColors.white, marginBottom: 15, overflow: 'hidden' },
+  downloadButton: { backgroundColor: brandColors.greenDark, padding: 14, borderRadius: 8, alignItems: 'center', marginTop: 10 },
+  disabledButton: { backgroundColor: brandColors.green, opacity: 0.7 },
+  downloadButtonText: { color: brandColors.white, fontSize: 15, fontWeight: 'bold' },
+  infoBox: { marginTop: 15, padding: 12, backgroundColor: brandColors.greenSoft, borderRadius: 8, borderWidth: 1, borderColor: brandColors.border },
+  infoText: { fontSize: 12, color: brandColors.greenDark, lineHeight: 17 },
+  deniedContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40, textAlign: 'center', backgroundColor: brandColors.background, marginTop: 50 },
   deniedIcon: { fontSize: 40, marginBottom: 10 },
-  deniedTitle: { fontSize: 18, fontWeight: 'bold', color: '#1e293b' },
-  deniedMessage: { fontSize: 13, color: '#64748b', textAlign: 'center', marginTop: 8, lineHeight: 18 }
+  deniedTitle: { fontSize: 18, fontWeight: 'bold', color: brandColors.textPrimary },
+  deniedMessage: { fontSize: 13, color: brandColors.textSecondary, textAlign: 'center', marginTop: 8, lineHeight: 18 }
 });

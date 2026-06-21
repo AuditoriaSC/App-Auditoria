@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
+import { brandColors } from '../../../../constants/theme';
 import { supabase } from '../../../../src/supabaseClient';
 import { offlineStorage } from '../../../../src/offlineStorage';
 
@@ -484,7 +485,9 @@ export default function ChecklistDinamicoPage() {
                   value={currentAnswer.physicalValue}
                   onChangeText={(text) => updateField(q.id, { physicalValue: text })}
                 />
-                <Text style={styles.differenceText}>Diferencia: {difference === null ? 'Pendiente' : difference.toFixed(2)}</Text>
+                <Text style={[styles.differenceText, difference !== null && difference < 0 && styles.negativeDifferenceText]}>
+                  Diferencia: {difference === null ? 'Pendiente' : difference.toFixed(2)}
+                </Text>
               </View>
             )}
 
@@ -600,7 +603,9 @@ function CountItemsEditor({
               <NumberField label="Teorico" value={item.theoreticalValue} onChangeText={(text) => updateItem(index, { theoreticalValue: text })} />
               <NumberField label="Fisico" value={item.physicalValue} onChangeText={(text) => updateItem(index, { physicalValue: text })} />
             </View>
-            <Text style={styles.itemDifference}>Diferencia: {difference === null ? 'Pendiente' : difference.toFixed(2)}</Text>
+            <Text style={[styles.itemDifference, difference !== null && difference < 0 && styles.negativeDifferenceText]}>
+              Diferencia: {difference === null ? 'Pendiente' : difference.toFixed(2)}
+            </Text>
           </View>
         );
       })}
@@ -625,56 +630,57 @@ function CountItemsEditor({
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 18, maxWidth: 720, alignSelf: 'center', width: '100%', backgroundColor: '#f3f6f8' },
+  container: { padding: 18, maxWidth: 720, alignSelf: 'center', width: '100%', backgroundColor: brandColors.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
-  errorText: { color: '#b91c1c', fontWeight: '800' },
+  errorText: { color: brandColors.danger, fontWeight: '800' },
   networkBanner: { padding: 10, borderRadius: 8, marginBottom: 15, alignItems: 'center' },
-  bannerOnline: { backgroundColor: '#d1fae5' },
-  bannerOffline: { backgroundColor: '#fee2e2' },
-  bannerText: { fontSize: 13, fontWeight: '800', color: '#374151' },
-  title: { fontSize: 22, fontWeight: '900', color: '#111827' },
-  subtitle: { fontSize: 13, color: '#64748b', marginTop: 5, marginBottom: 15 },
-  card: { borderWidth: 1, borderColor: '#dde5eb', padding: 16, borderRadius: 8, backgroundColor: '#fff', marginTop: 14 },
+  bannerOnline: { backgroundColor: brandColors.greenSoft },
+  bannerOffline: { backgroundColor: brandColors.creamSoft },
+  bannerText: { fontSize: 13, fontWeight: '800', color: brandColors.textSecondary },
+  title: { fontSize: 22, fontWeight: '900', color: brandColors.textPrimary },
+  subtitle: { fontSize: 13, color: brandColors.textSecondary, marginTop: 5, marginBottom: 15 },
+  card: { borderWidth: 1, borderColor: brandColors.border, padding: 16, borderRadius: 8, backgroundColor: brandColors.white, marginTop: 14 },
   questionHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 12 },
-  questionText: { flex: 1, fontSize: 16, fontWeight: '900', color: '#111827', lineHeight: 22 },
-  pointsBadge: { minHeight: 28, borderRadius: 14, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ecfdf5', borderWidth: 1, borderColor: '#99f6e4' },
-  pointsBadgeText: { color: '#0f766e', fontWeight: '900', fontSize: 12 },
+  questionText: { flex: 1, fontSize: 16, fontWeight: '900', color: brandColors.textPrimary, lineHeight: 22 },
+  pointsBadge: { minHeight: 28, borderRadius: 14, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: brandColors.greenSoft, borderWidth: 1, borderColor: brandColors.greenSoft },
+  pointsBadgeText: { color: brandColors.greenDark, fontWeight: '900', fontSize: 12 },
   radioGroup: { flexDirection: 'row', gap: 10, marginBottom: 14 },
-  radioButton: { flex: 1, minHeight: 46, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc' },
-  radioActiveCumple: { backgroundColor: '#0f766e', borderColor: '#0f766e' },
-  radioActiveNoCumple: { backgroundColor: '#dc2626', borderColor: '#dc2626' },
-  radioText: { fontWeight: '900', color: '#334155' },
-  textWhite: { color: '#fff' },
-  fieldLabel: { fontSize: 12, fontWeight: '900', color: '#475569', marginBottom: 6, marginTop: 8 },
-  textArea: { borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, padding: 10, fontSize: 14, backgroundColor: '#fff', minHeight: 76, textAlignVertical: 'top' },
+  radioButton: { flex: 1, minHeight: 46, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: brandColors.creamSoft },
+  radioActiveCumple: { backgroundColor: brandColors.greenDark, borderColor: brandColors.greenDark, borderWidth: 2 },
+  radioActiveNoCumple: { backgroundColor: brandColors.danger, borderColor: brandColors.danger, borderWidth: 2 },
+  radioText: { fontWeight: '900', color: brandColors.textSecondary },
+  textWhite: { color: brandColors.white },
+  fieldLabel: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 6, marginTop: 8 },
+  textArea: { borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 10, fontSize: 14, backgroundColor: brandColors.white, minHeight: 76, textAlignVertical: 'top' },
   numericGrid: { marginTop: 8, gap: 8 },
   numberField: { flex: 1 },
-  input: { minHeight: 48, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, paddingHorizontal: 10, backgroundColor: '#fff', fontSize: 15 },
-  differenceText: { color: '#0f766e', fontWeight: '900', marginTop: 2 },
-  countBox: { marginTop: 10, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 10, backgroundColor: '#f8fafc' },
-  countTitle: { color: '#111827', fontWeight: '900', marginBottom: 8 },
-  countRow: { borderTopWidth: 1, borderTopColor: '#e2e8f0', paddingTop: 10, marginTop: 8 },
-  itemLabelLocked: { minHeight: 48, borderWidth: 1, borderColor: '#dbe4ea', borderRadius: 8, paddingHorizontal: 10, backgroundColor: '#eef2f7', justifyContent: 'center', marginBottom: 4 },
-  itemLabelText: { color: '#111827', fontWeight: '900', fontSize: 15 },
-  itemMetaText: { color: '#64748b', fontWeight: '800', fontSize: 12, marginTop: 2 },
+  input: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingHorizontal: 10, backgroundColor: brandColors.white, fontSize: 15 },
+  differenceText: { color: brandColors.greenDark, fontWeight: '900', marginTop: 2 },
+  negativeDifferenceText: { color: brandColors.danger },
+  countBox: { marginTop: 10, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 10, backgroundColor: brandColors.creamSoft },
+  countTitle: { color: brandColors.textPrimary, fontWeight: '900', marginBottom: 8 },
+  countRow: { borderTopWidth: 1, borderTopColor: brandColors.border, paddingTop: 10, marginTop: 8 },
+  itemLabelLocked: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingHorizontal: 10, backgroundColor: brandColors.creamSoft, justifyContent: 'center', marginBottom: 4 },
+  itemLabelText: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 15 },
+  itemMetaText: { color: brandColors.textSecondary, fontWeight: '800', fontSize: 12, marginTop: 2 },
   itemNameInput: { marginBottom: 4 },
   countNumbers: { flexDirection: 'row', gap: 8 },
-  itemDifference: { color: '#0f766e', fontWeight: '900', marginTop: 6 },
-  addItemButton: { minHeight: 42, borderRadius: 8, borderWidth: 1, borderColor: '#0f766e', alignItems: 'center', justifyContent: 'center', marginTop: 10, backgroundColor: '#f0fdfa' },
-  addItemText: { color: '#0f766e', fontWeight: '900' },
-  crossBox: { borderWidth: 1, borderColor: '#bae6fd', borderRadius: 8, backgroundColor: '#f0f9ff', padding: 10, marginTop: 10, gap: 6 },
-  crossTitle: { color: '#075985', fontWeight: '900' },
-  crossRow: { borderTopWidth: 1, borderTopColor: '#bae6fd', paddingTop: 6 },
-  crossName: { color: '#0f172a', fontWeight: '900' },
-  crossValue: { color: '#0369a1', fontWeight: '800', marginTop: 2 },
+  itemDifference: { color: brandColors.greenDark, fontWeight: '900', marginTop: 6 },
+  addItemButton: { minHeight: 42, borderRadius: 8, borderWidth: 1, borderColor: brandColors.greenDark, alignItems: 'center', justifyContent: 'center', marginTop: 10, backgroundColor: brandColors.greenSoft },
+  addItemText: { color: brandColors.greenDark, fontWeight: '900' },
+  crossBox: { borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, backgroundColor: brandColors.greenSoft, padding: 10, marginTop: 10, gap: 6 },
+  crossTitle: { color: brandColors.greenDark, fontWeight: '900' },
+  crossRow: { borderTopWidth: 1, borderTopColor: brandColors.border, paddingTop: 6 },
+  crossName: { color: brandColors.textPrimary, fontWeight: '900' },
+  crossValue: { color: brandColors.greenDark, fontWeight: '800', marginTop: 2 },
   evidenceHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 },
-  evidenceCounter: { color: '#64748b', fontWeight: '800', fontSize: 12 },
+  evidenceCounter: { color: brandColors.textSecondary, fontWeight: '800', fontSize: 12 },
   imageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 4 },
-  photoButton: { width: 118, height: 92, borderWidth: 1, borderColor: '#0f766e', borderStyle: 'dashed', borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f0fdfa' },
-  photoButtonText: { color: '#0f766e', fontWeight: '900' },
-  imagePreview: { width: 118, height: 92, borderRadius: 8, backgroundColor: '#e2e8f0' },
-  validationText: { marginTop: 10, color: '#b91c1c', fontWeight: '800', fontSize: 12 },
-  submitButton: { backgroundColor: '#0f766e', padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 24, marginBottom: 40 },
-  disabledButton: { backgroundColor: '#99c9c2', opacity: 0.7 },
-  submitButtonText: { color: '#fff', fontSize: 16, fontWeight: '900' },
+  photoButton: { width: 118, height: 92, borderWidth: 1, borderColor: brandColors.greenDark, borderStyle: 'dashed', borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: brandColors.greenSoft },
+  photoButtonText: { color: brandColors.greenDark, fontWeight: '900' },
+  imagePreview: { width: 118, height: 92, borderRadius: 8, backgroundColor: brandColors.border },
+  validationText: { marginTop: 10, color: brandColors.danger, fontWeight: '800', fontSize: 12 },
+  submitButton: { backgroundColor: brandColors.greenDark, padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 24, marginBottom: 40 },
+  disabledButton: { backgroundColor: brandColors.green, opacity: 0.7 },
+  submitButtonText: { color: brandColors.white, fontSize: 16, fontWeight: '900' },
 });

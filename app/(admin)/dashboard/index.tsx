@@ -271,8 +271,8 @@ export default function AdminDashboard() {
           <TouchableOpacity style={styles.secondaryButton} onPress={handleSignOut}>
             <Text style={styles.secondaryButtonText}>Cerrar sesion</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.primaryButton} onPress={() => router.push('/nueva-auditoria')}>
-            <Text style={styles.primaryButtonText}>Nueva visita</Text>
+          <TouchableOpacity style={styles.newVisitButton} onPress={() => router.push('/nueva-auditoria')}>
+            <Text style={styles.newVisitButtonText}>Nueva visita</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -594,6 +594,8 @@ const styles = StyleSheet.create({
   primaryButton: { backgroundColor: brandColors.greenDark, borderRadius: 7, paddingVertical: 12, paddingHorizontal: 15, alignItems: 'center', justifyContent: 'center', flexGrow: 1 },
   primaryButtonText: { color: brandColors.white, fontWeight: '800', fontSize: 14 },
   heroActions: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', flexGrow: 1 },
+  newVisitButton: { backgroundColor: brandColors.logoWhite, borderWidth: 2, borderColor: brandColors.white, borderRadius: 8, paddingVertical: 12, paddingHorizontal: 15, alignItems: 'center', justifyContent: 'center', flexGrow: 1 },
+  newVisitButtonText: { color: brandColors.greenDark, fontWeight: '900', fontSize: 14 },
   secondaryButton: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.border, borderRadius: 7, paddingVertical: 12, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', flexGrow: 1 },
   secondaryButtonText: { color: brandColors.greenDark, fontWeight: '900', fontSize: 14 },
   summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },

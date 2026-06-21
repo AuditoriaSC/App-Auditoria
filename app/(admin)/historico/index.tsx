@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import { brandColors } from '../../../constants/theme';
 import { supabase } from '../../../src/supabaseClient';
 
 interface AuditReport {
@@ -87,7 +88,7 @@ export default function HistoricoAuditoriasPage() {
     }
   };
 
-  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#0070f3" /></View>;
+  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={brandColors.greenDark} /></View>;
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -137,22 +138,22 @@ export default function HistoricoAuditoriasPage() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, maxWidth: 650, alignSelf: 'center', width: '100%', backgroundColor: '#f8fafc' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 50 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottomWidth: 1, borderBottomColor: '#e2e8f0', paddingBottom: 15 },
-  title: { fontSize: 22, fontWeight: 'bold', color: '#1e293b' },
-  subtitle: { fontSize: 13, color: '#64748b', marginTop: 2 },
-  exportButton: { backgroundColor: '#10b981', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 1 },
-  disabledButton: { backgroundColor: '#93c5fd', opacity: 0.7 },
-  exportButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
-  emptyText: { color: '#64748b', fontStyle: 'italic', textAlign: 'center', marginTop: 30 },
-  reportCard: { flexDirection: 'row', backgroundColor: '#fff', padding: 16, borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0', marginTop: 12, alignItems: 'center' },
-  reportId: { fontSize: 14, fontWeight: '700', color: '#0f172a' },
-  reportMeta: { fontSize: 13, color: '#475569', marginTop: 4 },
-  reportDate: { fontSize: 11, color: '#94a3b8', marginTop: 2 },
+  container: { padding: 20, maxWidth: 650, alignSelf: 'center', width: '100%', backgroundColor: brandColors.background },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 50, backgroundColor: brandColors.background },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottomWidth: 1, borderBottomColor: brandColors.border, paddingBottom: 15 },
+  title: { fontSize: 22, fontWeight: 'bold', color: brandColors.greenDark },
+  subtitle: { fontSize: 13, color: brandColors.textSecondary, marginTop: 2 },
+  exportButton: { backgroundColor: brandColors.greenDark, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8 },
+  disabledButton: { backgroundColor: brandColors.green, opacity: 0.7 },
+  exportButtonText: { color: brandColors.white, fontWeight: 'bold', fontSize: 14 },
+  emptyText: { color: brandColors.textSecondary, fontStyle: 'italic', textAlign: 'center', marginTop: 30 },
+  reportCard: { flexDirection: 'row', backgroundColor: brandColors.white, padding: 16, borderRadius: 8, borderWidth: 1, borderColor: brandColors.border, marginTop: 12, alignItems: 'center' },
+  reportId: { fontSize: 14, fontWeight: '700', color: brandColors.textPrimary },
+  reportMeta: { fontSize: 13, color: brandColors.textSecondary, marginTop: 4 },
+  reportDate: { fontSize: 11, color: brandColors.textSecondary, marginTop: 2 },
   scoreContainer: { alignItems: 'flex-end', minWidth: 70 },
   scoreText: { fontSize: 18, fontWeight: 'bold' },
-  percentageText: { fontSize: 12, color: '#64748b', fontWeight: '500', marginTop: 2 },
-  textGreen: { color: '#16a34a' },
-  textRed: { color: '#dc2626' },
+  percentageText: { fontSize: 12, color: brandColors.textSecondary, fontWeight: '500', marginTop: 2 },
+  textGreen: { color: brandColors.success },
+  textRed: { color: brandColors.danger },
 });

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { brandColors } from '../../../constants/theme';
@@ -9,10 +9,12 @@ const REMEMBER_EMAIL_KEY = '@login_remembered_email';
 
 export default function LoginPage() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ message?: string | string[] }>();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberUser, setRememberUser] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -27,9 +29,15 @@ export default function LoginPage() {
     loadRememberedEmail();
   }, []);
 
+  useEffect(() => {
+    const message = Array.isArray(params.message) ? params.message[0] : params.message;
+    if (message) setSuccessMessage(message);
+  }, [params.message]);
+
   const handleLogin = async () => {
     setLoading(true);
     setError(null);
+    setSuccessMessage(null);
 
     const { error: authError } = await supabase.auth.signInWithPassword({
       email: email.trim().toLowerCase(),
@@ -75,6 +83,7 @@ export default function LoginPage() {
       <View style={styles.form}>
         <Text style={styles.title}>Auditorias - Iniciar Sesion</Text>
 
+        {successMessage && <Text style={styles.successText}>{successMessage}</Text>}
         {error && <Text style={styles.errorText}>{error}</Text>}
 
         <Text style={styles.label}>Correo Electronico</Text>
@@ -126,4 +135,5 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.7 },
   buttonText: { color: brandColors.white, fontWeight: 'bold' },
   errorText: { color: brandColors.danger, fontSize: 14, textAlign: 'center' },
+  successText: { color: brandColors.greenDark, fontSize: 14, textAlign: 'center', fontWeight: '800' },
 });

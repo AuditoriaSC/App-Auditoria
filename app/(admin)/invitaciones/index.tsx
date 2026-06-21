@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
+import { brandColors } from '../../../constants/theme';
 import { supabase } from '../../../src/supabaseClient';
 
 type ProfileRow = {
@@ -29,6 +30,7 @@ const statuses = ['TODOS', 'pendiente', 'aceptada', 'cancelada', 'expirada'];
 const adminRoles = ['auditor', 'admin'];
 const superAdminRoles = ['auditor', 'admin', 'super_admin'];
 const regions = ['Costa', 'Sierra', 'Global'];
+const corporateDomain = '@sweetandcoffee.com.ec';
 
 export default function GestionInvitacionesPage() {
   const router = useRouter();
@@ -125,6 +127,11 @@ export default function GestionInvitacionesPage() {
       return;
     }
 
+    if (!cleanEmail.endsWith(corporateDomain)) {
+      setMessage('Solo se permiten correos corporativos @sweetandcoffee.com.ec.');
+      return;
+    }
+
     if (!role) {
       setMessage('Selecciona un rol.');
       return;
@@ -182,7 +189,7 @@ export default function GestionInvitacionesPage() {
     } else {
       setInvitations((current) => [data as InvitationRow, ...current]);
       setEmail('');
-      setMessage(`Invitacion creada. Codigo: ${code}`);
+      setMessage(`Invitacion creada. Link: ${buildInviteLink(code)}`);
     }
 
     setSaving(false);
@@ -308,6 +315,7 @@ export default function GestionInvitacionesPage() {
           <View key={invitation.id} style={styles.card}>
             <View style={styles.cardText}>
               <Text style={styles.cardTitle}>{invitation.email}</Text>
+              <Text style={styles.linkText}>{buildInviteLink(invitation.code)}</Text>
               <Text style={styles.meta}>{formatRole(invitation.role)} · {invitation.region || 'Sin region'} · Codigo {invitation.code}</Text>
               <Text style={styles.meta}>Expira: {formatDate(invitation.expires_at)}</Text>
             </View>
@@ -316,9 +324,14 @@ export default function GestionInvitacionesPage() {
                 <Text style={styles.badgeText}>{formatStatus(state)}</Text>
               </View>
               {state === 'pendiente' && (
-                <TouchableOpacity style={styles.cancelButton} onPress={() => cancelInvitation(invitation)} disabled={saving}>
-                  <Text style={styles.cancelButtonText}>Cancelar</Text>
-                </TouchableOpacity>
+                <>
+                  <TouchableOpacity style={styles.copyButton} onPress={() => copyInviteLink(invitation.code)}>
+                    <Text style={styles.copyButtonText}>Copiar link</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.cancelButton} onPress={() => cancelInvitation(invitation)} disabled={saving}>
+                    <Text style={styles.cancelButtonText}>Cancelar</Text>
+                  </TouchableOpacity>
+                </>
               )}
             </View>
           </View>
@@ -329,10 +342,28 @@ export default function GestionInvitacionesPage() {
 }
 
 function getInvitationStatus(invitation: InvitationRow) {
-  if (invitation.status === 'cancelada') return 'cancelada';
-  if (invitation.status === 'aceptada' || invitation.is_used) return 'aceptada';
+  if (invitation.status === 'cancelada' || invitation.status === 'canceled') return 'cancelada';
+  if (invitation.status === 'aceptada' || invitation.status === 'accepted' || invitation.is_used) return 'aceptada';
   if (invitation.expires_at && new Date(invitation.expires_at).getTime() < Date.now()) return 'expirada';
   return invitation.status || 'pendiente';
+}
+
+function buildInviteLink(code: string) {
+  const configuredUrl = process.env.EXPO_PUBLIC_WEB_APP_URL || process.env.WEB_APP_URL;
+  const baseUrl = configuredUrl || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8081');
+  return `${String(baseUrl).replace(/\/$/, '')}/accept-invite?token=${encodeURIComponent(code)}`;
+}
+
+async function copyInviteLink(code: string) {
+  const link = buildInviteLink(code);
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(link);
+    return;
+  }
+
+  if (typeof window !== 'undefined') {
+    window.prompt('Copia el link de invitacion:', link);
+  }
 }
 
 function normalize(value: string) {
@@ -362,39 +393,44 @@ function formatDate(value: string | null) {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 18, paddingBottom: 36, backgroundColor: '#f3f6f8', width: '100%', maxWidth: 980, alignSelf: 'center' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: '#f8fafc' },
-  loadingText: { marginTop: 8, color: '#64748b' },
-  errorText: { color: '#b91c1c', fontWeight: '800', marginBottom: 12 },
-  header: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, padding: 18, marginBottom: 14, flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'center' },
-  title: { fontSize: 25, fontWeight: '900', color: '#111827' },
-  subtitle: { marginTop: 4, color: '#64748b', fontWeight: '600', lineHeight: 18 },
-  message: { backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fed7aa', borderRadius: 8, padding: 12, marginBottom: 14, color: '#9a3412', fontWeight: '800' },
-  formCard: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, padding: 14, marginBottom: 14 },
-  formTitle: { color: '#111827', fontWeight: '900', fontSize: 16, marginBottom: 10 },
+  container: { padding: 18, paddingBottom: 36, backgroundColor: brandColors.background, width: '100%', maxWidth: 980, alignSelf: 'center' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.creamSoft },
+  loadingText: { marginTop: 8, color: brandColors.textSecondary },
+  errorText: { color: brandColors.danger, fontWeight: '800', marginBottom: 12 },
+  header: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 18, marginBottom: 14, flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'center' },
+  title: { fontSize: 25, fontWeight: '900', color: brandColors.textPrimary },
+  subtitle: { marginTop: 4, color: brandColors.textSecondary, fontWeight: '600', lineHeight: 18 },
+  message: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, padding: 12, marginBottom: 14, color: brandColors.coffeeDark, fontWeight: '800' },
+  formCard: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 14 },
+  formTitle: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 16, marginBottom: 10 },
   formGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   formActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 },
-  filterBand: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, padding: 12, marginBottom: 14, gap: 10 },
+  filterBand: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, marginBottom: 14, gap: 10 },
   filterItem: { minWidth: 180, maxWidth: 260 },
-  label: { fontSize: 12, fontWeight: '900', color: '#475569', marginBottom: 6 },
-  input: { minHeight: 44, borderWidth: 1, borderColor: '#d7e1e7', borderRadius: 10, paddingHorizontal: 12, backgroundColor: '#fff', color: '#111827', fontWeight: '700', flex: 1, minWidth: 220 },
-  searchInput: { minHeight: 44, borderWidth: 1, borderColor: '#d7e1e7', borderRadius: 10, paddingHorizontal: 12, backgroundColor: '#fff', color: '#111827', fontWeight: '700' },
-  pickerShell: { height: 44, borderWidth: 1, borderColor: '#d7e1e7', borderRadius: 10, overflow: 'hidden', backgroundColor: '#f8fafc', justifyContent: 'center', flex: 1, minWidth: 160 },
-  picker: { height: 44, color: '#111827', fontWeight: '700', backgroundColor: '#f8fafc' },
-  card: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, padding: 14, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', gap: 10, alignItems: 'center' },
+  label: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 6 },
+  input: { minHeight: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.textPrimary, fontWeight: '700', flex: 1, minWidth: 220 },
+  searchInput: { minHeight: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.textPrimary, fontWeight: '700' },
+  pickerShell: { height: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, overflow: 'hidden', backgroundColor: brandColors.creamSoft, justifyContent: 'center', flex: 1, minWidth: 160 },
+  picker: { height: 44, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
+  card: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', gap: 10, alignItems: 'center' },
   cardText: { flex: 1 },
-  cardTitle: { color: '#111827', fontWeight: '900', fontSize: 15 },
-  meta: { marginTop: 5, color: '#64748b', fontSize: 12, fontWeight: '700' },
+  cardTitle: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 15 },
+  meta: { marginTop: 5, color: brandColors.textSecondary, fontSize: 12, fontWeight: '700' },
+  linkText: { marginTop: 5, color: brandColors.greenDark, fontSize: 12, fontWeight: '800' },
   statusColumn: { alignItems: 'flex-end', gap: 8 },
   badge: { borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10 },
-  badgePending: { backgroundColor: '#fef3c7' },
-  badgeAccepted: { backgroundColor: '#dcfce7' },
-  badgeCanceled: { backgroundColor: '#fee2e2' },
-  badgeText: { color: '#334155', fontWeight: '900', fontSize: 11 },
-  primaryButton: { backgroundColor: '#0f766e', borderRadius: 8, paddingVertical: 11, paddingHorizontal: 16, alignItems: 'center' },
-  primaryButtonText: { color: '#fff', fontWeight: '900' },
-  secondaryButton: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, paddingVertical: 11, paddingHorizontal: 16, alignItems: 'center' },
-  secondaryButtonText: { color: '#334155', fontWeight: '900' },
-  cancelButton: { borderWidth: 1, borderColor: '#fecaca', backgroundColor: '#fff1f2', borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10 },
-  cancelButtonText: { color: '#be123c', fontSize: 12, fontWeight: '900' },
+  badgePending: { backgroundColor: brandColors.cream },
+  badgeAccepted: { backgroundColor: brandColors.greenSoft },
+  badgeCanceled: { backgroundColor: brandColors.creamSoft },
+  badgeText: { color: brandColors.textSecondary, fontWeight: '900', fontSize: 11 },
+  primaryButton: { backgroundColor: brandColors.greenDark, borderRadius: 8, paddingVertical: 11, paddingHorizontal: 16, alignItems: 'center' },
+  primaryButtonText: { color: brandColors.white, fontWeight: '900' },
+  secondaryButton: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingVertical: 11, paddingHorizontal: 16, alignItems: 'center' },
+  secondaryButtonText: { color: brandColors.textSecondary, fontWeight: '900' },
+  cancelButton: { borderWidth: 1, borderColor: brandColors.danger, backgroundColor: brandColors.creamSoft, borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10 },
+  cancelButtonText: { color: brandColors.danger, fontSize: 12, fontWeight: '900' },
+  copyButton: { borderWidth: 1, borderColor: brandColors.greenDark, backgroundColor: brandColors.greenSoft, borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10 },
+  copyButtonText: { color: brandColors.greenDark, fontSize: 12, fontWeight: '900' },
 });
+
+

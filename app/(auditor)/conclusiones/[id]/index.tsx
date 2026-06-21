@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { brandColors } from '../../../../constants/theme';
 import { supabase } from '../../../../src/supabaseClient';
 import SignaturePad, { SignatureInputType } from '../../../../src/features/audits/components/signature-pad';
 
@@ -31,11 +32,11 @@ interface ReportSnapshot {
 }
 
 const signatureColors = [
-  { label: 'Negro', value: '#111827' },
+  { label: 'Negro', value: brandColors.textPrimary },
   { label: 'Azul', value: '#1d4ed8' },
-  { label: 'Rojo', value: '#dc2626' },
+  { label: 'Rojo', value: brandColors.danger },
   { label: 'Lila', value: '#7c3aed' },
-  { label: 'Verde', value: '#0f766e' },
+  { label: 'Verde', value: brandColors.greenDark },
 ];
 
 function pad(value: number) {
@@ -380,33 +381,33 @@ const webInputStyle = {
   padding: '0 12px',
   fontSize: 16,
   fontWeight: 800,
-  color: '#111827',
-  backgroundColor: '#fff',
+  color: brandColors.textPrimary,
+  backgroundColor: brandColors.white,
 };
 
 const styles = StyleSheet.create({
-  container: { padding: 18, maxWidth: 620, alignSelf: 'center', width: '100%', backgroundColor: '#f3f6f8' },
+  container: { padding: 18, maxWidth: 620, alignSelf: 'center', width: '100%', backgroundColor: brandColors.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
-  textStyle: { marginTop: 8, color: '#475569' },
-  title: { fontSize: 22, fontWeight: '900', color: '#111827', marginBottom: 14 },
-  card: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, padding: 14, marginBottom: 14 },
-  cardLabel: { fontSize: 12, fontWeight: '900', color: '#475569', marginBottom: 8 },
-  scoreText: { fontSize: 28, fontWeight: '900', color: '#111827' },
-  timeButton: { minHeight: 50, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, justifyContent: 'center', paddingHorizontal: 12, backgroundColor: '#fff' },
-  timeValue: { fontSize: 18, fontWeight: '900', color: '#111827' },
+  textStyle: { marginTop: 8, color: brandColors.textSecondary },
+  title: { fontSize: 22, fontWeight: '900', color: brandColors.textPrimary, marginBottom: 14 },
+  card: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 14 },
+  cardLabel: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 8 },
+  scoreText: { fontSize: 28, fontWeight: '900', color: brandColors.textPrimary },
+  timeButton: { minHeight: 50, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, justifyContent: 'center', paddingHorizontal: 12, backgroundColor: brandColors.white },
+  timeValue: { fontSize: 18, fontWeight: '900', color: brandColors.textPrimary },
   colorSection: { marginBottom: 10 },
   colorGroup: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  colorButton: { width: 34, height: 34, borderWidth: 2, borderColor: '#dbe4ea', borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc' },
-  colorButtonActive: { borderColor: '#0f766e', backgroundColor: '#ecfdf5' },
+  colorButton: { width: 34, height: 34, borderWidth: 2, borderColor: '#dbe4ea', borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: brandColors.creamSoft },
+  colorButtonActive: { borderColor: brandColors.greenDark, backgroundColor: '#ecfdf5' },
   colorSwatch: { width: 22, height: 22, borderRadius: 11, borderWidth: 1, borderColor: 'rgba(15, 23, 42, 0.18)' },
-  signatureName: { color: '#111827', fontWeight: '900', marginTop: 2 },
-  noSignatureText: { color: '#64748b', fontWeight: '800', marginTop: 4 },
+  signatureName: { color: brandColors.textPrimary, fontWeight: '900', marginTop: 2 },
+  noSignatureText: { color: brandColors.textSecondary, fontWeight: '800', marginTop: 4 },
   sendGroup: { flexDirection: 'row', gap: 10 },
-  sendButton: { flex: 1, minHeight: 46, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc' },
-  sendButtonActive: { borderColor: '#0f766e', backgroundColor: '#0f766e' },
-  sendButtonText: { color: '#334155', fontWeight: '900' },
-  sendButtonTextActive: { color: '#fff' },
-  submitButton: { backgroundColor: '#0f766e', padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 4, marginBottom: 40 },
-  disabledButton: { backgroundColor: '#99c9c2', opacity: 0.75 },
-  submitButtonText: { color: '#fff', fontSize: 16, fontWeight: '900' },
+  sendButton: { flex: 1, minHeight: 46, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: brandColors.creamSoft },
+  sendButtonActive: { borderColor: brandColors.greenDark, backgroundColor: brandColors.greenDark },
+  sendButtonText: { color: brandColors.textSecondary, fontWeight: '900' },
+  sendButtonTextActive: { color: brandColors.white },
+  submitButton: { backgroundColor: brandColors.greenDark, padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 4, marginBottom: 40 },
+  disabledButton: { backgroundColor: brandColors.green, opacity: 0.75 },
+  submitButtonText: { color: brandColors.white, fontSize: 16, fontWeight: '900' },
 });

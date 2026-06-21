@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { brandColors } from '../../../constants/theme';
 import { supabase } from '../../../src/supabaseClient';
 
 type ProfileRow = {
@@ -130,19 +131,19 @@ export default function AdministradorRecursosPage() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, paddingBottom: 32, backgroundColor: '#f3f6f8', width: '100%', maxWidth: 980, alignSelf: 'center' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: '#f8fafc' },
-  loadingText: { marginTop: 8, color: '#64748b' },
-  errorText: { color: '#b91c1c', fontWeight: '800', marginBottom: 12 },
-  header: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, padding: 16, marginBottom: 14, flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' },
+  container: { padding: 16, paddingBottom: 32, backgroundColor: brandColors.background, width: '100%', maxWidth: 980, alignSelf: 'center' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.creamSoft },
+  loadingText: { marginTop: 8, color: brandColors.textSecondary },
+  errorText: { color: brandColors.danger, fontWeight: '800', marginBottom: 12 },
+  header: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 16, marginBottom: 14, flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' },
   headerText: { flex: 1, minWidth: 220 },
-  title: { fontSize: 24, fontWeight: '900', color: '#111827' },
-  subtitle: { marginTop: 4, color: '#64748b', fontWeight: '700' },
+  title: { fontSize: 24, fontWeight: '900', color: brandColors.textPrimary },
+  subtitle: { marginTop: 4, color: brandColors.textSecondary, fontWeight: '700' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  card: { flexGrow: 1, flexBasis: 230, minWidth: 0, borderWidth: 1, borderColor: '#d7e1e7', borderRadius: 8, backgroundColor: '#fff', padding: 14 },
-  cardTitle: { color: '#111827', fontWeight: '900', fontSize: 16 },
-  cardDescription: { color: '#64748b', fontWeight: '700', fontSize: 12, lineHeight: 17, marginTop: 6 },
-  cardAction: { color: '#0f766e', fontWeight: '900', marginTop: 12 },
-  secondaryButton: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, paddingVertical: 11, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
-  secondaryButtonText: { color: '#334155', fontWeight: '900' },
+  card: { flexGrow: 1, flexBasis: 230, minWidth: 0, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, backgroundColor: brandColors.white, padding: 14 },
+  cardTitle: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 16 },
+  cardDescription: { color: brandColors.textSecondary, fontWeight: '700', fontSize: 12, lineHeight: 17, marginTop: 6 },
+  cardAction: { color: brandColors.greenDark, fontWeight: '900', marginTop: 12 },
+  secondaryButton: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingVertical: 11, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
+  secondaryButtonText: { color: brandColors.textSecondary, fontWeight: '900' },
 });
