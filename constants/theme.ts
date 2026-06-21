@@ -17,6 +17,8 @@ export const brandColors = {
 
   textPrimary: '#111111',
   textSecondary: '#294B3A',
+  inputText: '#4B5563',
+  inputPlaceholder: '#7C8A82',
 
   border: '#DED2C2',
 

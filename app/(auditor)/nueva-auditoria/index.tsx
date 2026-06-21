@@ -345,7 +345,7 @@ export default function NuevaAuditoriaPage() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <ScrollView style={styles.screen} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic">
       <View style={styles.header}>
         <Text style={styles.title}>Creacion de visita</Text>
         <Text style={styles.subtitle}>Configura la visita antes de abrir el checklist correspondiente.</Text>
@@ -423,6 +423,7 @@ export default function NuevaAuditoriaPage() {
           <TextInput
             style={styles.input}
             placeholder="Codigo"
+            placeholderTextColor={brandColors.inputPlaceholder}
             editable={false}
             value={responsableSeleccionado?.codigo || parseResponsibleDraft(responsableQuery).codigo}
             onChangeText={(value) => {
@@ -437,6 +438,7 @@ export default function NuevaAuditoriaPage() {
           <TextInput
             style={styles.input}
             placeholder="Nombre"
+            placeholderTextColor={brandColors.inputPlaceholder}
             editable={false}
             value={responsableSeleccionado?.nombre || parseResponsibleDraft(responsableQuery).nombre}
             onChangeText={(value) => {
@@ -650,6 +652,7 @@ function NewLocalModal({
             value={draft.codigo_interno}
             onChangeText={(value) => onChange({ ...draft, codigo_interno: value.toUpperCase() })}
             placeholder="Ej: GM"
+            placeholderTextColor={brandColors.inputPlaceholder}
             autoCapitalize="characters"
           />
 
@@ -659,6 +662,7 @@ function NewLocalModal({
             value={draft.nombre_local}
             onChangeText={(value) => onChange({ ...draft, nombre_local: value })}
             placeholder="Nombre comercial"
+            placeholderTextColor={brandColors.inputPlaceholder}
           />
 
           <Text style={styles.label}>Region</Text>
@@ -725,6 +729,7 @@ function SearchOverlay({
           <TextInput
             style={styles.modalSearchInput}
             placeholder={placeholder}
+            placeholderTextColor={brandColors.inputPlaceholder}
             value={query}
             onChangeText={onQueryChange}
             autoFocus={Platform.OS === 'web'}
@@ -817,8 +822,9 @@ const webInputStyle = {
 };
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: brandColors.background },
   container: { padding: 18, paddingBottom: 40, backgroundColor: brandColors.background, width: '100%', maxWidth: 820, alignSelf: 'center' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.creamSoft },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.background },
   loadingText: { marginTop: 8, color: brandColors.textSecondary },
   header: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 18, marginBottom: 14, width: '100%' },
   title: { fontSize: 25, fontWeight: '900', color: brandColors.textPrimary },
@@ -841,7 +847,7 @@ const styles = StyleSheet.create({
   clockButton: { minHeight: 52, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, backgroundColor: brandColors.creamSoft, paddingHorizontal: 12, justifyContent: 'center' },
   clockValue: { fontSize: 19, fontWeight: '900', color: brandColors.textPrimary },
   clockHint: { fontSize: 11, fontWeight: '700', color: brandColors.greenDark, marginTop: 2 },
-  searchInput: { minHeight: 52, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingHorizontal: 12, backgroundColor: brandColors.white, fontSize: 15, marginBottom: 8, justifyContent: 'center' },
+  searchInput: { minHeight: 52, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontSize: 15, marginBottom: 8, justifyContent: 'center' },
   searchInputSelected: { borderColor: brandColors.greenDark, backgroundColor: brandColors.greenSoft },
   triggerText: { color: brandColors.textPrimary, fontSize: 15, fontWeight: '800' },
   triggerPlaceholder: { color: '#94a3b8', fontWeight: '700' },
@@ -854,7 +860,7 @@ const styles = StyleSheet.create({
   addOptionTitle: { color: brandColors.greenDark, fontWeight: '900', fontSize: 14 },
   emptyText: { color: brandColors.textSecondary, fontStyle: 'italic', paddingVertical: 8 },
   twoColumns: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 12 },
-  input: { flex: 1, flexBasis: 240, minHeight: 52, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingHorizontal: 12, backgroundColor: brandColors.white, fontSize: 15 },
+  input: { flex: 1, flexBasis: 240, minHeight: 52, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontSize: 15 },
   confirmCard: { backgroundColor: brandColors.creamSoft, borderRadius: 8, padding: 12, width: '100%' },
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 9, borderTopWidth: 1, borderTopColor: brandColors.border, gap: 12 },
   infoLabel: { color: brandColors.textSecondary, fontSize: 12, fontWeight: '900' },
@@ -868,7 +874,7 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 18, fontWeight: '900', color: brandColors.textPrimary },
   modalCloseButton: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.border },
   modalCloseText: { color: brandColors.greenDark, fontWeight: '800' },
-  modalSearchInput: { minHeight: 52, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingHorizontal: 12, backgroundColor: brandColors.white, fontSize: 15, marginBottom: 12 },
+  modalSearchInput: { minHeight: 52, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontSize: 15, marginBottom: 12 },
   modalSegment: { flexDirection: 'row', gap: 8, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, padding: 5, backgroundColor: brandColors.creamSoft, marginBottom: 14 },
   modalSegmentButton: { flex: 1, minHeight: 42, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   modalSegmentButtonActive: { backgroundColor: brandColors.greenDark },

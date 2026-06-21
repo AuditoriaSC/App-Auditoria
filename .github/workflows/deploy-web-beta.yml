@@ -1,0 +1,54 @@
+name: Desplegar Web Beta
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+      - 'assets/**'
+      - 'components/**'
+      - 'constants/**'
+      - 'src/**'
+      - 'app.json'
+      - 'eas.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - '.github/workflows/deploy-web-beta.yml'
+
+jobs:
+  deploy-web-beta:
+    runs-on: ubuntu-latest
+
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+      EXPO_PUBLIC_WEB_APP_URL: ${{ secrets.EXPO_PUBLIC_WEB_APP_URL }}
+      EXPO_PUBLIC_ANDROID_DOWNLOAD_URL: ${{ secrets.EXPO_PUBLIC_ANDROID_DOWNLOAD_URL }}
+
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.x
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Validar TypeScript
+        run: npx tsc --noEmit
+
+      - name: Revisar Expo
+        run: npx expo-doctor
+
+      - name: Exportar web
+        run: npx expo export --platform web --output-dir dist
+
+      - name: Desplegar web beta
+        run: npx eas-cli deploy --export-dir dist --non-interactive

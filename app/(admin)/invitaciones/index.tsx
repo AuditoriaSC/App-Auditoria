@@ -364,7 +364,7 @@ function getInvitationStatus(invitation: InvitationRow) {
 
 function getWebAppUrl() {
   const configuredUrl = process.env.EXPO_PUBLIC_WEB_APP_URL || process.env.WEB_APP_URL;
-  const baseUrl = configuredUrl || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8081');
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : configuredUrl || 'http://localhost:8081';
   return String(baseUrl || '').replace(/\/$/, '');
 }
 

@@ -4,6 +4,12 @@
     "slug": "app-visitas-corporativa",
     "version": "1.0.0",
     "orientation": "portrait",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/08fdea59-6b48-41b7-ba74-e80a4bb4d5f1"
+    },
     "plugins": [
       "expo-router",
       "expo-sharing",

@@ -70,6 +70,7 @@ export default function FinalizarReportePage() {
   const [endTime, setEndTime] = useState(dateToTime(new Date()));
   const [showEndTimePicker, setShowEndTimePicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [scrollEnabled, setScrollEnabled] = useState(true);
 
   const [auditorSignature, setAuditorSignature] = useState<string | null>(null);
   const [responsibleSignature, setResponsibleSignature] = useState<string | null>(null);
@@ -137,14 +138,34 @@ export default function FinalizarReportePage() {
     if (date) setEndTime(dateToTime(date));
   };
 
-  const base64ToBlob = async (signatureData: string) => {
-    const response = await fetch(signatureData);
-    return response.blob();
+  const base64ToArrayBuffer = (signatureData: string) => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+    const cleanBase64 = signatureData.replace(/^data:[^;]+;base64,/, '').replace(/\s/g, '');
+    const bytes: number[] = [];
+
+    for (let index = 0; index < cleanBase64.length;) {
+      const encoded1 = chars.indexOf(cleanBase64.charAt(index++));
+      const encoded2 = chars.indexOf(cleanBase64.charAt(index++));
+      const encoded3 = chars.indexOf(cleanBase64.charAt(index++));
+      const encoded4 = chars.indexOf(cleanBase64.charAt(index++));
+      const chr1 = (encoded1 << 2) | (encoded2 >> 4);
+      const chr2 = ((encoded2 & 15) << 4) | (encoded3 >> 2);
+      const chr3 = ((encoded3 & 3) << 6) | encoded4;
+
+      bytes.push(chr1);
+      if (encoded3 !== 64 && encoded3 !== -1) bytes.push(chr2);
+      if (encoded4 !== 64 && encoded4 !== -1) bytes.push(chr3);
+    }
+
+    return new Uint8Array(bytes).buffer;
   };
 
   const uploadSignature = async (signatureData: string, path: string) => {
-    const blob = await base64ToBlob(signatureData);
-    const { error } = await supabase.storage.from('evidencias').upload(path, blob, { contentType: 'image/png', upsert: true });
+    const contentType = signatureData.match(/^data:([^;]+);base64,/)?.[1] || 'image/png';
+    const uploadBody = signatureData.startsWith('data:')
+      ? base64ToArrayBuffer(signatureData)
+      : await fetch(signatureData).then((response) => response.arrayBuffer());
+    const { error } = await supabase.storage.from('evidencias').upload(path, uploadBody, { contentType, upsert: true });
     if (error) throw error;
     const { data: { publicUrl } } = supabase.storage.from('evidencias').getPublicUrl(path);
     return publicUrl;
@@ -214,27 +235,34 @@ export default function FinalizarReportePage() {
       if (shouldSend) {
         const { data: sessionData } = await supabase.auth.getSession();
         const functionUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/finalize-report`;
-        const sendResponse = await fetch(functionUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
-            Authorization: `Bearer ${sessionData.session?.access_token || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || ''}`,
-          },
-          body: JSON.stringify({ reportId, region }),
-        });
+        try {
+          const sendResponse = await fetch(functionUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+              Authorization: `Bearer ${sessionData.session?.access_token || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || ''}`,
+            },
+            body: JSON.stringify({ reportId, region }),
+          });
 
-        const sendData = await sendResponse.json().catch(() => null);
-        if (!sendResponse.ok) {
-          const detail = sendData && typeof sendData === 'object' && 'error' in sendData ? String(sendData.error) : `HTTP ${sendResponse.status}`;
-          throw new Error(`Envio de correo: ${detail}`);
+          const sendData = await sendResponse.json().catch(() => null);
+          if (!sendResponse.ok) {
+            const detail = sendData && typeof sendData === 'object' && 'error' in sendData ? String(sendData.error) : `HTTP ${sendResponse.status}`;
+            throw new Error(`Envio de correo: ${detail}`);
+          }
+        } catch (sendError) {
+          await supabase
+            .from('audit_reports')
+            .update({ should_send: false, updated_at: new Date().toISOString() })
+            .eq('id', reportId);
+          throw sendError;
         }
       }
 
       await supabase.from('audit_answers_draft').delete().eq('report_id', reportId);
 
-      alert(`Reporte finalizado.\nCalificacion: ${weightedScore.toFixed(2)} / ${maxScore.toFixed(2)} puntos`);
-      router.replace('/nueva-auditoria');
+      router.replace('/dashboard');
     } catch (err: any) {
       alert('Error en consolidacion del reporte: ' + err.message);
     } finally {
@@ -247,7 +275,13 @@ export default function FinalizarReportePage() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={styles.container}
+      keyboardShouldPersistTaps="handled"
+      contentInsetAdjustmentBehavior="automatic"
+      scrollEnabled={scrollEnabled}
+    >
       <Text style={styles.title}>Cierre de auditoria</Text>
 
       <View style={styles.card}>
@@ -266,6 +300,7 @@ export default function FinalizarReportePage() {
           title="Firma del auditor"
           penColor={auditorColor}
           previewUri={auditorSignature}
+          previewType={auditorSignatureType}
           onOK={(signature, type) => {
             setAuditorSignature(signature);
             setAuditorSignatureType(type);
@@ -274,6 +309,8 @@ export default function FinalizarReportePage() {
             setAuditorSignature(null);
             setAuditorSignatureType(null);
           }}
+          onInteractionStart={() => setScrollEnabled(false)}
+          onInteractionEnd={() => setScrollEnabled(true)}
         />
         <Text style={styles.signatureName}>{reportSnapshot?.auditor_name_snapshot || 'Auditor'}</Text>
       </View>
@@ -284,6 +321,7 @@ export default function FinalizarReportePage() {
           title="Firma del responsable"
           penColor={responsibleColor}
           previewUri={responsibleSignature}
+          previewType={responsibleSignatureType}
           onOK={(signature, type) => {
             setResponsibleSignature(signature);
             setResponsibleSignatureType(type);
@@ -292,6 +330,8 @@ export default function FinalizarReportePage() {
             setResponsibleSignature(null);
             setResponsibleSignatureType(null);
           }}
+          onInteractionStart={() => setScrollEnabled(false)}
+          onInteractionEnd={() => setScrollEnabled(true)}
         />
         <Text style={styles.signatureName}>{responsibleDisplay}</Text>
         {!responsibleSignature && <Text style={styles.noSignatureText}>Sin Firma</Text>}
@@ -386,8 +426,9 @@ const webInputStyle = {
 };
 
 const styles = StyleSheet.create({
-  container: { padding: 18, maxWidth: 620, alignSelf: 'center', width: '100%', backgroundColor: brandColors.background },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
+  screen: { flex: 1, backgroundColor: brandColors.background },
+  container: { padding: 18, paddingBottom: 44, maxWidth: 620, alignSelf: 'center', width: '100%', backgroundColor: brandColors.background },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.background },
   textStyle: { marginTop: 8, color: brandColors.textSecondary },
   title: { fontSize: 22, fontWeight: '900', color: brandColors.textPrimary, marginBottom: 14 },
   card: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 14 },

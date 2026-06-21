@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Image, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { brandColors } from '../../../../constants/theme';
 import SignatureScreen, { SignatureViewRef } from 'react-native-signature-canvas';
 
 export type SignatureInputType = 'drawn' | 'uploaded';
@@ -9,16 +10,19 @@ interface SignaturePadProps {
   title: string;
   penColor: string;
   previewUri: string | null;
+  previewType?: SignatureInputType | null;
   onOK: (signature: string, type: SignatureInputType) => void;
   onClear: () => void;
+  onInteractionStart?: () => void;
+  onInteractionEnd?: () => void;
 }
 
-export default function SignaturePad({ title, penColor, previewUri, onOK, onClear }: SignaturePadProps) {
+export default function SignaturePad({ title, penColor, previewUri, previewType, onOK, onClear, onInteractionStart, onInteractionEnd }: SignaturePadProps) {
   const ref = useRef<SignatureViewRef>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isDrawingRef = useRef(false);
   const [hasWebSignature, setHasWebSignature] = useState(false);
-  const showUploadedPreview = Boolean(previewUri && !previewUri.startsWith('data:image/'));
+  const showUploadedPreview = Boolean(previewUri && previewType === 'uploaded');
   const uploadedPreviewUri = showUploadedPreview ? previewUri : null;
 
   useEffect(() => {
@@ -64,6 +68,7 @@ export default function SignaturePad({ title, penColor, previewUri, onOK, onClea
     if (!canvas || !context) return;
 
     event.preventDefault();
+    onInteractionStart?.();
     canvas.setPointerCapture(event.pointerId);
     context.strokeStyle = penColor;
     const point = getCanvasPoint(event);
@@ -89,6 +94,7 @@ export default function SignaturePad({ title, penColor, previewUri, onOK, onClea
     if (!isDrawingRef.current) return;
     event.preventDefault();
     isDrawingRef.current = false;
+    onInteractionEnd?.();
     const canvas = canvasRef.current;
     if (canvas) {
       onOK(canvas.toDataURL('image/png'), 'drawn');
@@ -122,13 +128,22 @@ export default function SignaturePad({ title, penColor, previewUri, onOK, onClea
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       quality: 0.8,
+      base64: true,
     });
 
     if (result.canceled || !result.assets?.[0]?.uri) return;
-    onOK(result.assets[0].uri, 'uploaded');
+    const asset = result.assets[0];
+    const signatureUri = asset.base64 ? `data:${asset.mimeType || 'image/png'};base64,${asset.base64}` : asset.uri;
+    onOK(signatureUri, 'uploaded');
   };
 
-  const style = `.m-signature-pad--footer { display: none; margin: 0px; } body,html { width: 100%; height: 100%; } .m-signature-pad { box-shadow: none; border: 0; }`;
+  const style = `
+    .m-signature-pad--footer { display: none; margin: 0px; }
+    body, html { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #ffffff; }
+    .m-signature-pad { box-shadow: none; border: 0; width: 100%; height: 100%; }
+    .m-signature-pad--body { border: 0; width: 100%; height: 100%; }
+    canvas { width: 100% !important; height: 100% !important; touch-action: none; }
+  `;
 
   return (
     <View style={styles.container}>
@@ -156,7 +171,11 @@ export default function SignaturePad({ title, penColor, previewUri, onOK, onClea
           <SignatureScreen
             ref={ref}
             onOK={(signature) => onOK(signature, 'drawn')}
-            onEnd={() => ref.current?.readSignature()}
+            onBegin={onInteractionStart}
+            onEnd={() => {
+              onInteractionEnd?.();
+              ref.current?.readSignature();
+            }}
             webStyle={style}
             autoClear={false}
             descriptionText=""
@@ -180,12 +199,12 @@ export default function SignaturePad({ title, penColor, previewUri, onOK, onClea
 
 const styles = StyleSheet.create({
   container: { width: '100%', marginBottom: 18 },
-  title: { fontSize: 14, fontWeight: '800', color: '#111827', marginBottom: 8 },
-  canvasContainer: { width: '100%', height: 180, borderWidth: 1, borderColor: '#cbd5e0', borderRadius: 8, overflow: 'hidden', backgroundColor: '#fff' },
-  previewImage: { width: '100%', height: '100%', backgroundColor: '#fff' },
+  title: { fontSize: 14, fontWeight: '800', color: brandColors.textPrimary, marginBottom: 8 },
+  canvasContainer: { width: '100%', height: Platform.OS === 'web' ? 180 : 240, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, overflow: 'hidden', backgroundColor: brandColors.white },
+  previewImage: { width: '100%', height: '100%', backgroundColor: brandColors.white },
   buttonGroup: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  clearButton: { flex: 1, padding: 10, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 6, alignItems: 'center', backgroundColor: '#f9fafb' },
-  clearButtonText: { color: '#4b5563', fontSize: 13, fontWeight: '700' },
-  secondaryButton: { flex: 1, padding: 10, borderWidth: 1, borderColor: '#0f766e', borderRadius: 6, alignItems: 'center', backgroundColor: '#f0fdfa' },
-  secondaryButtonText: { color: '#0f766e', fontSize: 13, fontWeight: '800' },
+  clearButton: { flex: 1, padding: 10, borderWidth: 1, borderColor: brandColors.border, borderRadius: 6, alignItems: 'center', backgroundColor: brandColors.creamSoft },
+  clearButtonText: { color: brandColors.inputText, fontSize: 13, fontWeight: '700' },
+  secondaryButton: { flex: 1, padding: 10, borderWidth: 1, borderColor: brandColors.greenDark, borderRadius: 6, alignItems: 'center', backgroundColor: brandColors.greenSoft },
+  secondaryButtonText: { color: brandColors.greenDark, fontSize: 13, fontWeight: '800' },
 });

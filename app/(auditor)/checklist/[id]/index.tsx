@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
 import { brandColors } from '../../../../constants/theme';
@@ -47,6 +47,12 @@ interface AnswerState {
   currentShift: string;
   previousShift: string;
   countItems: CountItem[];
+}
+
+interface PickedImage {
+  uri: string;
+  base64: string | null;
+  mimeType: string;
 }
 
 const emptyAnswer: AnswerState = {
@@ -101,6 +107,28 @@ function isScoredQuestion(question: Question) {
 
 function formatPoints(points: number) {
   return Number(points || 0).toFixed(2);
+}
+
+function base64ToArrayBuffer(base64: string) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+  const cleanBase64 = base64.replace(/^data:[^;]+;base64,/, '').replace(/\s/g, '');
+  const bytes: number[] = [];
+
+  for (let index = 0; index < cleanBase64.length;) {
+    const encoded1 = chars.indexOf(cleanBase64.charAt(index++));
+    const encoded2 = chars.indexOf(cleanBase64.charAt(index++));
+    const encoded3 = chars.indexOf(cleanBase64.charAt(index++));
+    const encoded4 = chars.indexOf(cleanBase64.charAt(index++));
+    const chr1 = (encoded1 << 2) | (encoded2 >> 4);
+    const chr2 = ((encoded2 & 15) << 4) | (encoded3 >> 2);
+    const chr3 = ((encoded3 & 3) << 6) | encoded4;
+
+    bytes.push(chr1);
+    if (encoded3 !== 64 && encoded3 !== -1) bytes.push(chr2);
+    if (encoded4 !== 64 && encoded4 !== -1) bytes.push(chr3);
+  }
+
+  return new Uint8Array(bytes).buffer;
 }
 
 function buildInitialCountItems(question: Question): CountItem[] {
@@ -226,7 +254,45 @@ export default function ChecklistDinamicoPage() {
     await offlineStorage.saveDraft(String(reportId), updatedAnswers);
   };
 
-  const handlePickImage = async (question: Question) => {
+  const pickImageFromSource = async (source: 'camera' | 'library'): Promise<PickedImage | null> => {
+    if (source === 'camera') {
+      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permissionResult.granted) {
+        alert('Se requieren permisos de camara.');
+        return null;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.5,
+        base64: true,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) return null;
+      const asset = result.assets[0];
+      return { uri: asset.uri, base64: asset.base64 || null, mimeType: asset.mimeType || 'image/jpeg' };
+    }
+
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      alert('Se requieren permisos para acceder a la galeria.');
+      return null;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.5,
+      base64: true,
+    });
+
+    if (result.canceled || !result.assets || result.assets.length === 0) return null;
+    const asset = result.assets[0];
+    return { uri: asset.uri, base64: asset.base64 || null, mimeType: asset.mimeType || 'image/jpeg' };
+  };
+
+  const handlePickImage = async (question: Question, source?: 'camera' | 'library') => {
     const questionId = question.id;
     const currentAnswer = { ...emptyAnswer, ...answers[questionId] };
     const maxEvidence = getMaxEvidence(question);
@@ -236,24 +302,26 @@ export default function ChecklistDinamicoPage() {
       return;
     }
 
-    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permissionResult.granted) {
-      alert('Se requieren permisos de camara.');
+    if (!source) {
+      if (Platform.OS === 'web') {
+        const useCamera = typeof window !== 'undefined' && window.confirm('Aceptar: tomar foto. Cancelar: seleccionar archivo.');
+        await handlePickImage(question, useCamera ? 'camera' : 'library');
+        return;
+      }
+
+      Alert.alert('Agregar evidencia', 'Elige el origen de la imagen.', [
+        { text: 'Camara', onPress: () => handlePickImage(question, 'camera') },
+        { text: 'Galeria', onPress: () => handlePickImage(question, 'library') },
+        { text: 'Cancelar', style: 'cancel' },
+      ]);
       return;
     }
 
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 0.5,
-    });
-
-    if (result.canceled || !result.assets || result.assets.length === 0) return;
-
-    const imageUri = result.assets[0].uri;
+    const pickedImage = await pickImageFromSource(source);
+    if (!pickedImage) return;
 
     if (!isOnline) {
-      const nextLocalImages = [...currentAnswer.localImageUris, imageUri].slice(0, maxEvidence);
+      const nextLocalImages = [...currentAnswer.localImageUris, pickedImage.uri].slice(0, maxEvidence);
       await updateField(questionId, { localImageUris: nextLocalImages, uploading: false });
       alert('Foto guardada localmente en el borrador.');
       return;
@@ -266,12 +334,13 @@ export default function ChecklistDinamicoPage() {
       const imageIndex = currentAnswer.evidenceUrls.length + currentAnswer.localImageUris.length + 1;
       const fileRoute = `${folderRegion}/2026-06-01/${local_id || 'sin-local'}/${reportId}/${questionId}/foto-${imageIndex}.jpg`;
 
-      const response = await fetch(imageUri);
-      const blob = await response.blob();
+      const uploadBody = pickedImage.base64
+        ? base64ToArrayBuffer(pickedImage.base64)
+        : await fetch(pickedImage.uri).then((response) => response.arrayBuffer());
 
       const { error: uploadError } = await supabase.storage
         .from('evidencias')
-        .upload(fileRoute, blob, { contentType: 'image/jpeg', cacheControl: '3600', upsert: true });
+        .upload(fileRoute, uploadBody, { contentType: pickedImage.mimeType, cacheControl: '3600', upsert: true });
 
       if (uploadError) throw uploadError;
 
@@ -412,7 +481,7 @@ export default function ChecklistDinamicoPage() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <ScrollView style={styles.screen} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic">
       <View style={[styles.networkBanner, isOnline ? styles.bannerOnline : styles.bannerOffline]}>
         <Text style={styles.bannerText}>
           {isOnline ? 'Conectado a Internet' : 'Sin conexion: modo borrador offline'}
@@ -468,6 +537,7 @@ export default function ChecklistDinamicoPage() {
               style={styles.textArea}
               multiline
               numberOfLines={3}
+              placeholderTextColor={brandColors.inputPlaceholder}
               placeholder={currentAnswer.value === 'no_cumple' ? 'Describe el hallazgo detectado...' : 'Observacion opcional...'}
               value={currentAnswer.observation}
               onChangeText={(text) => updateField(q.id, { observation: text })}
@@ -550,6 +620,7 @@ function NumberField({ label, value, onChangeText }: { label: string; value: str
         keyboardType="decimal-pad"
         value={value}
         onChangeText={onChangeText}
+        placeholderTextColor={brandColors.inputPlaceholder}
         placeholder="0.00"
       />
     </View>
@@ -596,6 +667,7 @@ function CountItemsEditor({
                 style={[styles.input, styles.itemNameInput]}
                 value={item.label}
                 onChangeText={(text) => updateItem(index, { label: text })}
+                placeholderTextColor={brandColors.inputPlaceholder}
                 placeholder="Item"
               />
             )}
@@ -630,8 +702,9 @@ function CountItemsEditor({
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 18, maxWidth: 720, alignSelf: 'center', width: '100%', backgroundColor: brandColors.background },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
+  screen: { flex: 1, backgroundColor: brandColors.background },
+  container: { padding: 18, paddingBottom: 44, maxWidth: 720, alignSelf: 'center', width: '100%', backgroundColor: brandColors.background },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40, backgroundColor: brandColors.background },
   errorText: { color: brandColors.danger, fontWeight: '800' },
   networkBanner: { padding: 10, borderRadius: 8, marginBottom: 15, alignItems: 'center' },
   bannerOnline: { backgroundColor: brandColors.greenSoft },
@@ -651,10 +724,10 @@ const styles = StyleSheet.create({
   radioText: { fontWeight: '900', color: brandColors.textSecondary },
   textWhite: { color: brandColors.white },
   fieldLabel: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 6, marginTop: 8 },
-  textArea: { borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 10, fontSize: 14, backgroundColor: brandColors.white, minHeight: 76, textAlignVertical: 'top' },
+  textArea: { borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 10, fontSize: 14, backgroundColor: brandColors.white, minHeight: 76, textAlignVertical: 'top', color: brandColors.inputText },
   numericGrid: { marginTop: 8, gap: 8 },
   numberField: { flex: 1 },
-  input: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingHorizontal: 10, backgroundColor: brandColors.white, fontSize: 15 },
+  input: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingHorizontal: 10, backgroundColor: brandColors.white, fontSize: 15, color: brandColors.inputText },
   differenceText: { color: brandColors.greenDark, fontWeight: '900', marginTop: 2 },
   negativeDifferenceText: { color: brandColors.danger },
   countBox: { marginTop: 10, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 10, backgroundColor: brandColors.creamSoft },
