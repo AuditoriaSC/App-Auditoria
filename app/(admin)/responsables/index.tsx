@@ -236,7 +236,7 @@ export default function ResponsablesAdminPage() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <ScrollView style={styles.screen} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic">
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Responsables</Text>
@@ -282,7 +282,7 @@ export default function ResponsablesAdminPage() {
           <View style={styles.filterItem}>
             <Text style={styles.label}>Region</Text>
             <View style={styles.pickerShell}>
-              <Picker selectedValue={regionFilter} onValueChange={setRegionFilter} style={styles.picker}>
+              <Picker selectedValue={regionFilter} onValueChange={setRegionFilter} style={styles.picker} dropdownIconColor={brandColors.greenDark}>
                 {regions.map((region) => (
                   <Picker.Item key={region} label={region === 'TODAS' ? 'Todas' : region} value={region} />
                 ))}
@@ -440,11 +440,12 @@ const webFileInputStyle = {
 };
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: brandColors.greenDark },
   container: { padding: 18, paddingBottom: 36, backgroundColor: brandColors.background, width: '100%', maxWidth: 980, alignSelf: 'center' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.creamSoft },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.background },
   loadingText: { marginTop: 8, color: brandColors.textSecondary },
   errorText: { color: brandColors.danger, fontWeight: '800', marginBottom: 12 },
-  header: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 18, marginBottom: 14, flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'center' },
+  header: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 18, marginBottom: 14, flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' },
   title: { fontSize: 25, fontWeight: '900', color: brandColors.textPrimary },
   subtitle: { marginTop: 4, color: brandColors.textSecondary, fontWeight: '600', lineHeight: 18 },
   message: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, padding: 12, marginBottom: 14, color: brandColors.coffeeDark, fontWeight: '800' },
@@ -453,11 +454,11 @@ const styles = StyleSheet.create({
   helperText: { color: brandColors.textSecondary, fontWeight: '700', lineHeight: 18 },
   actionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12, alignItems: 'center' },
   filterBand: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, marginBottom: 14, gap: 10 },
-  filterItem: { minWidth: 180, maxWidth: 260 },
+  filterItem: { minWidth: 170, flexGrow: 1, flexShrink: 0, flexBasis: 170 },
   label: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 6 },
-  searchInput: { minHeight: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.textPrimary, fontWeight: '700' },
-  pickerShell: { height: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, overflow: 'hidden', backgroundColor: brandColors.creamSoft, justifyContent: 'center' },
-  picker: { height: 44, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
+  searchInput: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700' },
+  pickerShell: { minHeight: 56, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.creamSoft, justifyContent: 'center' },
+  picker: { minHeight: 56, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
   summaryCard: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 14 },
   summaryTitle: { color: brandColors.textPrimary, fontWeight: '900', marginBottom: 4 },
   summaryText: { color: brandColors.textSecondary, fontWeight: '800' },

@@ -230,9 +230,9 @@ export default function UsuariosAdminPage() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <ScrollView style={styles.screen} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic">
       <View style={styles.header}>
-        <View>
+        <View style={styles.headerText}>
           <Text style={styles.title}>Usuarios</Text>
           <Text style={styles.subtitle}>Administra rol, region y estado de usuarios existentes.</Text>
         </View>
@@ -281,7 +281,7 @@ export default function UsuariosAdminPage() {
                 <View style={styles.fieldGroup}>
                   <Text style={styles.label}>Rol</Text>
                   <View style={styles.pickerShell}>
-                    <Picker selectedValue={draft.role} onValueChange={(value) => setDraft((current) => ({ ...current, role: value }))} style={styles.picker}>
+                    <Picker selectedValue={draft.role} onValueChange={(value) => setDraft((current) => ({ ...current, role: value }))} style={styles.picker} dropdownIconColor={brandColors.greenDark}>
                       {availableRoles.map((option) => (
                         <Picker.Item key={option} label={formatRole(option)} value={option} />
                       ))}
@@ -296,6 +296,7 @@ export default function UsuariosAdminPage() {
                       onValueChange={(value) => setDraft((current) => ({ ...current, region: String(value) }))}
                       enabled={isSuperAdmin}
                       style={styles.picker}
+                      dropdownIconColor={brandColors.greenDark}
                     >
                       {(isSuperAdmin ? regions.filter((item) => item !== 'TODAS') : [currentProfile?.region || 'Costa']).map((option) => (
                         <Picker.Item key={option} label={option} value={option} />
@@ -334,7 +335,7 @@ function SelectField({ label, value, onChange, options }: { label: string; value
     <View style={styles.filterItem}>
       <Text style={styles.label}>{label}</Text>
       <View style={styles.pickerShell}>
-        <Picker selectedValue={value} onValueChange={onChange} style={styles.picker}>
+        <Picker selectedValue={value} onValueChange={onChange} style={styles.picker} dropdownIconColor={brandColors.greenDark}>
           {options.map((option) => (
             <Picker.Item key={option} label={formatOption(option)} value={option} />
           ))}
@@ -374,21 +375,23 @@ function formatDate(value: string | null) {
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: brandColors.greenDark },
   container: { padding: 18, paddingBottom: 36, backgroundColor: brandColors.background, width: '100%', maxWidth: 980, alignSelf: 'center' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.creamSoft },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.background },
   loadingText: { marginTop: 8, color: brandColors.textSecondary },
   errorText: { color: brandColors.danger, fontWeight: '800', marginBottom: 12 },
-  header: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 18, marginBottom: 14, flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'center' },
+  header: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 18, marginBottom: 14, flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' },
+  headerText: { flex: 1, minWidth: 220 },
   title: { fontSize: 25, fontWeight: '900', color: brandColors.textPrimary },
   subtitle: { marginTop: 4, color: brandColors.textSecondary, fontWeight: '600', lineHeight: 18 },
   message: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, padding: 12, marginBottom: 14, color: brandColors.coffeeDark, fontWeight: '800' },
   filterBand: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, marginBottom: 14, gap: 10 },
-  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  filterItem: { flex: 1, minWidth: 160 },
+  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' },
+  filterItem: { minWidth: 170, flexGrow: 1, flexShrink: 0, flexBasis: 170 },
   label: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 6 },
-  searchInput: { minHeight: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.textPrimary, fontWeight: '700' },
-  pickerShell: { height: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, overflow: 'hidden', backgroundColor: brandColors.creamSoft, justifyContent: 'center' },
-  picker: { height: 44, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
+  searchInput: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700' },
+  pickerShell: { minHeight: 56, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.creamSoft, justifyContent: 'center' },
+  picker: { minHeight: 56, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
   card: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 10 },
   disabledCard: { opacity: 0.62, backgroundColor: brandColors.creamSoft },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
@@ -397,8 +400,8 @@ const styles = StyleSheet.create({
   meta: { marginTop: 5, color: brandColors.textSecondary, fontSize: 12, fontWeight: '700' },
   statusColumn: { alignItems: 'center' },
   statusText: { color: brandColors.textSecondary, fontWeight: '900', fontSize: 11 },
-  editGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
-  fieldGroup: { flex: 1, minWidth: 160 },
+  editGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12, alignItems: 'flex-end' },
+  fieldGroup: { flexGrow: 1, flexShrink: 0, flexBasis: 170, minWidth: 170 },
   cardActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 12 },
   primaryButton: { backgroundColor: brandColors.greenDark, borderRadius: 8, paddingVertical: 11, paddingHorizontal: 16, alignItems: 'center' },
   primaryButtonText: { color: brandColors.white, fontWeight: '900' },

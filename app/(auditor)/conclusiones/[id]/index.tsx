@@ -387,7 +387,17 @@ function TimeField({
       <TouchableOpacity style={styles.timeButton} onPress={onOpen}>
         <Text style={styles.timeValue}>{value}</Text>
       </TouchableOpacity>
-      {visible && <DateTimePicker value={new Date(`2026-01-01T${value || '00:00'}:00`)} mode="time" display="clock" onChange={onChange} is24Hour />}
+      {visible && (
+        <DateTimePicker
+          value={new Date(`2026-01-01T${value || '00:00'}:00`)}
+          mode="time"
+          display="clock"
+          onChange={onChange}
+          is24Hour
+          positiveButton={{ label: 'Aceptar', textColor: brandColors.greenDark }}
+          negativeButton={{ label: 'Cancelar', textColor: brandColors.greenDark }}
+        />
+      )}
     </View>
   );
 }

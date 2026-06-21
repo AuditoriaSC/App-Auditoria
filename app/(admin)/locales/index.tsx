@@ -231,7 +231,7 @@ export default function GestionLocalesPage() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <ScrollView style={styles.screen} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic">
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Locales</Text>
@@ -248,25 +248,28 @@ export default function GestionLocalesPage() {
         <Text style={styles.formTitle}>{editingCode ? 'Editar local' : 'Nuevo local'}</Text>
         <View style={styles.formGrid}>
           <TextInput
-            style={styles.input}
+            style={styles.formInput}
             value={draft.codigo_interno}
             onChangeText={(value) => setDraft((current) => ({ ...current, codigo_interno: value.toUpperCase() }))}
             placeholder="Codigo"
+            placeholderTextColor={brandColors.inputPlaceholder}
             editable={!editingCode}
             autoCapitalize="characters"
           />
           <TextInput
-            style={styles.input}
+            style={styles.formInput}
             value={draft.nombre_local}
             onChangeText={(value) => setDraft((current) => ({ ...current, nombre_local: value }))}
             placeholder="Nombre del local"
+            placeholderTextColor={brandColors.inputPlaceholder}
           />
-          <View style={styles.pickerShell}>
+          <View style={styles.formPickerShell}>
             <Picker
               selectedValue={draft.region}
               onValueChange={(value) => setDraft((current) => ({ ...current, region: String(value) }))}
               enabled={isSuperAdmin}
-              style={styles.picker}
+              style={styles.formPicker}
+              dropdownIconColor={brandColors.greenDark}
             >
               {regions.map((region) => (
                 <Picker.Item key={region} label={region} value={region} />
@@ -274,10 +277,11 @@ export default function GestionLocalesPage() {
             </Picker>
           </View>
           <TextInput
-            style={styles.input}
+            style={styles.formInput}
             value={draft.sort_order}
             onChangeText={(value) => setDraft((current) => ({ ...current, sort_order: value }))}
             placeholder="Posicion"
+            placeholderTextColor={brandColors.inputPlaceholder}
             keyboardType="numeric"
           />
         </View>
@@ -305,7 +309,7 @@ export default function GestionLocalesPage() {
           <View style={styles.filterItem}>
             <Text style={styles.label}>Region</Text>
             <View style={styles.pickerShell}>
-              <Picker selectedValue={regionFilter} onValueChange={setRegionFilter} style={styles.picker}>
+              <Picker selectedValue={regionFilter} onValueChange={setRegionFilter} style={styles.picker} dropdownIconColor={brandColors.greenDark}>
                 {allRegions.map((region) => (
                   <Picker.Item key={region} label={region === 'TODAS' ? 'Todas' : region} value={region} />
                 ))}
@@ -367,32 +371,36 @@ function compareLocales(left: LocalRow, right: LocalRow) {
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: brandColors.greenDark },
   container: { padding: 18, paddingBottom: 36, backgroundColor: brandColors.background, width: '100%', maxWidth: 980, alignSelf: 'center' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.creamSoft },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.background },
   loadingText: { marginTop: 8, color: brandColors.textSecondary },
   errorText: { color: brandColors.danger, fontWeight: '800', marginBottom: 12 },
-  header: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 18, marginBottom: 14, flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'center' },
+  header: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 18, marginBottom: 14, flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' },
   title: { fontSize: 25, fontWeight: '900', color: brandColors.textPrimary },
   subtitle: { marginTop: 4, color: brandColors.textSecondary, fontWeight: '600', lineHeight: 18 },
   message: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, padding: 12, marginBottom: 14, color: brandColors.coffeeDark, fontWeight: '800' },
   formCard: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 14 },
   formTitle: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 16, marginBottom: 10 },
-  formGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  formActions: { flexDirection: 'row', gap: 8, justifyContent: 'flex-end', marginTop: 12 },
+  formGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end' },
+  formActions: { flexDirection: 'row', gap: 8, justifyContent: 'flex-end', marginTop: 12, flexWrap: 'wrap' },
   filterBand: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, marginBottom: 14, gap: 10 },
-  filterItem: { minWidth: 180, maxWidth: 260 },
+  filterItem: { minWidth: 170, flexGrow: 1, flexShrink: 0, flexBasis: 170 },
   label: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 6 },
-  input: { minHeight: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.textPrimary, fontWeight: '700', flex: 1, minWidth: 150 },
-  searchInput: { minHeight: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.textPrimary, fontWeight: '700' },
-  pickerShell: { height: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, overflow: 'hidden', backgroundColor: brandColors.creamSoft, justifyContent: 'center', flex: 1, minWidth: 150 },
-  picker: { height: 44, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
+  input: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700', flex: 1, minWidth: 150 },
+  formInput: { height: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700', flexGrow: 1, flexShrink: 1, flexBasis: 126, minWidth: 118 },
+  searchInput: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700' },
+  pickerShell: { minHeight: 56, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.creamSoft, justifyContent: 'center', flex: 1, minWidth: 160 },
+  picker: { minHeight: 56, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
+  formPickerShell: { height: 46, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.white, justifyContent: 'center', flexGrow: 1, flexShrink: 1, flexBasis: 126, minWidth: 118 },
+  formPicker: { height: 46, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.white },
   card: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', gap: 10, alignItems: 'center' },
   cardText: { flex: 1 },
   localTitle: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 15 },
   meta: { marginTop: 5, color: brandColors.textSecondary, fontSize: 12, fontWeight: '700' },
-  primaryButton: { backgroundColor: brandColors.greenDark, borderRadius: 8, paddingVertical: 11, paddingHorizontal: 16, alignItems: 'center' },
+  primaryButton: { minHeight: 44, backgroundColor: brandColors.greenDark, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
   primaryButtonText: { color: brandColors.white, fontWeight: '900' },
-  secondaryButton: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingVertical: 11, paddingHorizontal: 16, alignItems: 'center' },
+  secondaryButton: { minHeight: 44, backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
   secondaryButtonText: { color: brandColors.textSecondary, fontWeight: '900' },
 });
 

@@ -236,7 +236,7 @@ export default function GestionPreguntasPage() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <ScrollView style={styles.screen} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic">
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Preguntas</Text>
@@ -273,8 +273,10 @@ export default function GestionPreguntasPage() {
               <View style={styles.cardTitleArea}>
                 {editing ? (
                   <TextInput
-                    style={[styles.input, styles.textArea]}
+                    style={[styles.input, styles.questionEditInput]}
                     multiline
+                    numberOfLines={2}
+                    scrollEnabled
                     value={draft.question_text}
                     onChangeText={(value) => setDraft((current) => ({ ...current, question_text: value }))}
                   />
@@ -296,31 +298,34 @@ export default function GestionPreguntasPage() {
                 <View style={styles.fieldGroup}>
                   <Text style={styles.label}>Puntaje asignado</Text>
                   <TextInput
-                    style={styles.input}
+                    style={styles.editInput}
                     value={draft.score_points}
                     onChangeText={(value) => setDraft((current) => ({ ...current, score_points: value }))}
                     editable={scoreEditable}
                     keyboardType="numeric"
                     placeholder="Ej: 1.00"
+                    placeholderTextColor={brandColors.inputPlaceholder}
                   />
                 </View>
                 <View style={styles.fieldGroup}>
                   <Text style={styles.label}>Posicion en checklist</Text>
                   <TextInput
-                    style={styles.input}
+                    style={styles.editInput}
                     value={draft.sort_order}
                     onChangeText={(value) => setDraft((current) => ({ ...current, sort_order: value }))}
                     keyboardType="numeric"
                     placeholder="Ej: 10"
+                    placeholderTextColor={brandColors.inputPlaceholder}
                   />
                 </View>
                 <View style={styles.fieldGroup}>
                   <Text style={styles.label}>Tipo de pregunta</Text>
-                  <View style={styles.pickerShell}>
+                  <View style={styles.editPickerShell}>
                     <Picker
                       selectedValue={draft.question_type}
                       onValueChange={(value) => setDraft((current) => ({ ...current, question_type: String(value) }))}
-                      style={styles.picker}
+                      style={styles.editPicker}
+                      dropdownIconColor={brandColors.greenDark}
                     >
                       {questionTypes.filter((item) => item !== allOption).map((type) => (
                         <Picker.Item key={type} label={formatQuestionType(type)} value={type} />
@@ -359,7 +364,7 @@ function SelectField({ label, value, onChange, options }: { label: string; value
     <View style={styles.filterItem}>
       <Text style={styles.label}>{label}</Text>
       <View style={styles.pickerShell}>
-        <Picker selectedValue={value} onValueChange={onChange} style={styles.picker}>
+        <Picker selectedValue={value} onValueChange={onChange} style={styles.picker} dropdownIconColor={brandColors.greenDark}>
           {options.map((option) => (
             <Picker.Item key={option} label={formatOption(option)} value={option} />
           ))}
@@ -389,21 +394,22 @@ function formatQuestionType(value: string) {
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: brandColors.greenDark },
   container: { padding: 18, paddingBottom: 36, backgroundColor: brandColors.background, width: '100%', maxWidth: 980, alignSelf: 'center' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.creamSoft },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.background },
   loadingText: { marginTop: 8, color: brandColors.textSecondary },
   errorText: { color: brandColors.danger, fontWeight: '800', marginBottom: 12 },
-  header: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 18, marginBottom: 14, flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'center' },
+  header: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 18, marginBottom: 14, flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' },
   title: { fontSize: 25, fontWeight: '900', color: brandColors.textPrimary },
   subtitle: { marginTop: 4, color: brandColors.textSecondary, fontWeight: '600', lineHeight: 18 },
   message: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, padding: 12, marginBottom: 14, color: brandColors.coffeeDark, fontWeight: '800' },
   filterBand: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, marginBottom: 14, gap: 10 },
-  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  filterItem: { flex: 1, minWidth: 170 },
+  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' },
+  filterItem: { flexGrow: 1, flexShrink: 0, flexBasis: 170, minWidth: 170 },
   label: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 6 },
-  searchInput: { minHeight: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.textPrimary, fontWeight: '700' },
-  pickerShell: { height: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, overflow: 'hidden', backgroundColor: brandColors.creamSoft, justifyContent: 'center' },
-  picker: { height: 44, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
+  searchInput: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700' },
+  pickerShell: { minHeight: 56, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.creamSoft, justifyContent: 'center' },
+  picker: { minHeight: 56, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
   card: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 10 },
   disabledCard: { opacity: 0.65, backgroundColor: brandColors.creamSoft },
   cardHeader: { flexDirection: 'row', gap: 12, justifyContent: 'space-between' },
@@ -412,14 +418,17 @@ const styles = StyleSheet.create({
   meta: { marginTop: 5, color: brandColors.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'capitalize' },
   statusColumn: { alignItems: 'center' },
   statusText: { color: brandColors.textSecondary, fontWeight: '900', fontSize: 11 },
-  editGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
-  fieldGroup: { flex: 1, minWidth: 150 },
-  input: { minHeight: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.textPrimary, fontWeight: '700', flex: 1, minWidth: 130 },
-  textArea: { minHeight: 84, paddingTop: 10 },
-  cardActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 12 },
-  primaryButton: { backgroundColor: brandColors.greenDark, borderRadius: 8, paddingVertical: 11, paddingHorizontal: 16, alignItems: 'center' },
+  editGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12, alignItems: 'flex-end' },
+  fieldGroup: { flexGrow: 1, flexShrink: 1, flexBasis: 126, minWidth: 118 },
+  input: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700', flex: 1, minWidth: 0 },
+  editInput: { height: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700', minWidth: 0 },
+  editPickerShell: { height: 46, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.white, justifyContent: 'center' },
+  editPicker: { height: 46, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.white },
+  questionEditInput: { minHeight: 48, maxHeight: 96, paddingTop: 10, paddingBottom: 10, textAlignVertical: 'top' },
+  cardActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 12, flexWrap: 'wrap' },
+  primaryButton: { minHeight: 44, backgroundColor: brandColors.greenDark, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
   primaryButtonText: { color: brandColors.white, fontWeight: '900' },
-  secondaryButton: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingVertical: 11, paddingHorizontal: 16, alignItems: 'center' },
+  secondaryButton: { minHeight: 44, backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
   secondaryButtonText: { color: brandColors.textSecondary, fontWeight: '900' },
 });
 

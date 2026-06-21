@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
 import { brandColors } from '../../../constants/theme';
@@ -187,11 +187,44 @@ export default function GestionInvitacionesPage() {
     if (error || !data) {
       setMessage('No se pudo crear la invitacion. Revisa permisos o duplicados.');
     } else {
-      setInvitations((current) => [data as InvitationRow, ...current]);
+      const newInvitation = data as InvitationRow;
+      setInvitations((current) => [newInvitation, ...current]);
       setEmail('');
-      setMessage(`Invitacion creada. Link aceptacion: ${buildAcceptInviteLink(code)}`);
+      const sent = await sendInvitationEmail(newInvitation.id);
+      setMessage(sent
+        ? 'Invitacion creada y correo enviado correctamente.'
+        : `Invitacion creada, pero no se pudo enviar el correo. Puedes copiar el link manualmente: ${buildAcceptInviteLink(code)}`);
     }
 
+    setSaving(false);
+  };
+
+  const sendInvitationEmail = async (invitationId: string) => {
+    const { error } = await supabase.functions.invoke('send-invitation', {
+      body: { invitationId },
+    });
+    return !error;
+  };
+
+  const resendInvitation = async (invitation: InvitationRow) => {
+    const state = getInvitationStatus(invitation);
+    if (state === 'aceptada') {
+      setMessage('Esta invitacion ya fue aceptada.');
+      return;
+    }
+    if (state === 'cancelada') {
+      setMessage('Esta invitacion fue cancelada.');
+      return;
+    }
+    if (state === 'expirada') {
+      setMessage('Esta invitacion esta expirada.');
+      return;
+    }
+
+    setSaving(true);
+    setMessage(null);
+    const sent = await sendInvitationEmail(invitation.id);
+    setMessage(sent ? 'Correo de invitacion reenviado correctamente.' : 'No se pudo reenviar el correo. Puedes copiar el link manualmente.');
     setSaving(false);
   };
 
@@ -226,6 +259,18 @@ export default function GestionInvitacionesPage() {
     );
   }
 
+  if (Platform.OS !== 'web') {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.errorText}>Invitaciones esta disponible desde la version web.</Text>
+        <Text style={styles.helperText}>Esta pantalla genera y copia links de acceso para nuevos usuarios, por eso se administra desde la consola web.</Text>
+        <TouchableOpacity style={styles.secondaryButton} onPress={goToDashboard}>
+          <Text style={styles.secondaryButtonText}>Volver</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   if (!isAdmin) {
     return (
       <View style={styles.center}>
@@ -238,7 +283,7 @@ export default function GestionInvitacionesPage() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <ScrollView style={styles.screen} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic">
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Invitaciones</Text>
@@ -263,7 +308,7 @@ export default function GestionInvitacionesPage() {
             keyboardType="email-address"
           />
           <View style={styles.pickerShell}>
-            <Picker selectedValue={role} onValueChange={(value) => setRole(value)} style={styles.picker}>
+            <Picker selectedValue={role} onValueChange={(value) => setRole(value)} style={styles.picker} dropdownIconColor={brandColors.greenDark}>
               {allowedRoles.map((option) => (
                 <Picker.Item key={option} label={formatRole(option)} value={option} />
               ))}
@@ -275,6 +320,7 @@ export default function GestionInvitacionesPage() {
               onValueChange={(value) => setRegion(String(value))}
               enabled={isSuperAdmin}
               style={styles.picker}
+              dropdownIconColor={brandColors.greenDark}
             >
               {(isSuperAdmin ? regions : [profile?.region || 'Costa']).map((option) => (
                 <Picker.Item key={option} label={option} value={option} />
@@ -300,7 +346,7 @@ export default function GestionInvitacionesPage() {
         <View style={styles.filterItem}>
           <Text style={styles.label}>Estado</Text>
           <View style={styles.pickerShell}>
-            <Picker selectedValue={statusFilter} onValueChange={setStatusFilter} style={styles.picker}>
+            <Picker selectedValue={statusFilter} onValueChange={setStatusFilter} style={styles.picker} dropdownIconColor={brandColors.greenDark}>
               {statuses.map((option) => (
                 <Picker.Item key={option} label={formatStatus(option)} value={option} />
               ))}
@@ -333,6 +379,9 @@ export default function GestionInvitacionesPage() {
                 <>
                   <TouchableOpacity style={styles.copyButton} onPress={() => copyText(buildAcceptInviteLink(invitation.code), 'Copia el link de aceptacion:')}>
                     <Text style={styles.copyButtonText}>Copiar aceptacion</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.copyButton} onPress={() => resendInvitation(invitation)} disabled={saving}>
+                    <Text style={styles.copyButtonText}>Reenviar correo</Text>
                   </TouchableOpacity>
                   {getAndroidDownloadUrl() && (
                     <TouchableOpacity style={styles.copyButton} onPress={() => copyText(buildAndroidLink(), 'Copia el link Android:')}>
@@ -423,11 +472,12 @@ function formatDate(value: string | null) {
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: brandColors.greenDark },
   container: { padding: 18, paddingBottom: 36, backgroundColor: brandColors.background, width: '100%', maxWidth: 980, alignSelf: 'center' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.creamSoft },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.background },
   loadingText: { marginTop: 8, color: brandColors.textSecondary },
   errorText: { color: brandColors.danger, fontWeight: '800', marginBottom: 12 },
-  header: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 18, marginBottom: 14, flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'center' },
+  header: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 18, marginBottom: 14, flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' },
   title: { fontSize: 25, fontWeight: '900', color: brandColors.textPrimary },
   subtitle: { marginTop: 4, color: brandColors.textSecondary, fontWeight: '600', lineHeight: 18 },
   message: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, padding: 12, marginBottom: 14, color: brandColors.coffeeDark, fontWeight: '800' },
@@ -436,12 +486,13 @@ const styles = StyleSheet.create({
   formGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   formActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 },
   filterBand: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, marginBottom: 14, gap: 10 },
-  filterItem: { minWidth: 180, maxWidth: 260 },
+  filterItem: { minWidth: 170, flexGrow: 1, flexShrink: 0, flexBasis: 170 },
   label: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 6 },
-  input: { minHeight: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.textPrimary, fontWeight: '700', flex: 1, minWidth: 220 },
-  searchInput: { minHeight: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.textPrimary, fontWeight: '700' },
-  pickerShell: { height: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, overflow: 'hidden', backgroundColor: brandColors.creamSoft, justifyContent: 'center', flex: 1, minWidth: 160 },
-  picker: { height: 44, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
+  helperText: { color: brandColors.textSecondary, fontWeight: '700', lineHeight: 18, marginBottom: 14, textAlign: 'center' },
+  input: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700', flex: 1, minWidth: 220 },
+  searchInput: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700' },
+  pickerShell: { minHeight: 56, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.creamSoft, justifyContent: 'center', flex: 1, minWidth: 170 },
+  picker: { minHeight: 56, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
   card: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', gap: 10, alignItems: 'center' },
   cardText: { flex: 1 },
   cardTitle: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 15 },

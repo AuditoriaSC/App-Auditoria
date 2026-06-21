@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { brandColors } from '../../../constants/theme';
 import { supabase } from '../../../src/supabaseClient';
@@ -101,7 +101,7 @@ export default function AdministradorRecursosPage() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView style={styles.screen} contentContainerStyle={styles.container} contentInsetAdjustmentBehavior="automatic">
       <View style={styles.header}>
         <View style={styles.headerText}>
           <Text style={styles.title}>Administrador de Recursos</Text>
@@ -116,13 +116,16 @@ export default function AdministradorRecursosPage() {
         {resources.map((resource) => (
           <TouchableOpacity
             key={resource.route}
-            style={styles.card}
-            onPress={() => router.push(resource.route)}
+            style={[styles.card, Platform.OS !== 'web' && resource.route === '/invitaciones' && styles.disabledCard]}
+            onPress={() => {
+              if (Platform.OS !== 'web' && resource.route === '/invitaciones') return;
+              router.push(resource.route);
+            }}
             activeOpacity={0.84}
           >
             <Text style={styles.cardTitle}>{resource.title}</Text>
             <Text style={styles.cardDescription}>{resource.description}</Text>
-            <Text style={styles.cardAction}>Abrir</Text>
+            <Text style={styles.cardAction}>{Platform.OS !== 'web' && resource.route === '/invitaciones' ? 'Disponible en web' : 'Abrir'}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -131,8 +134,9 @@ export default function AdministradorRecursosPage() {
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: brandColors.greenDark },
   container: { padding: 16, paddingBottom: 32, backgroundColor: brandColors.background, width: '100%', maxWidth: 980, alignSelf: 'center' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.creamSoft },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.background },
   loadingText: { marginTop: 8, color: brandColors.textSecondary },
   errorText: { color: brandColors.danger, fontWeight: '800', marginBottom: 12 },
   header: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 16, marginBottom: 14, flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' },
@@ -141,6 +145,7 @@ const styles = StyleSheet.create({
   subtitle: { marginTop: 4, color: brandColors.textSecondary, fontWeight: '700' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   card: { flexGrow: 1, flexBasis: 230, minWidth: 0, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, backgroundColor: brandColors.white, padding: 14 },
+  disabledCard: { opacity: 0.68, backgroundColor: brandColors.creamSoft },
   cardTitle: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 16 },
   cardDescription: { color: brandColors.textSecondary, fontWeight: '700', fontSize: 12, lineHeight: 17, marginTop: 6 },
   cardAction: { color: brandColors.greenDark, fontWeight: '900', marginTop: 12 },

@@ -394,7 +394,7 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
     <View style={styles.filterItem}>
       <Text style={styles.label}>{label}</Text>
       <View style={styles.pickerShell}>
-        <Picker selectedValue={value} onValueChange={onChange} style={styles.picker}>
+        <Picker selectedValue={value} onValueChange={onChange} style={styles.picker} dropdownIconColor={brandColors.greenDark}>
           {options.map((option) => (
             <Picker.Item key={option} label={formatFilterLabel(option)} value={option} />
           ))}
@@ -612,8 +612,8 @@ const styles = StyleSheet.create({
   filterItem: { minWidth: 152, flexGrow: 1, flexShrink: 0, flexBasis: 152 },
   searchItem: { width: '100%' },
   label: { fontSize: 12, fontWeight: '800', color: brandColors.textSecondary, marginBottom: 6 },
-  pickerShell: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, overflow: 'hidden', backgroundColor: brandColors.white, justifyContent: 'center' },
-  picker: { minHeight: 48, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.white },
+  pickerShell: { minHeight: 56, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.white, justifyContent: 'center' },
+  picker: { minHeight: 56, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.white },
   searchInput: { minHeight: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.textPrimary, fontWeight: '700' },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, marginBottom: 10 },
   sectionTitle: { fontSize: 17, color: brandColors.textPrimary, fontWeight: '900' },

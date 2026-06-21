@@ -147,7 +147,7 @@ export default function ExportacionAvanzadaPage() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView style={styles.screen} contentContainerStyle={styles.container} contentInsetAdjustmentBehavior="automatic">
       <Text style={styles.title}>Exportación Ejecutiva de Datos</Text>
       <Text style={styles.subtitle}>Generador unificado de reportes en formato CSV/Excel con filtros dinámicos</Text>
 
@@ -160,6 +160,7 @@ export default function ExportacionAvanzadaPage() {
           <Picker
             selectedValue={filtroRegion}
             onValueChange={(val) => setFiltroRegion(val)}
+            style={styles.picker}
           >
             <Picker.Item label="Unificar Ambas Regiones (Descarga Completa)" value="TODAS" />
             <Picker.Item label="Solo Región Costa" value="Costa" />
@@ -173,6 +174,7 @@ export default function ExportacionAvanzadaPage() {
           <Picker
             selectedValue={filtroTipoVisita}
             onValueChange={(val) => setFiltroTipoVisita(val)}
+            style={styles.picker}
           >
             <Picker.Item label="Todos los Tipos de Visita" value="TODOS" />
             <Picker.Item label="Sabatina" value="Sabatina" />
@@ -200,6 +202,7 @@ export default function ExportacionAvanzadaPage() {
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: brandColors.greenDark },
   container: { padding: 20, maxWidth: 550, alignSelf: 'center', width: '100%', backgroundColor: brandColors.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 60, backgroundColor: brandColors.background },
   loadingText: { marginTop: 10, fontSize: 14, color: brandColors.textSecondary, fontWeight: '500' },
@@ -208,7 +211,8 @@ const styles = StyleSheet.create({
   filterCard: { backgroundColor: brandColors.white, padding: 20, borderRadius: 10, borderWidth: 1, borderColor: brandColors.border, boxShadow: '0px 2px 8px rgba(58,38,24,0.08)' },
   cardTitle: { fontSize: 15, fontWeight: 'bold', color: brandColors.textPrimary, marginBottom: 15 },
   label: { fontSize: 13, fontWeight: '600', color: brandColors.textSecondary, marginBottom: 6, marginTop: 8 },
-  pickerContainer: { borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, backgroundColor: brandColors.white, marginBottom: 15, overflow: 'hidden' },
+  pickerContainer: { minHeight: 50, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, backgroundColor: brandColors.white, marginBottom: 15, overflow: 'hidden', justifyContent: 'center' },
+  picker: { minHeight: 50, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.white },
   downloadButton: { backgroundColor: brandColors.greenDark, padding: 14, borderRadius: 8, alignItems: 'center', marginTop: 10 },
   disabledButton: { backgroundColor: brandColors.green, opacity: 0.7 },
   downloadButtonText: { color: brandColors.white, fontSize: 15, fontWeight: 'bold' },

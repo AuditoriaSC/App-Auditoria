@@ -91,7 +91,7 @@ export default function HistoricoAuditoriasPage() {
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={brandColors.greenDark} /></View>;
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView style={styles.screen} contentContainerStyle={styles.container} contentInsetAdjustmentBehavior="automatic">
       <View style={styles.headerRow}>
         <View>
           <Text style={styles.title}>Histórico de Auditorías</Text>
@@ -138,9 +138,10 @@ export default function HistoricoAuditoriasPage() {
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: brandColors.greenDark },
   container: { padding: 20, maxWidth: 650, alignSelf: 'center', width: '100%', backgroundColor: brandColors.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 50, backgroundColor: brandColors.background },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottomWidth: 1, borderBottomColor: brandColors.border, paddingBottom: 15 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottomWidth: 1, borderBottomColor: brandColors.border, paddingBottom: 15, gap: 10, flexWrap: 'wrap' },
   title: { fontSize: 22, fontWeight: 'bold', color: brandColors.greenDark },
   subtitle: { fontSize: 13, color: brandColors.textSecondary, marginTop: 2 },
   exportButton: { backgroundColor: brandColors.greenDark, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8 },

@@ -49,6 +49,26 @@ interface AnswerState {
   countItems: CountItem[];
 }
 
+interface DraftAnswerRow {
+  report_id: string;
+  question_id: string;
+  value: AnswerValue;
+  observation: string | null;
+  evidence_url: string | null;
+  numeric_value_theoretical: number | null;
+  numeric_value_physical: number | null;
+  numeric_value_current: number | null;
+  numeric_value_previous: number | null;
+  numeric_items: {
+    label?: string;
+    theoretical?: number | null;
+    physical?: number | null;
+    unit?: string | null;
+    cross_group?: string | null;
+    conversion_factor?: number | null;
+  }[] | null;
+}
+
 interface PickedImage {
   uri: string;
   base64: string | null;
@@ -177,6 +197,68 @@ function rawMaterialCrossGroups(items: CountItem[]) {
     }));
 }
 
+function answerToDraftRow(reportId: string, question: Question, answer: AnswerState): DraftAnswerRow {
+  const type = getQuestionType(question);
+  const countItems = answer.countItems.length > 0 ? answer.countItems : buildInitialCountItems(question);
+  const numericItems = isMultiItemCount(type)
+    ? countItems
+        .filter((item) => item.locked || item.label.trim() || item.theoreticalValue.trim() || item.physicalValue.trim())
+        .map((item) => ({
+          label: item.label.trim(),
+          theoretical: toNumber(item.theoreticalValue),
+          physical: toNumber(item.physicalValue),
+          difference: countItemDifference(item),
+          unit: item.unit || null,
+          cross_group: item.crossGroup || null,
+          conversion_factor: item.conversionFactor ?? 1,
+        }))
+    : [];
+  const firstNumericItem = numericItems[0];
+
+  return {
+    report_id: reportId,
+    question_id: question.id,
+    value: type === 'additional_novelty' || isCountOnlyQuestion(type) ? 'cumple' : answer.value,
+    observation: answer.observation.trim(),
+    evidence_url: answer.evidenceUrls[0] || null,
+    numeric_value_theoretical: firstNumericItem?.theoretical ?? toNumber(answer.theoreticalValue),
+    numeric_value_physical: firstNumericItem?.physical ?? toNumber(answer.physicalValue),
+    numeric_value_current: toNumber(answer.currentShift),
+    numeric_value_previous: toNumber(answer.previousShift),
+    numeric_items: numericItems,
+  };
+}
+
+function draftRowToAnswer(question: Question, row: DraftAnswerRow): AnswerState {
+  const type = getQuestionType(question);
+  const numericItems = Array.isArray(row.numeric_items) ? row.numeric_items : [];
+  const countItems = isMultiItemCount(type)
+    ? (numericItems.length > 0
+        ? numericItems.map((item) => ({
+          label: item.label || '',
+          theoreticalValue: item.theoretical === null || item.theoretical === undefined ? '' : String(item.theoretical),
+          physicalValue: item.physical === null || item.physical === undefined ? '' : String(item.physical),
+          unit: item.unit || undefined,
+          crossGroup: item.cross_group || undefined,
+          conversionFactor: item.conversion_factor ?? 1,
+          locked: true,
+        }))
+        : buildInitialCountItems(question))
+    : [];
+
+  return {
+    ...emptyAnswer,
+    value: row.value,
+    observation: row.observation || '',
+    evidenceUrls: row.evidence_url ? [row.evidence_url] : [],
+    theoreticalValue: row.numeric_value_theoretical === null || row.numeric_value_theoretical === undefined ? '' : String(row.numeric_value_theoretical),
+    physicalValue: row.numeric_value_physical === null || row.numeric_value_physical === undefined ? '' : String(row.numeric_value_physical),
+    currentShift: row.numeric_value_current === null || row.numeric_value_current === undefined ? '' : String(row.numeric_value_current),
+    previousShift: row.numeric_value_previous === null || row.numeric_value_previous === undefined ? '' : String(row.numeric_value_previous),
+    countItems,
+  };
+}
+
 export default function ChecklistDinamicoPage() {
   const router = useRouter();
   const { id: reportId, region, visit_type_id, local_id } = useLocalSearchParams();
@@ -187,6 +269,7 @@ export default function ChecklistDinamicoPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isOnline, setIsOnline] = useState<boolean | null>(true);
+  const [saveWarning, setSaveWarning] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
@@ -223,35 +306,62 @@ export default function ChecklistDinamicoPage() {
       const loadedQuestions = data || [];
       setQuestions(loadedQuestions);
 
-      const savedDraft = await offlineStorage.getDraft(String(reportId));
+      const initialAnswers: Record<string, AnswerState> = {};
+      loadedQuestions.forEach((q: Question) => {
+        const type = getQuestionType(q);
+        initialAnswers[q.id] = {
+          ...emptyAnswer,
+          countItems: isMultiItemCount(type) ? buildInitialCountItems(q) : [],
+        };
+      });
 
-      if (savedDraft) {
-        setAnswers(savedDraft);
-      } else {
-        const initialAnswers: Record<string, AnswerState> = {};
-        loadedQuestions.forEach((q: Question) => {
-          const type = getQuestionType(q);
-          initialAnswers[q.id] = {
-            ...emptyAnswer,
-            countItems: isMultiItemCount(type) ? buildInitialCountItems(q) : [],
-          };
-        });
-        setAnswers(initialAnswers);
+      const { data: remoteDraftRows, error: draftError } = await supabase
+        .from('audit_answers_draft')
+        .select('report_id, question_id, value, observation, evidence_url, numeric_value_theoretical, numeric_value_physical, numeric_value_current, numeric_value_previous, numeric_items')
+        .eq('report_id', reportId);
+
+      if (draftError) {
+        setSaveWarning('No se pudo cargar el borrador remoto. Se usara el respaldo local si existe.');
       }
 
+      const questionsById = new Map(loadedQuestions.map((question: Question) => [question.id, question]));
+      (remoteDraftRows || []).forEach((row) => {
+        const question = questionsById.get(row.question_id);
+        if (question) initialAnswers[row.question_id] = draftRowToAnswer(question, row as DraftAnswerRow);
+      });
+
+      const savedDraft = await offlineStorage.getDraft(String(reportId));
+      setAnswers(savedDraft ? { ...initialAnswers, ...savedDraft } : initialAnswers);
       setLoading(false);
     }
 
     loadData();
   }, [region, visit_type_id, reportId]);
 
+  const persistRemoteDraft = async (questionId: string, answer: AnswerState) => {
+    if (!isOnline) return;
+    const question = questions.find((item) => item.id === questionId);
+    if (!question || !reportId) return;
+
+    const { error: upsertError } = await supabase
+      .from('audit_answers_draft')
+      .upsert(answerToDraftRow(String(reportId), question, answer), { onConflict: 'report_id,question_id' });
+
+    if (upsertError) {
+      setSaveWarning('No se pudo guardar este cambio en Supabase. Se mantiene respaldo local.');
+    } else {
+      setSaveWarning(null);
+    }
+  };
+
   const updateField = async (questionId: string, fieldsToUpdate: Partial<AnswerState>) => {
-    const updatedAnswers = {
-      ...answers,
-      [questionId]: { ...emptyAnswer, ...answers[questionId], ...fieldsToUpdate },
-    };
+    const currentAnswer = { ...emptyAnswer, ...answers[questionId] };
+    const nextAnswer = { ...currentAnswer, ...fieldsToUpdate };
+    const updatedAnswers = { ...answers, [questionId]: nextAnswer };
+
     setAnswers(updatedAnswers);
     await offlineStorage.saveDraft(String(reportId), updatedAnswers);
+    await persistRemoteDraft(questionId, nextAnswer);
   };
 
   const pickImageFromSource = async (source: 'camera' | 'library'): Promise<PickedImage | null> => {
@@ -409,51 +519,13 @@ export default function ChecklistDinamicoPage() {
         return [];
       }
 
-      const countItems = answer.countItems.length > 0 ? answer.countItems : buildInitialCountItems(q);
-      const numericItems = isMultiItemCount(type)
-        ? countItems
-            .filter((item) => item.locked || item.label.trim() || item.theoreticalValue.trim() || item.physicalValue.trim())
-            .map((item) => ({
-              label: item.label.trim(),
-              theoretical: toNumber(item.theoreticalValue),
-              physical: toNumber(item.physicalValue),
-              difference: countItemDifference(item),
-              unit: item.unit || null,
-              cross_group: item.crossGroup || null,
-              conversion_factor: item.conversionFactor ?? 1,
-            }))
-        : [];
-      const firstNumericItem = numericItems[0];
-
-      return [{
-        report_id: reportId,
-        question_id: q.id,
-        value: type === 'additional_novelty' || isCountOnlyQuestion(type) ? 'cumple' : answer.value,
-        observation: answer.observation.trim(),
-        evidence_url: answer.evidenceUrls[0] || null,
-        numeric_value_theoretical: firstNumericItem?.theoretical ?? toNumber(answer.theoreticalValue),
-        numeric_value_physical: firstNumericItem?.physical ?? toNumber(answer.physicalValue),
-        numeric_value_current: toNumber(answer.currentShift),
-        numeric_value_previous: toNumber(answer.previousShift),
-        numeric_items: numericItems,
-      }];
+      return [answerToDraftRow(String(reportId), q, answer)];
     });
-
-    const { error: deleteError } = await supabase
-      .from('audit_answers_draft')
-      .delete()
-      .eq('report_id', reportId);
-
-    if (deleteError) {
-      alert('No se pudo limpiar el borrador remoto anterior: ' + deleteError.message);
-      setIsSubmitting(false);
-      return;
-    }
 
     if (payload.length > 0) {
       const { error: insertError } = await supabase
         .from('audit_answers_draft')
-        .insert(payload);
+        .upsert(payload, { onConflict: 'report_id,question_id' });
 
       if (insertError) {
         alert('No se pudo guardar el checklist en Supabase: ' + insertError.message);
@@ -487,6 +559,11 @@ export default function ChecklistDinamicoPage() {
           {isOnline ? 'Conectado a Internet' : 'Sin conexion: modo borrador offline'}
         </Text>
       </View>
+      {saveWarning && (
+        <View style={styles.saveWarning}>
+          <Text style={styles.saveWarningText}>{saveWarning}</Text>
+        </View>
+      )}
 
       <Text style={styles.title}>Formulario de Checklist</Text>
       <Text style={styles.subtitle}>ID Auditoria: {reportId} | Region: {region}</Text>
@@ -710,6 +787,8 @@ const styles = StyleSheet.create({
   bannerOnline: { backgroundColor: brandColors.greenSoft },
   bannerOffline: { backgroundColor: brandColors.creamSoft },
   bannerText: { fontSize: 13, fontWeight: '800', color: brandColors.textSecondary },
+  saveWarning: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, padding: 10, marginBottom: 12 },
+  saveWarningText: { color: brandColors.coffeeDark, fontWeight: '800', fontSize: 12 },
   title: { fontSize: 22, fontWeight: '900', color: brandColors.textPrimary },
   subtitle: { fontSize: 13, color: brandColors.textSecondary, marginTop: 5, marginBottom: 15 },
   card: { borderWidth: 1, borderColor: brandColors.border, padding: 16, borderRadius: 8, backgroundColor: brandColors.white, marginTop: 14 },

@@ -575,6 +575,8 @@ function DateTimeField({
           display={mode === 'date' ? 'calendar' : 'clock'}
           onChange={onChange}
           is24Hour
+          positiveButton={{ label: 'Aceptar', textColor: brandColors.greenDark }}
+          negativeButton={{ label: 'Cancelar', textColor: brandColors.greenDark }}
         />
       )}
     </View>
