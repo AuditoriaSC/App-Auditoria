@@ -16,6 +16,9 @@
     "android": {
       "package": "com.sweetandcoffee.auditorias"
     },
+    "ios": {
+      "bundleIdentifier": "com.sweetandcoffee.auditorias"
+    },
     "extra": {
       "router": {},
       "eas": {

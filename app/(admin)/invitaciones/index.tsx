@@ -189,7 +189,7 @@ export default function GestionInvitacionesPage() {
     } else {
       setInvitations((current) => [data as InvitationRow, ...current]);
       setEmail('');
-      setMessage(`Invitacion creada. Link: ${buildInviteLink(code)}`);
+      setMessage(`Invitacion creada. Link aceptacion: ${buildAcceptInviteLink(code)}`);
     }
 
     setSaving(false);
@@ -315,7 +315,13 @@ export default function GestionInvitacionesPage() {
           <View key={invitation.id} style={styles.card}>
             <View style={styles.cardText}>
               <Text style={styles.cardTitle}>{invitation.email}</Text>
-              <Text style={styles.linkText}>{buildInviteLink(invitation.code)}</Text>
+              <Text style={styles.linkLabel}>Link aceptacion</Text>
+              <Text style={styles.linkText}>{buildAcceptInviteLink(invitation.code)}</Text>
+              <Text style={styles.linkLabel}>Android</Text>
+              <Text style={styles.linkText}>{buildAndroidLink()}</Text>
+              <Text style={styles.linkLabel}>App Web / iOS</Text>
+              <Text style={styles.linkText}>{buildWebAppLink()}</Text>
+              <Text style={styles.iosHelpText}>En iPhone, abrir desde Safari y seleccionar Compartir &gt; Agregar a pantalla de inicio.</Text>
               <Text style={styles.meta}>{formatRole(invitation.role)} · {invitation.region || 'Sin region'} · Codigo {invitation.code}</Text>
               <Text style={styles.meta}>Expira: {formatDate(invitation.expires_at)}</Text>
             </View>
@@ -325,8 +331,16 @@ export default function GestionInvitacionesPage() {
               </View>
               {state === 'pendiente' && (
                 <>
-                  <TouchableOpacity style={styles.copyButton} onPress={() => copyInviteLink(invitation.code)}>
-                    <Text style={styles.copyButtonText}>Copiar link</Text>
+                  <TouchableOpacity style={styles.copyButton} onPress={() => copyText(buildAcceptInviteLink(invitation.code), 'Copia el link de aceptacion:')}>
+                    <Text style={styles.copyButtonText}>Copiar aceptacion</Text>
+                  </TouchableOpacity>
+                  {getAndroidDownloadUrl() && (
+                    <TouchableOpacity style={styles.copyButton} onPress={() => copyText(buildAndroidLink(), 'Copia el link Android:')}>
+                      <Text style={styles.copyButtonText}>Copiar Android</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={styles.copyButton} onPress={() => copyText(buildWebAppLink(), 'Copia el link App Web / iOS:')}>
+                    <Text style={styles.copyButtonText}>Copiar Web/iOS</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.cancelButton} onPress={() => cancelInvitation(invitation)} disabled={saving}>
                     <Text style={styles.cancelButtonText}>Cancelar</Text>
@@ -348,21 +362,37 @@ function getInvitationStatus(invitation: InvitationRow) {
   return invitation.status || 'pendiente';
 }
 
-function buildInviteLink(code: string) {
+function getWebAppUrl() {
   const configuredUrl = process.env.EXPO_PUBLIC_WEB_APP_URL || process.env.WEB_APP_URL;
   const baseUrl = configuredUrl || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8081');
-  return `${String(baseUrl).replace(/\/$/, '')}/accept-invite?token=${encodeURIComponent(code)}`;
+  return String(baseUrl || '').replace(/\/$/, '');
 }
 
-async function copyInviteLink(code: string) {
-  const link = buildInviteLink(code);
+function getAndroidDownloadUrl() {
+  return String(process.env.EXPO_PUBLIC_ANDROID_DOWNLOAD_URL || process.env.ANDROID_DOWNLOAD_URL || '').trim();
+}
+
+function buildAcceptInviteLink(code: string) {
+  const baseUrl = getWebAppUrl();
+  return `${baseUrl}/accept-invite?token=${encodeURIComponent(code)}`;
+}
+
+function buildAndroidLink() {
+  return getAndroidDownloadUrl() || 'Android: enlace pendiente';
+}
+
+function buildWebAppLink() {
+  return getWebAppUrl() || 'App Web / iOS: WEB_APP_URL no configurada';
+}
+
+async function copyText(link: string, promptTitle: string) {
   if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(link);
     return;
   }
 
   if (typeof window !== 'undefined') {
-    window.prompt('Copia el link de invitacion:', link);
+    window.prompt(promptTitle, link);
   }
 }
 
@@ -416,7 +446,9 @@ const styles = StyleSheet.create({
   cardText: { flex: 1 },
   cardTitle: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 15 },
   meta: { marginTop: 5, color: brandColors.textSecondary, fontSize: 12, fontWeight: '700' },
-  linkText: { marginTop: 5, color: brandColors.greenDark, fontSize: 12, fontWeight: '800' },
+  linkLabel: { marginTop: 8, color: brandColors.textSecondary, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  linkText: { marginTop: 3, color: brandColors.greenDark, fontSize: 12, fontWeight: '800' },
+  iosHelpText: { marginTop: 5, color: brandColors.textSecondary, fontSize: 12, fontWeight: '700', lineHeight: 17 },
   statusColumn: { alignItems: 'flex-end', gap: 8 },
   badge: { borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10 },
   badgePending: { backgroundColor: brandColors.cream },
@@ -432,5 +464,6 @@ const styles = StyleSheet.create({
   copyButton: { borderWidth: 1, borderColor: brandColors.greenDark, backgroundColor: brandColors.greenSoft, borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10 },
   copyButtonText: { color: brandColors.greenDark, fontSize: 12, fontWeight: '900' },
 });
+
 
 

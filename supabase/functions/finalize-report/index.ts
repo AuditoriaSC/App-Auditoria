@@ -9,7 +9,6 @@ const REPORT_CC_EMAILS = Deno.env.get('REPORT_CC_EMAILS') || ''
 const REPORT_BCC_EMAILS = Deno.env.get('REPORT_BCC_EMAILS') || ''
 const WEB_APP_URL = Deno.env.get('WEB_APP_URL') || ''
 const ANDROID_DOWNLOAD_URL = Deno.env.get('ANDROID_DOWNLOAD_URL') || ''
-const IOS_TESTFLIGHT_URL = Deno.env.get('IOS_TESTFLIGHT_URL') || ''
 const SUPPORT_EMAIL = Deno.env.get('SUPPORT_EMAIL') || ''
 
 const emailColors = {
@@ -139,7 +138,6 @@ function renderFooterLinks() {
   const links = [
     WEB_APP_URL ? `<a href="${escapeHtml(WEB_APP_URL)}" target="_blank" rel="noopener noreferrer" style="color:${emailColors.greenDark}; font-weight:700;">Abrir plataforma</a>` : '',
     ANDROID_DOWNLOAD_URL ? `<a href="${escapeHtml(ANDROID_DOWNLOAD_URL)}" target="_blank" rel="noopener noreferrer" style="color:${emailColors.greenDark}; font-weight:700;">Android</a>` : '',
-    IOS_TESTFLIGHT_URL ? `<a href="${escapeHtml(IOS_TESTFLIGHT_URL)}" target="_blank" rel="noopener noreferrer" style="color:${emailColors.greenDark}; font-weight:700;">iOS TestFlight</a>` : '',
     SUPPORT_EMAIL ? `<a href="mailto:${escapeHtml(SUPPORT_EMAIL)}" style="color:${emailColors.greenDark}; font-weight:700;">Soporte</a>` : '',
   ].filter(Boolean)
 
