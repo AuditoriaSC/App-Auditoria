@@ -10,6 +10,7 @@ const REPORT_BCC_EMAILS = Deno.env.get('REPORT_BCC_EMAILS') || ''
 const WEB_APP_URL = Deno.env.get('WEB_APP_URL') || ''
 const ANDROID_DOWNLOAD_URL = Deno.env.get('ANDROID_DOWNLOAD_URL') || ''
 const SUPPORT_EMAIL = Deno.env.get('SUPPORT_EMAIL') || ''
+const REPORT_LOGO_URL = Deno.env.get('REPORT_LOGO_URL') || Deno.env.get('COMPANY_LOGO_URL') || ''
 
 const emailColors = {
   greenDark: '#165034',
@@ -24,6 +25,7 @@ const emailColors = {
   border: '#DED2C2',
   textPrimary: '#2B2118',
   textSecondary: '#6B5B4B',
+  warning: '#D99A00',
   danger: '#B23B32',
 }
 
@@ -46,6 +48,11 @@ type ReportRow = {
   start_time: string | null
   end_time: string | null
   should_send: boolean | null
+  edited_after_send: boolean | null
+  last_edit_reason: string | null
+  last_edited_at: string | null
+  resent_count: number | null
+  last_resent_at: string | null
   signature_auditor_url: string | null
   signature_responsible_url: string | null
   auditor_signature_url: string | null
@@ -146,6 +153,17 @@ function renderFooterLinks() {
   return `
     <div style="margin-top:20px; padding-top:14px; border-top:1px solid ${emailColors.border}; color:${emailColors.textSecondary}; font-size:13px;">
       ${links.join(' &nbsp;|&nbsp; ')}
+    </div>
+  `
+}
+
+function renderReportLogo() {
+  if (!REPORT_LOGO_URL) return '<p style="margin:0 0 6px 0; font-size:12px; letter-spacing:0.08em; text-transform:uppercase; font-weight:700;">Sweet & Coffee</p>'
+
+  return `
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
+      <img src="${escapeHtml(REPORT_LOGO_URL)}" alt="Sweet & Coffee" style="width:54px; height:54px; object-fit:contain; border-radius:8px; background:${emailColors.white};" />
+      <p style="margin:0; font-size:12px; letter-spacing:0.08em; text-transform:uppercase; font-weight:700;">Sweet & Coffee</p>
     </div>
   `
 }
@@ -414,13 +432,41 @@ function buildHeaderTable(report: ReportRow, scoreText: string) {
   `
 }
 
+function renderEditTracking(report: ReportRow, isResend: boolean) {
+  if (!isResend && !report.edited_after_send && !report.last_edit_reason && !report.last_resent_at) return ''
+
+  const rows = [
+    ['Tipo de envio', isResend ? 'Reenvio de informe actualizado' : 'Envio de informe'],
+    ['Editado posterior al envio', report.edited_after_send ? 'SI' : 'NO'],
+    ['Motivo de edicion', report.last_edit_reason || 'Sin motivo registrado'],
+    ['Fecha de ultima edicion', report.last_edited_at ? String(report.last_edited_at).slice(0, 19).replace('T', ' ') : 'Sin registro'],
+    ['Reenvios previos', String(report.resent_count || 0)],
+  ]
+
+  return `
+    <div style="border:1px solid ${emailColors.warning}; background:${emailColors.creamSoft}; border-radius:10px; padding:12px; margin:12px 0 18px 0;">
+      <p style="margin:0 0 8px 0; font-weight:700; color:${emailColors.coffeeDark};">Control de edicion y reenvio</p>
+      <table style="width:100%; border-collapse:collapse; font-size:14px;">
+        <tbody>
+          ${rows.map(([label, value]) => `
+            <tr>
+              <td style="width:38%; border:1px solid ${emailColors.border}; padding:7px; font-weight:700;">${escapeHtml(label)}</td>
+              <td style="border:1px solid ${emailColors.border}; padding:7px;">${escapeHtml(value)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const { reportId } = await req.json()
+    const { reportId, isResend } = await req.json()
     if (!reportId) throw new Error('Falta el parametro reportId obligatorio.')
     console.log('finalize-report:start', { reportId })
 
@@ -432,7 +478,7 @@ Deno.serve(async (req) => {
 
     const { data: report, error: errReport } = await supabase
       .from('audit_reports')
-      .select('id, region, visit_type_id, status, final_grade, final_percentage, local_codigo, local_code_snapshot, local_name_snapshot, auditor_name_snapshot, responsible_code, responsible_name_snapshot, start_date, start_time, end_time, should_send, signature_auditor_url, signature_responsible_url, auditor_signature_url, responsible_signature_url, profiles(full_name, email), locales(nombre_local)')
+      .select('id, region, visit_type_id, status, final_grade, final_percentage, local_codigo, local_code_snapshot, local_name_snapshot, auditor_name_snapshot, responsible_code, responsible_name_snapshot, start_date, start_time, end_time, should_send, edited_after_send, last_edit_reason, last_edited_at, resent_count, last_resent_at, signature_auditor_url, signature_responsible_url, auditor_signature_url, responsible_signature_url, profiles!audit_reports_user_id_fkey(full_name, email), locales(nombre_local)')
       .eq('id', reportId)
       .single<ReportRow>()
 
@@ -482,7 +528,8 @@ Deno.serve(async (req) => {
     const localName = report.local_name_snapshot || report.locales?.nombre_local || report.local_codigo || 'Local'
     const localCode = report.local_code_snapshot || report.local_codigo || ''
     const sentDate = formatSentDate()
-    const subject = `REPORTE DE VISITA ${visitType.toUpperCase()} LOCAL ${localName.toUpperCase()}${localCode ? ` ${localCode.toUpperCase()}` : ''} ENVIADO EL ${sentDate}`
+    const subjectPrefix = isResend ? 'REENVIO - ' : ''
+    const subject = `${subjectPrefix}REPORTE DE VISITA ${visitType.toUpperCase()} LOCAL ${localName.toUpperCase()}${localCode ? ` ${localCode.toUpperCase()}` : ''} ENVIADO EL ${sentDate}`
     const auditorSignatureUrl = report.auditor_signature_url || report.signature_auditor_url
     const responsibleSignatureUrl = report.responsible_signature_url || report.signature_responsible_url
 
@@ -494,7 +541,7 @@ Deno.serve(async (req) => {
     const emailHtmlBody = `
       <div style="font-family:Arial, sans-serif; color:${emailColors.textPrimary}; max-width:1080px; margin:0 auto; background:${emailColors.creamSoft}; padding:30px; font-size:16px; line-height:1.55;">
         <div style="background:${emailColors.greenDark}; color:${emailColors.logoWhite}; border-radius:12px 12px 0 0; padding:22px 28px;">
-          <p style="margin:0 0 6px 0; font-size:12px; letter-spacing:0.08em; text-transform:uppercase; font-weight:700;">Sweet & Coffee</p>
+          ${renderReportLogo()}
           <h2 style="margin:0; font-size:22px; color:${emailColors.white};">Reporte de visita ${escapeHtml(visitType)}</h2>
           <p style="margin:8px 0 0 0; color:${emailColors.logoWhite};">${escapeHtml(localName)}${localCode ? ` · ${escapeHtml(localCode)}` : ''} · ${scoreText}</p>
         </div>
@@ -503,6 +550,7 @@ Deno.serve(async (req) => {
           <p style="margin:0 0 12px 0;">A continuación se presenta el resultado de la visita ${escapeHtml(visitType)} realizada:</p>
 
           ${buildHeaderTable(report, scoreText)}
+          ${renderEditTracking(report, Boolean(isResend))}
 
           <h3 style="margin:18px 0 10px 0; color:${emailColors.greenDark};">Detalle de preguntas</h3>
           ${questionDetails || '<p>Sin respuestas registradas.</p>'}

@@ -29,7 +29,7 @@ export default function HistoricoAuditoriasPage() {
     setLoading(true);
     const { data, error } = await supabase
       .from('audit_reports')
-      .select('*, profiles(full_name)')
+      .select('*, profiles!audit_reports_user_id_fkey(full_name)')
       .eq('status', 'finalized')
       .order('updated_at', { ascending: false });
 

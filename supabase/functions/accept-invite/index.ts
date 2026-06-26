@@ -58,10 +58,6 @@ function isCorporateEmail(email: string) {
   return email.trim().toLowerCase().endsWith(CORPORATE_DOMAIN)
 }
 
-function profileNameFromEmail(email: string) {
-  return email.split('@')[0] || 'Usuario'
-}
-
 async function findUserIdByEmail(supabase: ReturnType<typeof createClient>, email: string) {
   let page = 1
   const perPage = 100
@@ -96,6 +92,8 @@ Deno.serve(async (req) => {
     const payload = await req.json().catch(() => null)
     const token = String(payload?.token || '').trim()
     const password = String(payload?.password || '')
+    const firstName = String(payload?.firstName || '').trim().replace(/\s+/g, ' ')
+    const lastName = String(payload?.lastName || '').trim().replace(/\s+/g, ' ')
     const mode = String(payload?.mode || 'accept')
 
     if (!token) return friendlyError('Invitacion no valida.')
@@ -132,6 +130,9 @@ Deno.serve(async (req) => {
     }
 
     if (!password || password.length < 8) return friendlyError('La contrasena debe tener minimo 8 caracteres.')
+    if (!firstName || !lastName) return friendlyError('Ingresa nombre y apellido.')
+
+    const fullName = `${firstName} ${lastName}`.trim()
 
     let userId = await findUserIdByEmail(supabase, email)
 
@@ -158,19 +159,13 @@ Deno.serve(async (req) => {
       }
     }
 
-    const { data: existingProfile } = await supabase
-      .from('profiles')
-      .select('full_name')
-      .eq('id', userId)
-      .maybeSingle<{ full_name: string | null }>()
-
     const now = new Date().toISOString()
     const { error: profileError } = await supabase
       .from('profiles')
       .upsert({
         id: userId,
         email,
-        full_name: existingProfile?.full_name || profileNameFromEmail(email),
+        full_name: fullName,
         role: invitation.role,
         region: invitation.region || 'Costa',
         is_active: true,

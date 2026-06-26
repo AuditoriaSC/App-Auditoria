@@ -69,6 +69,30 @@ interface DraftAnswerRow {
   }[] | null;
 }
 
+interface ReportHeader {
+  id: string;
+  user_id: string | null;
+  visit_type_id: string | null;
+  status: string | null;
+  should_send: boolean | null;
+  resent_count: number | null;
+  local_code_snapshot: string | null;
+  local_name_snapshot: string | null;
+  local_codigo: string | null;
+  responsible_name_snapshot: string | null;
+  responsible_code: string | null;
+  auditor_name_snapshot: string | null;
+  auditor_team: string | null;
+  locales?: { nombre_local: string | null } | null;
+  profiles?: { full_name: string | null } | null;
+}
+
+interface ProfileRow {
+  id: string;
+  role: 'auditor' | 'admin' | 'super_admin';
+  region: string | null;
+}
+
 interface PickedImage {
   uri: string;
   base64: string | null;
@@ -87,6 +111,8 @@ const emptyAnswer: AnswerState = {
   previousShift: '',
   countItems: [],
 };
+
+const appLogo = require('../../../../assets/brand/sweet-coffee-logo.png');
 
 function getQuestionType(question: Question): QuestionType {
   return question.question_type || 'compliance';
@@ -127,6 +153,11 @@ function isScoredQuestion(question: Question) {
 
 function formatPoints(points: number) {
   return Number(points || 0).toFixed(2);
+}
+
+function canEditReport(report: ReportHeader, profile: ProfileRow) {
+  if (profile.role === 'admin' || profile.role === 'super_admin' || profile.region === 'Global') return true;
+  return report.user_id === profile.id;
 }
 
 function base64ToArrayBuffer(base64: string) {
@@ -270,6 +301,10 @@ export default function ChecklistDinamicoPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isOnline, setIsOnline] = useState<boolean | null>(true);
   const [saveWarning, setSaveWarning] = useState<string | null>(null);
+  const [reportHeader, setReportHeader] = useState<ReportHeader | null>(null);
+  const [profile, setProfile] = useState<ProfileRow | null>(null);
+  const [editReason, setEditReason] = useState('');
+  const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
@@ -288,19 +323,59 @@ export default function ChecklistDinamicoPage() {
 
       setLoading(true);
 
-      const { data, error: supabaseError } = await supabase
-        .from('checklist_questions')
-        .select('*')
-        .eq('visit_type_id', visit_type_id)
-        .eq('is_active', true)
-        .in('region', [String(region), 'Global'])
-        .order('sort_order', { ascending: true })
-        .order('created_at', { ascending: true });
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        setError('No se pudo validar el usuario.');
+        setLoading(false);
+        return;
+      }
+
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, role, region')
+        .eq('id', user.id)
+        .single<ProfileRow>();
+
+      if (profileError || !profileData) {
+        setError('No se pudo cargar el perfil del usuario.');
+        setLoading(false);
+        return;
+      }
+
+      setProfile(profileData);
+
+      const [
+        { data, error: supabaseError },
+        { data: reportData, error: reportError },
+      ] = await Promise.all([
+        supabase
+          .from('checklist_questions')
+          .select('*')
+          .eq('visit_type_id', visit_type_id)
+          .eq('is_active', true)
+          .in('region', [String(region), 'Global'])
+          .order('sort_order', { ascending: true })
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('audit_reports')
+          .select('id, user_id, visit_type_id, status, should_send, resent_count, local_code_snapshot, local_name_snapshot, local_codigo, responsible_name_snapshot, responsible_code, auditor_name_snapshot, auditor_team, locales(nombre_local), profiles!audit_reports_user_id_fkey(full_name)')
+          .eq('id', reportId)
+          .single<ReportHeader>(),
+      ]);
 
       if (supabaseError) {
         setError(supabaseError.message);
         setLoading(false);
         return;
+      }
+
+      if (!reportError && reportData) {
+        setReportHeader(reportData);
+        if (!canEditReport(reportData, profileData)) {
+          setError('No tienes permisos para editar esta visita.');
+          setLoading(false);
+          return;
+        }
       }
 
       const loadedQuestions = data || [];
@@ -315,8 +390,10 @@ export default function ChecklistDinamicoPage() {
         };
       });
 
-      const { data: remoteDraftRows, error: draftError } = await supabase
-        .from('audit_answers_draft')
+      const isFinalReport = reportData?.status === 'finalized';
+      const answerTable = isFinalReport ? 'audit_answers_final' : 'audit_answers_draft';
+      const { data: remoteRows, error: draftError } = await supabase
+        .from(answerTable)
         .select('report_id, question_id, value, observation, evidence_url, numeric_value_theoretical, numeric_value_physical, numeric_value_current, numeric_value_previous, numeric_items')
         .eq('report_id', reportId);
 
@@ -325,12 +402,12 @@ export default function ChecklistDinamicoPage() {
       }
 
       const questionsById = new Map(loadedQuestions.map((question: Question) => [question.id, question]));
-      (remoteDraftRows || []).forEach((row) => {
+      (remoteRows || []).forEach((row) => {
         const question = questionsById.get(row.question_id);
         if (question) initialAnswers[row.question_id] = draftRowToAnswer(question, row as DraftAnswerRow);
       });
 
-      const savedDraft = await offlineStorage.getDraft(String(reportId));
+      const savedDraft = isFinalReport ? null : await offlineStorage.getDraft(String(reportId));
       setAnswers(savedDraft ? { ...initialAnswers, ...savedDraft } : initialAnswers);
       setLoading(false);
     }
@@ -360,8 +437,11 @@ export default function ChecklistDinamicoPage() {
     const updatedAnswers = { ...answers, [questionId]: nextAnswer };
 
     setAnswers(updatedAnswers);
-    await offlineStorage.saveDraft(String(reportId), updatedAnswers);
-    await persistRemoteDraft(questionId, nextAnswer);
+    setHasChanges(true);
+    if (reportHeader?.status !== 'finalized') {
+      await offlineStorage.saveDraft(String(reportId), updatedAnswers);
+      await persistRemoteDraft(questionId, nextAnswer);
+    }
   };
 
   const pickImageFromSource = async (source: 'camera' | 'library'): Promise<PickedImage | null> => {
@@ -486,7 +566,7 @@ export default function ChecklistDinamicoPage() {
     }
 
     if (!answer.value) return 'Selecciona CUMPLE o NO CUMPLE.';
-    if (observationRequired && !answer.observation.trim()) return 'Agrega una observacion para NO CUMPLE.';
+    if (type !== 'follow_up' && observationRequired && !answer.observation.trim()) return 'Agrega una observacion para NO CUMPLE.';
 
     if (type === 'pending_deposit' && (!answer.currentShift.trim() || !answer.previousShift.trim())) {
       return 'Completa turno actual y turno anterior.';
@@ -498,6 +578,99 @@ export default function ChecklistDinamicoPage() {
   const checkFormValidation = () => {
     if (questions.length === 0) return false;
     return questions.every((q) => !getValidationMessage(q, { ...emptyAnswer, ...answers[q.id] }));
+  };
+
+  const calculateScore = (payload: DraftAnswerRow[]) => {
+    const questionsById = new Map(questions.map((question) => [question.id, question]));
+    return payload.reduce(
+      (acc, answer) => {
+        const question = questionsById.get(answer.question_id);
+        if (!question || !isScoredQuestion(question)) return acc;
+        const points = Number(question.score_points || 0);
+        acc.possible += points;
+        if (answer.value === 'cumple') acc.obtained += points;
+        return acc;
+      },
+      { obtained: 0, possible: 0 },
+    );
+  };
+
+  const sendUpdatedReport = async () => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const functionUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/finalize-report`;
+    const response = await fetch(functionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+        Authorization: `Bearer ${sessionData.session?.access_token || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || ''}`,
+      },
+      body: JSON.stringify({ reportId, region, isResend: true }),
+    });
+
+    const sendData = await response.json().catch(() => null);
+    if (!response.ok) {
+      const detail = sendData && typeof sendData === 'object' && 'error' in sendData ? String(sendData.error) : `HTTP ${response.status}`;
+      throw new Error(`Reenvio de correo: ${detail}`);
+    }
+  };
+
+  const handleSubmitFinalEdit = async (payload: DraftAnswerRow[]) => {
+    if (!reportHeader || !profile) return;
+    const wasSent = reportHeader.should_send === true;
+    const reason = editReason.trim();
+
+    if (wasSent && hasChanges && !reason) {
+      alert('Ingresa el motivo de edicion antes de guardar una visita enviada.');
+      return;
+    }
+
+    const { obtained, possible } = calculateScore(payload);
+    const finalPercentage = possible > 0 ? Math.round((obtained / possible) * 10000) / 100 : 0;
+    const finalGrade = possible > 0 ? Math.round((obtained / possible) * 1000) / 100 : 0;
+    const now = new Date().toISOString();
+
+    const { error: finalAnswersError } = await supabase
+      .from('audit_answers_final')
+      .upsert(payload.map((answer) => ({ ...answer, created_at: now })), { onConflict: 'report_id,question_id' });
+
+    if (finalAnswersError) throw finalAnswersError;
+
+    const reportUpdate = {
+      final_percentage: finalPercentage,
+      final_grade: finalGrade,
+      status: 'finalized',
+      edited_after_send: wasSent && hasChanges,
+      last_edited_at: hasChanges ? now : null,
+      last_edited_by: hasChanges ? profile.id : null,
+      last_edit_reason: hasChanges ? reason || null : null,
+      updated_at: now,
+    };
+
+    const { error: reportUpdateError } = await supabase
+      .from('audit_reports')
+      .update(reportUpdate)
+      .eq('id', reportId);
+
+    if (reportUpdateError) throw reportUpdateError;
+
+    if (wasSent && hasChanges) {
+      await sendUpdatedReport();
+      const { error: resendUpdateError } = await supabase
+        .from('audit_reports')
+        .update({
+          last_resent_at: new Date().toISOString(),
+          resent_count: Number(reportHeader.resent_count || 0) + 1,
+          last_resent_by: profile.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', reportId);
+
+      if (resendUpdateError) throw resendUpdateError;
+    }
+
+    alert(wasSent && hasChanges ? 'Visita actualizada y reporte reenviado.' : 'Visita actualizada.');
+    router.replace('/dashboard');
   };
 
   const handleSubmit = async () => {
@@ -521,6 +694,18 @@ export default function ChecklistDinamicoPage() {
 
       return [answerToDraftRow(String(reportId), q, answer)];
     });
+
+    try {
+      if (reportHeader?.status === 'finalized') {
+        await handleSubmitFinalEdit(payload);
+        setIsSubmitting(false);
+        return;
+      }
+    } catch (err: any) {
+      alert('No se pudo actualizar la visita: ' + err.message);
+      setIsSubmitting(false);
+      return;
+    }
 
     if (payload.length > 0) {
       const { error: insertError } = await supabase
@@ -552,6 +737,14 @@ export default function ChecklistDinamicoPage() {
     return <View style={styles.center}><Text style={styles.errorText}>Error: {error}</Text></View>;
   }
 
+  const headerVisitType = reportHeader?.visit_type_id || String(visit_type_id || 'visita');
+  const headerLocalCode = reportHeader?.local_code_snapshot || reportHeader?.local_codigo || String(local_id || '');
+  const headerLocalName = reportHeader?.local_name_snapshot || reportHeader?.locales?.nombre_local || 'Local';
+  const headerResponsible = reportHeader?.responsible_name_snapshot || 'Responsable pendiente';
+  const headerAuditor = reportHeader?.auditor_name_snapshot || reportHeader?.auditor_team || reportHeader?.profiles?.full_name || 'Auditor';
+  const isFinalEdit = reportHeader?.status === 'finalized';
+  const isSentEdit = isFinalEdit && reportHeader?.should_send === true;
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic">
       <View style={[styles.networkBanner, isOnline ? styles.bannerOnline : styles.bannerOffline]}>
@@ -565,8 +758,34 @@ export default function ChecklistDinamicoPage() {
         </View>
       )}
 
-      <Text style={styles.title}>Formulario de Checklist</Text>
-      <Text style={styles.subtitle}>ID Auditoria: {reportId} | Region: {region}</Text>
+      <View style={styles.headerCard}>
+        <Image source={appLogo} style={styles.headerLogo} resizeMode="contain" />
+        <View style={styles.headerTextBlock}>
+          <Text style={styles.title}>Checklist visita {headerVisitType}</Text>
+          <Text style={styles.headerMeta}>Local: {headerLocalCode ? `${headerLocalCode} · ` : ''}{headerLocalName}</Text>
+          <Text style={styles.headerMeta}>Líder/responsable: {headerResponsible}</Text>
+          <Text style={styles.headerMeta}>Auditor: {headerAuditor}</Text>
+        </View>
+      </View>
+
+      {isFinalEdit && (
+        <View style={styles.editNotice}>
+          <Text style={styles.editNoticeTitle}>{isSentEdit ? 'Editando visita enviada' : 'Editando visita finalizada'}</Text>
+          <Text style={styles.editNoticeText}>
+            {isSentEdit ? 'Los cambios recalcularan la calificacion y reenviaran el informe actualizado.' : 'Los cambios recalcularan la calificacion sin enviar correo.'}
+          </Text>
+          {isSentEdit && (
+            <TextInput
+              style={styles.editReasonInput}
+              value={editReason}
+              onChangeText={setEditReason}
+              multiline
+              placeholder="Motivo de edicion requerido"
+              placeholderTextColor={brandColors.inputPlaceholder}
+            />
+          )}
+        </View>
+      )}
 
       {questions.map((q, index) => {
         const currentAnswer = { ...emptyAnswer, ...answers[q.id] };
@@ -607,18 +826,22 @@ export default function ChecklistDinamicoPage() {
               </View>
             )}
 
-            <Text style={styles.fieldLabel}>
-              {type === 'additional_novelty' ? 'Novedad adicional opcional' : 'Observaciones encontradas'}
-            </Text>
-            <TextInput
-              style={styles.textArea}
-              multiline
-              numberOfLines={3}
-              placeholderTextColor={brandColors.inputPlaceholder}
-              placeholder={currentAnswer.value === 'no_cumple' ? 'Describe el hallazgo detectado...' : 'Observacion opcional...'}
-              value={currentAnswer.observation}
-              onChangeText={(text) => updateField(q.id, { observation: text })}
-            />
+            {type !== 'follow_up' && (
+              <>
+                <Text style={styles.fieldLabel}>
+                  {type === 'additional_novelty' ? 'Novedad adicional opcional' : 'Observaciones encontradas'}
+                </Text>
+                <TextInput
+                  style={styles.textArea}
+                  multiline
+                  numberOfLines={3}
+                  placeholderTextColor={brandColors.inputPlaceholder}
+                  placeholder={currentAnswer.value === 'no_cumple' ? 'Describe el hallazgo detectado...' : 'Observacion opcional...'}
+                  value={currentAnswer.observation}
+                  onChangeText={(text) => updateField(q.id, { observation: text })}
+                />
+              </>
+            )}
 
             {type === 'cash_count' && (
               <View style={styles.numericGrid}>
@@ -681,7 +904,15 @@ export default function ChecklistDinamicoPage() {
         disabled={!isFormValid || isSubmitting}
       >
         <Text style={styles.submitButtonText}>
-          {isSubmitting ? 'Procesando...' : isOnline ? 'Guardar y pasar a conclusiones' : 'Guardar borrador local'}
+          {isSubmitting
+            ? 'Procesando...'
+            : isFinalEdit
+              ? isSentEdit
+                ? 'Guardar cambios y reenviar'
+                : 'Guardar cambios'
+              : isOnline
+                ? 'Guardar y pasar a conclusiones'
+                : 'Guardar borrador local'}
         </Text>
       </TouchableOpacity>
     </ScrollView>
@@ -789,7 +1020,15 @@ const styles = StyleSheet.create({
   bannerText: { fontSize: 13, fontWeight: '800', color: brandColors.textSecondary },
   saveWarning: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, padding: 10, marginBottom: 12 },
   saveWarningText: { color: brandColors.coffeeDark, fontWeight: '800', fontSize: 12 },
+  headerCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, backgroundColor: brandColors.white, padding: 14, marginBottom: 14 },
+  headerLogo: { width: 48, height: 48, borderRadius: 8 },
+  headerTextBlock: { flex: 1, minWidth: 0 },
   title: { fontSize: 22, fontWeight: '900', color: brandColors.textPrimary },
+  headerMeta: { fontSize: 13, color: brandColors.textSecondary, fontWeight: '800', marginTop: 3 },
+  editNotice: { borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, backgroundColor: brandColors.creamSoft, padding: 12, marginBottom: 12 },
+  editNoticeTitle: { color: brandColors.coffeeDark, fontWeight: '900', fontSize: 15 },
+  editNoticeText: { color: brandColors.textSecondary, fontWeight: '700', fontSize: 12, lineHeight: 17, marginTop: 4 },
+  editReasonInput: { minHeight: 74, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, backgroundColor: brandColors.white, color: brandColors.inputText, padding: 10, marginTop: 10, textAlignVertical: 'top', fontWeight: '700' },
   subtitle: { fontSize: 13, color: brandColors.textSecondary, marginTop: 5, marginBottom: 15 },
   card: { borderWidth: 1, borderColor: brandColors.border, padding: 16, borderRadius: 8, backgroundColor: brandColors.white, marginTop: 14 },
   questionHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 12 },

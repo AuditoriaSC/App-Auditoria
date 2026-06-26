@@ -22,6 +22,8 @@ export default function AcceptInvitePage() {
 
   const [status, setStatus] = useState<ScreenStatus>('loading');
   const [invitation, setInvitation] = useState<InvitationPreview | null>(null);
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [message, setMessage] = useState<string | null>(null);
@@ -63,6 +65,14 @@ export default function AcceptInvitePage() {
       return;
     }
 
+    const cleanFirstName = firstName.trim().replace(/\s+/g, ' ');
+    const cleanLastName = lastName.trim().replace(/\s+/g, ' ');
+
+    if (!cleanFirstName || !cleanLastName) {
+      setMessage('Ingresa nombre y apellido.');
+      return;
+    }
+
     if (!password) {
       setMessage('Ingresa una contrasena.');
       return;
@@ -80,7 +90,7 @@ export default function AcceptInvitePage() {
 
     setSubmitting(true);
     const { data, error } = await supabase.functions.invoke('accept-invite', {
-      body: { token: cleanToken, password },
+      body: { token: cleanToken, password, firstName: cleanFirstName, lastName: cleanLastName },
     });
     setSubmitting(false);
 
@@ -127,6 +137,28 @@ export default function AcceptInvitePage() {
             </View>
 
             {message && <Text style={styles.errorText}>{message}</Text>}
+
+            <Text style={styles.label}>Nombre</Text>
+            <TextInput
+              style={styles.input}
+              value={firstName}
+              onChangeText={setFirstName}
+              autoCapitalize="words"
+              autoComplete="given-name"
+              placeholder="Tu nombre"
+              placeholderTextColor="#94a3b8"
+            />
+
+            <Text style={styles.label}>Apellido</Text>
+            <TextInput
+              style={styles.input}
+              value={lastName}
+              onChangeText={setLastName}
+              autoCapitalize="words"
+              autoComplete="family-name"
+              placeholder="Tu apellido"
+              placeholderTextColor="#94a3b8"
+            />
 
             <Text style={styles.label}>Contrasena</Text>
             <TextInput

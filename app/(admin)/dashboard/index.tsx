@@ -6,6 +6,7 @@ import { brandColors } from '../../../constants/theme';
 import { supabase } from '../../../src/supabaseClient';
 
 type ProfileRow = {
+  id: string;
   full_name: string;
   role: 'auditor' | 'admin' | 'super_admin';
   region: string;
@@ -15,6 +16,7 @@ type VisibleStatus = 'EN_PROCESO' | 'FINALIZADA' | 'ENVIADA';
 
 type VisitRow = {
   id: string;
+  user_id: string | null;
   region: string;
   visit_type_id: string;
   responsible_name: string | null;
@@ -31,6 +33,10 @@ type VisitRow = {
   start_time: string | null;
   final_grade: number | null;
   final_percentage: number | null;
+  edited_after_send: boolean | null;
+  last_resent_at: string | null;
+  resent_count: number | null;
+  last_edit_reason: string | null;
   created_at: string;
   updated_at: string;
   locales?: { nombre_local: string | null } | { nombre_local: string | null }[] | null;
@@ -102,7 +108,7 @@ export default function AdminDashboard() {
 
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
-      .select('full_name, role, region')
+      .select('id, full_name, role, region')
       .eq('id', user.id)
       .single<ProfileRow>();
 
@@ -119,7 +125,7 @@ export default function AdminDashboard() {
 
     const { data: visitRows, error: visitsError } = await supabase
       .from('audit_reports')
-      .select('id, region, visit_type_id, responsible_name, auditor_team, local_codigo, local_code_snapshot, local_name_snapshot, responsible_code, responsible_name_snapshot, auditor_name_snapshot, status, should_send, start_date, start_time, final_grade, final_percentage, created_at, updated_at, locales(nombre_local), profiles(full_name)')
+      .select('id, user_id, region, visit_type_id, responsible_name, auditor_team, local_codigo, local_code_snapshot, local_name_snapshot, responsible_code, responsible_name_snapshot, auditor_name_snapshot, status, should_send, start_date, start_time, final_grade, final_percentage, edited_after_send, last_resent_at, resent_count, last_edit_reason, created_at, updated_at, locales(nombre_local), profiles!audit_reports_user_id_fkey(full_name)')
       .order('start_date', { ascending: false })
       .order('start_time', { ascending: false })
       .order('created_at', { ascending: false });
@@ -334,7 +340,7 @@ export default function AdminDashboard() {
             canDelete={canDeleteVisits && getVisibleStatus(visit) !== 'ENVIADA'}
             onDelete={() => handleDeleteVisit(visit)}
             onPress={() => {
-              if (visit.status !== 'finalized') {
+              if (canOpenVisit(visit, profile)) {
                 router.push({
                   pathname: `/checklist/${visit.id}`,
                   params: {
@@ -415,6 +421,13 @@ function VisitCard({ visit, canDelete, onDelete, onPress }: { visit: VisitRow; c
           <Text style={styles.visitDate}>{formatVisitDateTime(visit)}</Text>
           <Text style={styles.visitTitle}>{getLocalName(visit)}</Text>
           <Text style={styles.visitSubtitle}>{getLocalCode(visit) || 'Sin codigo'} · {visit.visit_type_id}</Text>
+          {(visit.edited_after_send || Number(visit.resent_count || 0) > 0) && (
+            <Text style={styles.auditTrailText}>
+              {visit.edited_after_send ? 'Editada posterior al envio' : ''}
+              {visit.edited_after_send && Number(visit.resent_count || 0) > 0 ? ' · ' : ''}
+              {Number(visit.resent_count || 0) > 0 ? `Reenviada ${visit.resent_count} vez${Number(visit.resent_count || 0) === 1 ? '' : 'es'}` : ''}
+            </Text>
+          )}
         </View>
         <StatusBadge status={visibleStatus} />
       </View>
@@ -536,6 +549,12 @@ function getRegionScope(profile: ProfileRow | null) {
   return profile.region;
 }
 
+function canOpenVisit(visit: VisitRow, profile: ProfileRow | null) {
+  if (!profile) return false;
+  if (profile.role === 'super_admin' || profile.role === 'admin') return true;
+  return visit.user_id === profile.id;
+}
+
 function formatRole(role?: string) {
   if (role === 'super_admin') return 'Super admin';
   if (role === 'admin') return 'Admin';
@@ -627,6 +646,7 @@ const styles = StyleSheet.create({
   visitDate: { fontSize: 12, color: '#64748b', fontWeight: '800', marginBottom: 3 },
   visitTitle: { fontSize: 16, fontWeight: '900', color: '#111827' },
   visitSubtitle: { marginTop: 2, fontSize: 12, color: '#64748b', fontWeight: '700' },
+  auditTrailText: { marginTop: 4, color: brandColors.warning, fontWeight: '900', fontSize: 11 },
   badge: { borderRadius: 999, paddingVertical: 5, paddingHorizontal: 10, alignSelf: 'flex-start' },
   badgeProcess: { backgroundColor: '#F7E6B5' },
   badgeFinalized: { backgroundColor: brandColors.creamSoft },

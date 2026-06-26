@@ -32,9 +32,10 @@ type CsvResponsible = {
 };
 
 type ImportSummary = {
-  nuevos: number;
+  creados: number;
   actualizados: number;
-  omitidos: number;
+  inactivados: number;
+  sinCambios: number;
   errores: string[];
 };
 
@@ -135,13 +136,13 @@ export default function ResponsablesAdminPage() {
     setSummary(null);
 
     const parsed = parseResponsibleCsv(text, profile, isSuperAdmin);
-    const importSummary: ImportSummary = { nuevos: 0, actualizados: 0, omitidos: parsed.omitidos, errores: parsed.errores };
+    const importSummary: ImportSummary = { creados: 0, actualizados: 0, inactivados: 0, sinCambios: 0, errores: parsed.errores };
 
     if (parsed.rows.length > 0) {
       const codes = parsed.rows.map((row) => row.responsible_code);
       const { data: existingRows, error: existingError } = await supabase
         .from('responsibles')
-        .select('id, responsible_code, region')
+        .select('id, responsible_code, responsible_name, position, region, is_active')
         .in('responsible_code', codes);
 
       if (existingError) {
@@ -152,12 +153,12 @@ export default function ResponsablesAdminPage() {
 
       const existingByCode = new Map((existingRows || []).map((row) => [row.responsible_code, row]));
       const now = new Date().toISOString();
+      const importedRegions = Array.from(new Set(parsed.rows.map((row) => row.region).filter(Boolean))) as string[];
 
       for (const row of parsed.rows) {
         const existing = existingByCode.get(row.responsible_code);
 
         if (existing && !isSuperAdmin && existing.region && existing.region !== profile.region) {
-          importSummary.omitidos += 1;
           importSummary.errores.push(`${row.responsible_code}: pertenece a otra region.`);
           continue;
         }
@@ -178,12 +179,45 @@ export default function ResponsablesAdminPage() {
           : await supabase.from('responsibles').insert([payload]);
 
         if (result.error) {
-          importSummary.omitidos += 1;
           importSummary.errores.push(`${row.responsible_code}: no se pudo guardar.`);
-        } else if (existing) {
-          importSummary.actualizados += 1;
+        } else if (!existing) {
+          importSummary.creados += 1;
+        } else if (isSameResponsible(existing, row)) {
+          importSummary.sinCambios += 1;
         } else {
-          importSummary.nuevos += 1;
+          importSummary.actualizados += 1;
+        }
+      }
+
+      const targetRegions = isSuperAdmin ? importedRegions : [profile.region];
+      if (targetRegions.length > 0) {
+        let missingQuery = supabase
+          .from('responsibles')
+          .select('id')
+          .eq('is_active', true)
+          .in('region', targetRegions);
+
+        if (codes.length > 0) {
+          missingQuery = missingQuery.not('responsible_code', 'in', `(${codes.map((code) => `"${code}"`).join(',')})`);
+        }
+
+        const { data: missingRows, error: missingError } = await missingQuery;
+        if (missingError) {
+          importSummary.errores.push('No se pudo validar responsables ausentes para inactivar.');
+        } else {
+          const missingIds = (missingRows || []).map((row) => row.id);
+          if (missingIds.length > 0) {
+            const { error: inactiveError } = await supabase
+              .from('responsibles')
+              .update({ is_active: false, source: 'csv', last_sync_at: now, updated_at: now })
+              .in('id', missingIds);
+
+            if (inactiveError) {
+              importSummary.errores.push('No se pudieron inactivar responsables ausentes.');
+            } else {
+              importSummary.inactivados = missingIds.length;
+            }
+          }
         }
       }
     }
@@ -263,7 +297,9 @@ export default function ResponsablesAdminPage() {
       {summary && (
         <View style={styles.summaryCard}>
           <Text style={styles.summaryTitle}>Resumen de importacion</Text>
-          <Text style={styles.summaryText}>Nuevos: {summary.nuevos} · Actualizados: {summary.actualizados} · Omitidos: {summary.omitidos}</Text>
+          <Text style={styles.summaryText}>
+            Creados: {summary.creados} · Actualizados: {summary.actualizados} · Inactivados: {summary.inactivados} · Sin cambios: {summary.sinCambios} · Errores: {summary.errores.length}
+          </Text>
           {summary.errores.map((error, index) => (
             <Text key={`${error}-${index}`} style={styles.errorLine}>{error}</Text>
           ))}
@@ -388,6 +424,15 @@ function parseResponsibleCsv(text: string, profile: ProfileRow, isSuperAdmin: bo
   }
 
   return { rows, errores, omitidos };
+}
+
+function isSameResponsible(existing: Partial<ResponsibleRow>, row: CsvResponsible) {
+  return (
+    String(existing.responsible_name || '').trim() === row.responsible_name &&
+    String(existing.position || '').trim() === String(row.position || '').trim() &&
+    String(existing.region || '').trim() === String(row.region || '').trim() &&
+    existing.is_active === true
+  );
 }
 
 function splitCsvLine(line: string) {

@@ -66,7 +66,7 @@ export default function ExportacionAvanzadaPage() {
       // 1. Construir query base a Supabase
       let query = supabase
         .from('audit_reports')
-        .select('id, region, visit_type_id, final_grade, final_percentage, updated_at, profiles(full_name)')
+        .select('id, region, visit_type_id, final_grade, final_percentage, updated_at, profiles!audit_reports_user_id_fkey(full_name)')
         .eq('status', 'finalized');
 
       // Filtro condicional por Región (Si es 'TODAS', no inyecta el .eq, trayendo ambas regiones juntas)

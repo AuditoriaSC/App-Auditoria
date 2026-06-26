@@ -9,7 +9,7 @@ type UserRole = 'auditor' | 'admin' | 'super_admin';
 
 type ProfileRow = {
   id: string;
-  full_name: string;
+  full_name: string | null;
   email: string;
   role: UserRole;
   region: string;
@@ -38,7 +38,7 @@ export default function UsuariosAdminPage() {
   const [regionFilter, setRegionFilter] = useState(allOption);
   const [statusFilter, setStatusFilter] = useState(allOption);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<{ role: UserRole; region: string }>({ role: 'auditor', region: 'Costa' });
+  const [draft, setDraft] = useState<{ full_name: string; role: UserRole; region: string }>({ full_name: '', role: 'auditor', region: 'Costa' });
 
   useEffect(() => {
     loadData();
@@ -51,7 +51,7 @@ export default function UsuariosAdminPage() {
   const filteredUsers = useMemo(() => {
     const term = normalize(search);
     return users.filter((user) => {
-      const matchesSearch = !term || normalize(`${user.full_name} ${user.email}`).includes(term);
+      const matchesSearch = !term || normalize(`${user.full_name || ''} ${user.email}`).includes(term);
       const matchesRole = roleFilter === allOption || user.role === roleFilter;
       const matchesRegion = regionFilter === allOption || user.region === regionFilter;
       const matchesStatus =
@@ -127,7 +127,7 @@ export default function UsuariosAdminPage() {
       return;
     }
     setEditingId(user.id);
-    setDraft({ role: user.role, region: user.region });
+    setDraft({ full_name: user.full_name || '', role: user.role, region: user.region });
   };
 
   const saveUser = async (user: ProfileRow) => {
@@ -146,10 +146,17 @@ export default function UsuariosAdminPage() {
       return;
     }
 
+    const fullName = draft.full_name.trim().replace(/\s+/g, ' ');
+    if (!fullName) {
+      setMessage('El nombre completo es obligatorio.');
+      return;
+    }
+
     setSavingId(user.id);
     setMessage(null);
 
     const payload = {
+      full_name: fullName,
       role: draft.role,
       region: draft.region,
       updated_at: new Date().toISOString(),
@@ -266,7 +273,7 @@ export default function UsuariosAdminPage() {
           <View key={user.id} style={[styles.card, !user.is_active && styles.disabledCard]}>
             <View style={styles.cardHeader}>
               <View style={styles.cardText}>
-                <Text style={styles.cardTitle}>{user.full_name}</Text>
+                <Text style={styles.cardTitle}>{user.full_name || user.email}</Text>
                 <Text style={styles.meta}>{user.email}</Text>
                 <Text style={styles.meta}>{formatRole(user.role)} · {user.region} · Creado {formatDate(user.created_at)}</Text>
               </View>
@@ -278,6 +285,16 @@ export default function UsuariosAdminPage() {
 
             {editing && (
               <View style={styles.editGrid}>
+                <View style={styles.fieldGroupWide}>
+                  <Text style={styles.label}>Nombre completo</Text>
+                  <TextInput
+                    style={styles.searchInput}
+                    value={draft.full_name}
+                    onChangeText={(value) => setDraft((current) => ({ ...current, full_name: value }))}
+                    placeholder="Nombre y apellido"
+                    placeholderTextColor="#94a3b8"
+                  />
+                </View>
                 <View style={styles.fieldGroup}>
                   <Text style={styles.label}>Rol</Text>
                   <View style={styles.pickerShell}>
@@ -402,6 +419,7 @@ const styles = StyleSheet.create({
   statusText: { color: brandColors.textSecondary, fontWeight: '900', fontSize: 11 },
   editGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12, alignItems: 'flex-end' },
   fieldGroup: { flexGrow: 1, flexShrink: 0, flexBasis: 170, minWidth: 170 },
+  fieldGroupWide: { flexGrow: 1, flexShrink: 0, flexBasis: 360, minWidth: 220 },
   cardActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 12 },
   primaryButton: { backgroundColor: brandColors.greenDark, borderRadius: 8, paddingVertical: 11, paddingHorizontal: 16, alignItems: 'center' },
   primaryButtonText: { color: brandColors.white, fontWeight: '900' },
