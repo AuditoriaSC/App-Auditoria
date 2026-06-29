@@ -544,6 +544,13 @@ Deno.serve(async (req) => {
       .join('')
 
     const emailHtmlBody = `
+      <!DOCTYPE html>
+      <html lang="es">
+      <head>
+        <meta charset="UTF-8">
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+      </head>
+      <body>
       <div style="font-family:Arial, sans-serif; color:${emailColors.textPrimary}; max-width:1080px; margin:0 auto; background:${emailColors.creamSoft}; padding:30px; font-size:16px; line-height:1.55;">
         <div style="background:${emailColors.greenDark}; color:${emailColors.logoWhite}; border-radius:12px 12px 0 0; padding:16px 24px;">
           <table role="presentation" style="width:100%; border-collapse:collapse;"><tr><td style="vertical-align:middle; text-align:left; padding-right:18px;">
@@ -584,6 +591,8 @@ Deno.serve(async (req) => {
           ${renderFooterLinks()}
         </div>
       </div>
+      </body>
+      </html>
     `
 
     const resendResponse = await fetch('https://api.resend.com/emails', {

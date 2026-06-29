@@ -229,6 +229,21 @@ export default function AdministradorRecursosPage() {
     );
   }
 
+  if (Platform.OS !== 'web') {
+    return (
+      <View style={styles.center}>
+        <View style={styles.webOnlyCard}>
+          <Text style={styles.cardTitle}>Administrador de Recursos</Text>
+          <Text style={styles.webOnlyTitle}>Disponible en Web</Text>
+          <Text style={styles.cardDescription}>La administración de preguntas, locales, responsables, usuarios, invitaciones y exportaciones se realiza desde la plataforma web.</Text>
+          <TouchableOpacity style={styles.secondaryButton} onPress={goToDashboard}>
+            <Text style={styles.secondaryButtonText}>Volver</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container} contentInsetAdjustmentBehavior="automatic">
       <View style={styles.header}>
@@ -456,6 +471,8 @@ const styles = StyleSheet.create({
   subtitle: { marginTop: 4, color: brandColors.textSecondary, fontWeight: '700' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   card: { flexGrow: 1, flexBasis: 230, minWidth: 0, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, backgroundColor: brandColors.white, padding: 14 },
+  webOnlyCard: { width: '100%', maxWidth: 460, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, backgroundColor: brandColors.white, padding: 18 },
+  webOnlyTitle: { color: brandColors.greenDark, fontWeight: '900', fontSize: 18, marginTop: 8 },
   disabledCard: { opacity: 0.68, backgroundColor: brandColors.creamSoft },
   cardTitle: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 16 },
   cardDescription: { color: brandColors.textSecondary, fontWeight: '700', fontSize: 12, lineHeight: 17, marginTop: 6 },

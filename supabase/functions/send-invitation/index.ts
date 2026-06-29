@@ -84,8 +84,15 @@ function buildEmail(invitation: InvitationRow) {
   const webUrl = WEB_APP_URL
   const androidUrl = ANDROID_DOWNLOAD_URL
 
-  return `
-    <div style="font-family:Arial,sans-serif; background:${colors.creamSoft}; padding:28px; color:${colors.textPrimary};">
+    return `
+      <!DOCTYPE html>
+      <html lang="es">
+      <head>
+        <meta charset="UTF-8">
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+      </head>
+      <body>
+      <div style="font-family:Arial,sans-serif; background:${colors.creamSoft}; padding:28px; color:${colors.textPrimary};">
       <div style="max-width:760px; margin:0 auto;">
         <div style="background:${colors.greenDark}; color:${colors.logoWhite}; padding:22px 26px; border-radius:12px 12px 0 0;">
           <h1 style="margin:0; font-size:22px; color:${colors.white};">App Auditoría Sweet & Coffee</h1>
@@ -114,10 +121,12 @@ function buildEmail(invitation: InvitationRow) {
           <p><strong>Para iPhone:</strong> abre el enlace desde Safari, toca Compartir y selecciona “Agregar a pantalla de inicio”.</p>
           <p style="color:${colors.textSecondary};">Soporte: ${escapeHtml(SUPPORT_EMAIL)}</p>
         </div>
+        </div>
       </div>
-    </div>
-  `
-}
+      </body>
+      </html>
+    `
+  }
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return jsonResponse({ error: 'Metodo no permitido.' }, 405)
