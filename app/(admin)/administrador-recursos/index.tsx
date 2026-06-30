@@ -179,6 +179,7 @@ export default function AdministradorRecursosPage() {
     const baseHeaders = [
       'Nombre del Local',
       'Codigo del Local',
+      'Región',
       'Nombre del Auditor',
       'Fecha de Visita',
       'Nombre del Responsable',
@@ -194,6 +195,7 @@ export default function AdministradorRecursosPage() {
       return [
         report.local_name_snapshot || getRelationValue(report.locales, 'nombre_local') || '',
         report.local_code_snapshot || getRelationValue(report.locales, 'codigo_interno') || '',
+        report.region || '',
         report.auditor_name_snapshot || getRelationValue(report.profiles, 'full_name') || '',
         report.start_date || formatDateForCsv(report.created_at),
         report.responsible_name_snapshot || '',

@@ -8,6 +8,7 @@ const webOnlyResourceRoutes = new Set([
   'usuarios',
   'invitaciones',
   'exportar-avanzado',
+  'inventarios',
 ]);
 
 export default function AdminLayout() {
