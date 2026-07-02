@@ -9,14 +9,14 @@
     "@react-native-community/netinfo": "12.0.1",
     "@react-native-picker/picker": "^2.11.4",
     "@supabase/supabase-js": "^2.108.2",
-    "expo": "~56.0.12",
+    "expo": "~56.0.13",
     "expo-constants": "~56.0.18",
     "expo-file-system": "~56.0.8",
-    "expo-image-picker": "~56.0.18",
+    "expo-image-picker": "~56.0.19",
     "expo-linking": "~56.0.14",
-    "expo-router": "~56.2.11",
-    "expo-sharing": "~56.0.18",
-    "expo-updates": "~56.0.19",
+    "expo-router": "~56.2.12",
+    "expo-sharing": "~56.0.19",
+    "expo-updates": "~56.0.20",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.85.3",
@@ -28,6 +28,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "supabase": "2.109.0",
     "typescript": "~6.0.3"
   },
   "scripts": {
