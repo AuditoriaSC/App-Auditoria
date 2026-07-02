@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { ActivityIndicator, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { brandColors } from '../../../constants/theme';
 import { supabase } from '../../../src/supabaseClient';
 import { listActiveResponsibles, searchResponsibles } from '../../../src/services/responsiblesService';
@@ -65,10 +64,8 @@ export default function NuevaAuditoriaPage() {
   const [localSeleccionado, setLocalSeleccionado] = useState<LocalComercial | null>(null);
   const [responsableQuery, setResponsableQuery] = useState('');
   const [responsableSeleccionado, setResponsableSeleccionado] = useState<ResponsableOption | null>(null);
-  const [fechaInicio, setFechaInicio] = useState(dateToIsoDate(now));
-  const [horaInicio, setHoraInicio] = useState(dateToTime(now));
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
+  const fechaInicio = dateToIsoDate(now);
+  const horaInicio = dateToTime(now);
   const [localSearchOpen, setLocalSearchOpen] = useState(false);
   const [responsableSearchOpen, setResponsableSearchOpen] = useState(false);
   const [newLocalOpen, setNewLocalOpen] = useState(false);
@@ -164,24 +161,7 @@ export default function NuevaAuditoriaPage() {
   const isFormValid =
     Boolean(tipoVisita) &&
     Boolean(localSeleccionado) &&
-    Boolean(responsableSeleccionado?.id) &&
-    Boolean(fechaInicio.trim()) &&
-    Boolean(horaInicio.trim());
-
-  const selectedDate = useMemo(() => {
-    const date = new Date(`${fechaInicio}T${horaInicio || '00:00'}:00`);
-    return Number.isNaN(date.getTime()) ? new Date() : date;
-  }, [fechaInicio, horaInicio]);
-
-  const handleDateChange = (_event: DateTimePickerEvent, date?: Date) => {
-    if (Platform.OS !== 'ios') setShowDatePicker(false);
-    if (date) setFechaInicio(dateToIsoDate(date));
-  };
-
-  const handleTimeChange = (_event: DateTimePickerEvent, date?: Date) => {
-    if (Platform.OS !== 'ios') setShowTimePicker(false);
-    if (date) setHoraInicio(dateToTime(date));
-  };
+    Boolean(responsableSeleccionado?.id);
 
   const handleLocalSearch = (value: string) => {
     setLocalQuery(value);
@@ -275,15 +255,13 @@ export default function NuevaAuditoriaPage() {
 
   const handleCrearVisita = async () => {
     if (!isFormValid) {
-      setMessage('Completa tipo de visita, local, responsable, fecha y hora de inicio.');
+      setMessage('Completa tipo de visita, local y responsable.');
       return;
     }
 
-    const startDate = new Date(`${fechaInicio}T${horaInicio}:00`);
-    if (Number.isNaN(startDate.getTime())) {
-      setMessage('Revisa la fecha u hora de inicio.');
-      return;
-    }
+    const startDate = new Date();
+    const actualStartDate = dateToIsoDate(startDate);
+    const actualStartTime = dateToTime(startDate);
 
     setIsCreating(true);
     setMessage(null);
@@ -310,8 +288,8 @@ export default function NuevaAuditoriaPage() {
         local_name_snapshot: localSeleccionado?.nombre_local,
         auditor_name_snapshot: profile?.full_name || 'Auditor',
         auditor_team: profile?.full_name || 'Auditor',
-        start_date: fechaInicio,
-        start_time: horaInicio,
+        start_date: actualStartDate,
+        start_time: actualStartTime,
         status: 'draft',
         created_at: startDate.toISOString(),
       }])
@@ -376,26 +354,14 @@ export default function NuevaAuditoriaPage() {
         </View>
 
         <View style={styles.dateTimeGrid}>
-          <DateTimeField
+          <ReadOnlyDateTimeField
             label="Fecha de inicio"
             value={fechaInicio}
-            mode="date"
-            selectedDate={selectedDate}
-            visible={showDatePicker}
-            onOpen={() => setShowDatePicker(true)}
-            onChange={handleDateChange}
-            onWebChange={setFechaInicio}
           />
 
-          <DateTimeField
+          <ReadOnlyDateTimeField
             label="Hora de inicio"
             value={horaInicio}
-            mode="time"
-            selectedDate={selectedDate}
-            visible={showTimePicker}
-            onOpen={() => setShowTimePicker(true)}
-            onChange={handleTimeChange}
-            onWebChange={setHoraInicio}
           />
         </View>
       </FormSection>
@@ -528,57 +494,14 @@ export default function NuevaAuditoriaPage() {
   );
 }
 
-function DateTimeField({
-  label,
-  value,
-  mode,
-  selectedDate,
-  visible,
-  onOpen,
-  onChange,
-  onWebChange,
-}: {
-  label: string;
-  value: string;
-  mode: 'date' | 'time';
-  selectedDate: Date;
-  visible: boolean;
-  onOpen: () => void;
-  onChange: (event: DateTimePickerEvent, date?: Date) => void;
-  onWebChange: (value: string) => void;
-}) {
-  if (Platform.OS === 'web') {
-    return (
-      <View style={styles.dateTimeItem}>
-        <Text style={styles.label}>{label}</Text>
-        {React.createElement('input', {
-          type: mode,
-          value,
-          onChange: (event: React.ChangeEvent<HTMLInputElement>) => onWebChange(event.target.value),
-          style: webInputStyle,
-        })}
-      </View>
-    );
-  }
-
+function ReadOnlyDateTimeField({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.dateTimeItem}>
       <Text style={styles.label}>{label}</Text>
-      <TouchableOpacity style={styles.clockButton} onPress={onOpen}>
+      <View style={styles.clockButton}>
         <Text style={styles.clockValue}>{value}</Text>
-        <Text style={styles.clockHint}>{mode === 'date' ? 'Abrir calendario' : 'Abrir reloj'}</Text>
-      </TouchableOpacity>
-      {visible && (
-        <DateTimePicker
-          value={selectedDate}
-          mode={mode}
-          display={mode === 'date' ? 'calendar' : 'clock'}
-          onChange={onChange}
-          is24Hour
-          positiveButton={{ label: 'Aceptar', textColor: brandColors.greenDark }}
-          negativeButton={{ label: 'Cancelar', textColor: brandColors.greenDark }}
-        />
-      )}
+        <Text style={styles.clockHint}>Se registrará automáticamente al iniciar</Text>
+      </View>
     </View>
   );
 }
@@ -809,19 +732,6 @@ function buildMissingProfileMessage(email?: string | null, uid?: string, detail?
     detail ? `Detalle: ${detail}` : null,
   ].filter(Boolean).join('\n');
 }
-
-const webInputStyle = {
-  width: '100%',
-  height: 52,
-  border: `1px solid ${brandColors.border}`,
-  borderRadius: 8,
-  boxSizing: 'border-box',
-  padding: '0 10px',
-  fontSize: 14,
-  fontWeight: 800,
-  color: brandColors.textPrimary,
-  backgroundColor: brandColors.white,
-};
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: brandColors.background },
