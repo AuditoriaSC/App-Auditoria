@@ -17,6 +17,13 @@ on:
       - 'tsconfig.json'
       - '.github/workflows/deploy-web-beta.yml'
 
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-web-beta
+  cancel-in-progress: false
+
 jobs:
   deploy-web-beta:
     runs-on: ubuntu-latest
@@ -51,4 +58,4 @@ jobs:
         run: npx expo export --platform web --output-dir dist
 
       - name: Desplegar web beta
-        run: npx eas-cli deploy --export-dir dist --non-interactive
+        run: npx --yes eas-cli@20.5.1 deploy --export-dir dist --non-interactive
