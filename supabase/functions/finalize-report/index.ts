@@ -132,7 +132,9 @@ function evidencePath(reference: string | null) {
 async function signedEvidenceReference(supabase: ReturnType<typeof createClient>, reference: string | null) {
   const path = evidencePath(reference)
   if (!path) return null
-  const { data, error } = await supabase.storage.from('evidencias').createSignedUrl(path, 60 * 60 * 24 * 7)
+  // El correo conserva acceso por 180 dias. La app almacena la ruta original y
+  // puede regenerar una URL nueva para evidencias historicas cuando sea necesario.
+  const { data, error } = await supabase.storage.from('evidencias').createSignedUrl(path, 60 * 60 * 24 * 180)
   if (error) throw new Error(`No se pudo autorizar una evidencia: ${error.message}`)
   return data.signedUrl
 }

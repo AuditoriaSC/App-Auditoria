@@ -625,42 +625,24 @@ export default function ChecklistDinamicoPage() {
       return;
     }
 
-    const { obtained, possible } = calculateScore(payload);
-    const finalPercentage = possible > 0 ? Math.round((obtained / possible) * 10000) / 100 : 0;
-    const finalGrade = possible > 0 ? Math.round((obtained / possible) * 1000) / 100 : 0;
-    const now = new Date().toISOString();
+    const { data, error: editError } = await supabase.functions.invoke('manage-report-edit', {
+      body: { action: 'submit', reportId, reason, answers: payload },
+    });
+    if (editError || !data?.ok) throw new Error(data?.error || editError?.message || 'No se pudo procesar la edicion.');
 
-    const { error: finalAnswersError } = await supabase
-      .from('audit_answers_final')
-      .upsert(payload.map((answer) => ({ ...answer, created_at: now })), { onConflict: 'report_id,question_id' });
+    if (data.pending) {
+      alert('Este cambio modifica la calificacion y requiere autorizacion de un administrador antes de aplicarse.');
+      router.replace('/dashboard');
+      return;
+    }
 
-    if (finalAnswersError) throw finalAnswersError;
-
-    const reportUpdate = {
-      final_percentage: finalPercentage,
-      final_grade: finalGrade,
-      status: 'finalized',
-      edited_after_send: wasSent && hasChanges,
-      last_edited_at: hasChanges ? now : null,
-      last_edited_by: hasChanges ? profile.id : null,
-      last_edit_reason: hasChanges ? reason || null : null,
-      updated_at: now,
-    };
-
-    const { error: reportUpdateError } = await supabase
-      .from('audit_reports')
-      .update(reportUpdate)
-      .eq('id', reportId);
-
-    if (reportUpdateError) throw reportUpdateError;
-
-    if (wasSent && hasChanges) {
+    if (wasSent && hasChanges && data.shouldResend) {
       await sendUpdatedReport();
       const { error: resendUpdateError } = await supabase
         .from('audit_reports')
         .update({
           last_resent_at: new Date().toISOString(),
-          resent_count: Number(reportHeader.resent_count || 0) + 1,
+          resent_count: Number(data.resentCount ?? reportHeader.resent_count ?? 0) + 1,
           last_resent_by: profile.id,
           updated_at: new Date().toISOString(),
         })

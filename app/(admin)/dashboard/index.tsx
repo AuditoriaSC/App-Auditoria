@@ -4,6 +4,7 @@ import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
 import { brandColors } from '../../../constants/theme';
 import { supabase } from '../../../src/supabaseClient';
+import { downloadReportPdf } from '../../../src/report-document';
 
 type ProfileRow = {
   id: string;
@@ -440,6 +441,11 @@ function VisitCard({ visit, canDelete, onDelete, onPress }: { visit: VisitRow; c
         <Text style={styles.footerMetric}>{getAuditorName(visit)}</Text>
         <View style={styles.footerActions}>
           <Text style={styles.footerGrade}>{hasGrade ? `Calificacion ${Number(visit.final_grade || 0).toFixed(2)} / 10` : 'Sin calificacion'}</Text>
+          {visibleStatus !== 'EN_PROCESO' && (
+            <TouchableOpacity style={styles.pdfButton} onPress={async (event) => { event.stopPropagation(); try { await downloadReportPdf(visit.id); } catch (error) { alert(error instanceof Error ? error.message : 'No se pudo generar el PDF.'); } }}>
+              <Text style={styles.pdfButtonText}>⇩ PDF</Text>
+            </TouchableOpacity>
+          )}
           {canDelete && (
             <TouchableOpacity
               style={styles.deleteButton}
@@ -664,6 +670,8 @@ const styles = StyleSheet.create({
   footerMetric: { flex: 1, color: '#0f172a', fontWeight: '800' },
   footerGrade: { color: '#0f766e', fontWeight: '900' },
   footerActions: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' },
+  pdfButton: { borderWidth: 1, borderColor: brandColors.greenDark, backgroundColor: brandColors.greenSoft, borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10 },
+  pdfButtonText: { color: brandColors.greenDark, fontSize: 12, fontWeight: '900' },
   deleteButton: { borderWidth: 1, borderColor: '#fecaca', backgroundColor: '#fff1f2', borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10 },
   deleteButtonText: { color: '#be123c', fontSize: 12, fontWeight: '900' },
   summaryList: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, paddingHorizontal: 14, marginBottom: 18 },
