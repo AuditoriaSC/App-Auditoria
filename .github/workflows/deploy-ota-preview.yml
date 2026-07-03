@@ -10,6 +10,7 @@ on:
       - 'components/**'
       - 'constants/**'
       - 'src/**'
+      - '.env'
       - '.github/workflows/deploy-ota-preview.yml'
 
 permissions:
