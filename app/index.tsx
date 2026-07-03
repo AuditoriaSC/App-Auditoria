@@ -4,6 +4,7 @@ import { View, ActivityIndicator, StyleSheet, Text } from 'react-native';
 import { brandColors } from '../constants/theme';
 // Importación exacta apuntando a tu nueva carpeta src
 import { clearSupabaseSessionCache, supabase } from '../src/supabaseClient';
+import { isPasswordExpired, requiresMonthlyLogin } from '../src/authPolicy';
 
 export default function IndexPage() {
   const router = useRouter();
@@ -25,9 +26,15 @@ export default function IndexPage() {
       }
 
       // 2. Si está logueado, consultar el rol único en la tabla 'profiles'
+      if (await requiresMonthlyLogin()) {
+        await supabase.auth.signOut();
+        router.replace({ pathname: '/login', params: { message: 'Por seguridad, inicia sesión nuevamente este mes.' } });
+        return;
+      }
+
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('role, is_active')
+        .select('role, is_active, password_changed_at')
         .eq('id', user.id)
         .single();
 
@@ -60,6 +67,14 @@ export default function IndexPage() {
       }
 
       // 3. Todos los roles pasan por el dashboard; la vista aplica el alcance por rol.
+      if (isPasswordExpired(profile.password_changed_at)) {
+        const redirectTo = `${(process.env.EXPO_PUBLIC_WEB_APP_URL || '').replace(/\/$/, '')}/reset-password`;
+        if (user.email) await supabase.auth.resetPasswordForEmail(user.email, { redirectTo });
+        await supabase.auth.signOut();
+        router.replace({ pathname: '/login', params: { message: 'Tu contraseña cumplió 6 meses. Te enviamos un correo para renovarla.' } });
+        return;
+      }
+
       router.replace('/dashboard');
     }
 

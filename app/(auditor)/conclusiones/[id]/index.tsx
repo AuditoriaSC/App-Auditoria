@@ -164,8 +164,7 @@ export default function FinalizarReportePage() {
       : await fetch(signatureData).then((response) => response.arrayBuffer());
     const { error } = await supabase.storage.from('evidencias').upload(path, uploadBody, { contentType, upsert: true });
     if (error) throw error;
-    const { data: { publicUrl } } = supabase.storage.from('evidencias').getPublicUrl(path);
-    return publicUrl;
+    return path;
   };
 
   const handleFinalizarReporte = async () => {
