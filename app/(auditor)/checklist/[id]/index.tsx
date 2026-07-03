@@ -306,6 +306,7 @@ export default function ChecklistDinamicoPage() {
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [editReason, setEditReason] = useState('');
   const [hasChanges, setHasChanges] = useState(false);
+  const [finalizedSendChoice, setFinalizedSendChoice] = useState<boolean | null>(null);
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
@@ -615,23 +616,66 @@ export default function ChecklistDinamicoPage() {
     }
   };
 
+  const sendFinalizedReport = async () => {
+    const { error: sendChoiceError } = await supabase
+      .from('audit_reports')
+      .update({ should_send: true, updated_at: new Date().toISOString() })
+      .eq('id', reportId);
+    if (sendChoiceError) throw sendChoiceError;
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const response = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/finalize-report`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+          Authorization: `Bearer ${sessionData.session?.access_token || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || ''}`,
+        },
+        body: JSON.stringify({ reportId, region, isResend: false }),
+      });
+      const sendData = await response.json().catch(() => null);
+      if (!response.ok) {
+        const detail = sendData && typeof sendData === 'object' && 'error' in sendData ? String(sendData.error) : `HTTP ${response.status}`;
+        throw new Error(`Envio de correo: ${detail}`);
+      }
+    } catch (sendError) {
+      await supabase.from('audit_reports').update({ should_send: false, updated_at: new Date().toISOString() }).eq('id', reportId);
+      throw sendError;
+    }
+  };
+
   const handleSubmitFinalEdit = async (payload: DraftAnswerRow[]) => {
     if (!reportHeader || !profile) return;
     const wasSent = reportHeader.should_send === true;
+    const wantsInitialSend = !wasSent && finalizedSendChoice === true;
     const reason = editReason.trim();
 
-    if (wasSent && hasChanges && !reason) {
-      alert('Ingresa el motivo de edicion antes de guardar una visita enviada.');
+    if (!wasSent && finalizedSendChoice === null) {
+      alert('Elige si deseas enviar el informe o guardar sin enviar antes de salir.');
+      return;
+    }
+
+    if (hasChanges && !reason) {
+      alert('Ingresa el motivo de edicion antes de guardar la visita finalizada.');
+      return;
+    }
+
+    if (!hasChanges) {
+      if (wantsInitialSend) await sendFinalizedReport();
+      router.replace('/dashboard');
       return;
     }
 
     const { data, error: editError } = await supabase.functions.invoke('manage-report-edit', {
-      body: { action: 'submit', reportId, reason, answers: payload },
+      body: { action: 'submit', reportId, reason, answers: payload, sendAfterApproval: wantsInitialSend },
     });
     if (editError || !data?.ok) throw new Error(data?.error || editError?.message || 'No se pudo procesar la edicion.');
 
     if (data.pending) {
-      alert('Este cambio modifica la calificacion y requiere autorizacion de un administrador antes de aplicarse.');
+      alert(wantsInitialSend
+        ? 'Este cambio modifica la calificacion. El informe se enviara despues de que un administrador lo apruebe.'
+        : 'Este cambio modifica la calificacion y requiere autorizacion de un administrador antes de aplicarse.');
       router.replace('/dashboard');
       return;
     }
@@ -650,6 +694,8 @@ export default function ChecklistDinamicoPage() {
 
       if (resendUpdateError) throw resendUpdateError;
     }
+
+    if (wantsInitialSend) await sendFinalizedReport();
 
     router.replace('/dashboard');
   };
@@ -753,9 +799,9 @@ export default function ChecklistDinamicoPage() {
         <View style={styles.editNotice}>
           <Text style={styles.editNoticeTitle}>{isSentEdit ? 'Editando visita enviada' : 'Editando visita finalizada'}</Text>
           <Text style={styles.editNoticeText}>
-            {isSentEdit ? 'Los cambios recalcularan la calificacion y reenviaran el informe actualizado.' : 'Los cambios recalcularan la calificacion sin enviar correo.'}
+            {isSentEdit ? 'Los cambios recalcularan la calificacion y reenviaran el informe actualizado.' : 'Puedes guardar la visita sin enviarla o enviar el informe antes de salir.'}
           </Text>
-          {isSentEdit && (
+          {hasChanges && (
             <TextInput
               style={styles.editReasonInput}
               value={editReason}
@@ -764,6 +810,25 @@ export default function ChecklistDinamicoPage() {
               placeholder="Motivo de edicion requerido"
               placeholderTextColor={brandColors.inputPlaceholder}
             />
+          )}
+          {!isSentEdit && (
+            <View style={styles.finalizedSendSection}>
+              <Text style={styles.fieldLabel}>Antes de salir, elige qué hacer con el informe</Text>
+              <View style={styles.finalizedSendActions}>
+                <TouchableOpacity
+                  style={[styles.finalizedSendButton, finalizedSendChoice === false && styles.finalizedSendButtonActive]}
+                  onPress={() => setFinalizedSendChoice(false)}
+                >
+                  <Text style={[styles.finalizedSendButtonText, finalizedSendChoice === false && styles.finalizedSendButtonTextActive]}>Guardar sin enviar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.finalizedSendButton, finalizedSendChoice === true && styles.finalizedSendButtonActive]}
+                  onPress={() => setFinalizedSendChoice(true)}
+                >
+                  <Text style={[styles.finalizedSendButtonText, finalizedSendChoice === true && styles.finalizedSendButtonTextActive]}>Guardar y enviar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           )}
         </View>
       )}
@@ -890,7 +955,9 @@ export default function ChecklistDinamicoPage() {
             : isFinalEdit
               ? isSentEdit
                 ? 'Guardar cambios y reenviar'
-                : 'Guardar cambios'
+                : finalizedSendChoice === true
+                  ? 'Guardar y enviar informe'
+                  : 'Guardar sin enviar'
               : isOnline
                 ? 'Guardar y pasar a conclusiones'
                 : 'Guardar borrador local'}
@@ -1010,6 +1077,12 @@ const styles = StyleSheet.create({
   editNoticeTitle: { color: brandColors.coffeeDark, fontWeight: '900', fontSize: 15 },
   editNoticeText: { color: brandColors.textSecondary, fontWeight: '700', fontSize: 12, lineHeight: 17, marginTop: 4 },
   editReasonInput: { minHeight: 74, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, backgroundColor: brandColors.white, color: brandColors.inputText, padding: 10, marginTop: 10, textAlignVertical: 'top', fontWeight: '700' },
+  finalizedSendSection: { marginTop: 12, gap: 8 },
+  finalizedSendActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  finalizedSendButton: { minHeight: 44, flexGrow: 1, flexBasis: 180, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, backgroundColor: brandColors.white },
+  finalizedSendButtonActive: { borderColor: brandColors.greenDark, backgroundColor: brandColors.greenSoft },
+  finalizedSendButtonText: { color: brandColors.textSecondary, fontWeight: '800' },
+  finalizedSendButtonTextActive: { color: brandColors.greenDark },
   subtitle: { fontSize: 13, color: brandColors.textSecondary, marginTop: 5, marginBottom: 15 },
   card: { borderWidth: 1, borderColor: brandColors.border, padding: 16, borderRadius: 8, backgroundColor: brandColors.white, marginTop: 14 },
   questionHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 12 },

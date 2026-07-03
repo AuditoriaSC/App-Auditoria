@@ -120,6 +120,17 @@ function formatNumber(value: number | null | undefined) {
   return Number(value).toFixed(2)
 }
 
+function renderGradeBadge(gradeValue: number | null | undefined) {
+  const grade = Math.max(0, Math.min(10, Number(gradeValue || 0)))
+  const tone = grade <= 5
+    ? { background: '#FDE8E7', border: '#B23B32', color: '#8F251F' }
+    : grade <= 7
+      ? { background: '#FFF4CC', border: '#D99A00', color: '#775000' }
+      : { background: '#E2F3E8', border: '#1F6B47', color: '#165034' }
+
+  return `<span style="display:inline-block; margin-top:12px; padding:8px 14px; border:2px solid ${tone.border}; border-radius:999px; background:${tone.background}; color:${tone.color}; font-size:18px; font-weight:800;">Nota final: ${formatNumber(grade)} / 10</span>`
+}
+
 function evidencePath(reference: string | null) {
   if (!reference) return null
   for (const marker of ['/storage/v1/object/public/evidencias/', '/storage/v1/object/sign/evidencias/']) {
@@ -596,6 +607,7 @@ Deno.serve(async (req) => {
           <table role="presentation" style="width:100%; border-collapse:collapse;"><tr><td style="vertical-align:middle; text-align:left; padding-right:18px;">
           <h2 style="margin:0; font-size:22px; color:${emailColors.white};">Reporte de visita ${escapeHtml(visitType)}</h2>
           <p style="margin:8px 0 0 0; color:${emailColors.logoWhite};">${escapeHtml(localName)}${localCode ? ` · ${escapeHtml(localCode)}` : ''} · ${scoreText}</p>
+          ${renderGradeBadge(report.final_grade)}
           </td><td style="width:230px; vertical-align:middle; text-align:right;">${renderReportLogo()}</td></tr></table>
         </div>
         <div style="background:${emailColors.white}; border:1px solid ${emailColors.border}; border-top:0; border-radius:0 0 12px 12px; padding:28px;">
