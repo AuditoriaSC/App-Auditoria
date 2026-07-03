@@ -37,19 +37,24 @@ export default function EditApprovalsPage() {
 
   const review = async (item: Approval, decision: 'approved' | 'rejected') => {
     setBusy(item.id); setMessage(null);
+    let deliveryError: string | null = null;
     const { data, error } = await supabase.functions.invoke('manage-report-edit', { body: { action: 'review', approvalId: item.id, decision, adminComment: comment[item.id] || '' } });
     if (error || !data?.ok) { setMessage(data?.error || error?.message || 'No se pudo revisar la solicitud.'); setBusy(null); return; }
     if (decision === 'approved' && data.shouldResend) {
       const { data: sessionData } = await supabase.auth.getSession();
       const response = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/finalize-report`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', apikey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '', Authorization: `Bearer ${sessionData.session?.access_token || ''}` },
-        body: JSON.stringify({ reportId: data.reportId, region: data.region, isResend: true }),
+        body: JSON.stringify({ reportId: data.reportId, region: data.region, isResend: !data.isInitialSend }),
       });
-      if (!response.ok) setMessage('La recalificacion fue aprobada, pero el correo no pudo reenviarse.');
-      else await supabase.from('audit_reports').update({ last_resent_at: new Date().toISOString(), resent_count: Number(data.resentCount || 0) + 1, last_resent_by: userId, updated_at: new Date().toISOString() }).eq('id', data.reportId);
+      if (!response.ok) {
+        if (data.isInitialSend) await supabase.from('audit_reports').update({ should_send: false, updated_at: new Date().toISOString() }).eq('id', data.reportId);
+        deliveryError = data.isInitialSend ? 'La recalificacion fue aprobada, pero el informe no pudo enviarse.' : 'La recalificacion fue aprobada, pero el correo no pudo reenviarse.';
+      } else if (!data.isInitialSend) {
+        await supabase.from('audit_reports').update({ last_resent_at: new Date().toISOString(), resent_count: Number(data.resentCount || 0) + 1, last_resent_by: userId, updated_at: new Date().toISOString() }).eq('id', data.reportId);
+      }
     }
     setItems((current) => current.filter((value) => value.id !== item.id));
-    if (!message) setMessage(decision === 'approved' ? 'Solicitud aprobada.' : 'Solicitud rechazada.');
+    setMessage(deliveryError || (decision === 'approved' ? 'Solicitud aprobada.' : 'Solicitud rechazada.'));
     setBusy(null);
   };
 

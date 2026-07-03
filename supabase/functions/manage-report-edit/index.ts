@@ -58,6 +58,7 @@ Deno.serve(async (req) => {
       }
 
       const payload = Array.isArray(approval.change_payload) ? approval.change_payload as Answer[] : []
+      const sendAfterApproval = approval.change_type === 'scored_answer_change_send'
       const summary = Array.isArray(approval.change_summary) ? approval.change_summary as { question_id?: string; old_value?: string | null }[] : []
       const { data: latestRows } = await admin.from('audit_answers_final').select('question_id, value').eq('report_id', report!.id)
       const latest = new Map((latestRows || []).map((item) => [item.question_id, item.value]))
@@ -71,13 +72,14 @@ Deno.serve(async (req) => {
       const now = new Date().toISOString()
       const { error: answersError } = await admin.from('audit_answers_final').upsert(payload.map((item) => ({ ...item, created_at: now })), { onConflict: 'report_id,question_id' })
       if (answersError) throw answersError
-      await admin.from('audit_reports').update({ final_percentage: result.percentage, final_grade: result.grade, edited_after_send: true, last_edited_at: now, last_edited_by: caller.id, last_edit_reason: approval.reason, updated_at: now }).eq('id', report!.id)
+      await admin.from('audit_reports').update({ final_percentage: result.percentage, final_grade: result.grade, should_send: sendAfterApproval ? true : report!.should_send, edited_after_send: report!.should_send === true, last_edited_at: now, last_edited_by: caller.id, last_edit_reason: approval.reason, updated_at: now }).eq('id', report!.id)
       await admin.from('audit_edit_approvals').update({ status: 'approved', approved_by: caller.id, admin_comment: String(body?.adminComment || ''), reviewed_at: now, new_score: result.grade }).eq('id', approvalId)
-      return respond({ ok: true, status: 'approved', shouldResend: report?.should_send === true, reportId: report?.id, region: report?.region, resentCount: report?.resent_count || 0 })
+      return respond({ ok: true, status: 'approved', shouldResend: report?.should_send === true || sendAfterApproval, isInitialSend: sendAfterApproval && report?.should_send !== true, reportId: report?.id, region: report?.region, resentCount: report?.resent_count || 0 })
     }
 
     const reportId = String(body?.reportId || '')
     const reason = String(body?.reason || '').trim()
+    const sendAfterApproval = body?.sendAfterApproval === true
     const payload = Array.isArray(body?.answers) ? body.answers as Answer[] : []
     if (!reportId || !reason || payload.length === 0) return respond({ error: 'Ingresa el motivo y los cambios.' }, 400)
     const { data: report } = await admin.from('audit_reports').select('id, user_id, region, should_send, resent_count').eq('id', reportId).single<Report>()
@@ -102,7 +104,7 @@ Deno.serve(async (req) => {
     if (relevant.length > 0 || oldResult.grade !== newResult.grade) {
       const summary = relevant.map((item) => ({ question_id: item.question_id, question: questions.get(item.question_id)?.question_text, old_value: current.get(item.question_id)?.value, new_value: item.value }))
       const first = summary[0]
-      const { data: created, error: createError } = await admin.from('audit_edit_approvals').insert({ audit_report_id: reportId, question_id: first?.question_id || null, requested_by: caller.id, status: 'pending', change_type: 'scored_answer_change', old_value: first?.old_value || null, new_value: first?.new_value || null, old_score: oldResult.grade, new_score: newResult.grade, reason, change_payload: payload, change_summary: summary }).select('id').single()
+      const { data: created, error: createError } = await admin.from('audit_edit_approvals').insert({ audit_report_id: reportId, question_id: first?.question_id || null, requested_by: caller.id, status: 'pending', change_type: sendAfterApproval ? 'scored_answer_change_send' : 'scored_answer_change', old_value: first?.old_value || null, new_value: first?.new_value || null, old_score: oldResult.grade, new_score: newResult.grade, reason, change_payload: payload, change_summary: summary }).select('id').single()
       if (createError) throw createError
       return respond({ ok: true, pending: true, approvalId: created?.id, message: 'Este cambio modifica la calificacion y requiere autorizacion de un administrador antes de aplicarse.' })
     }
