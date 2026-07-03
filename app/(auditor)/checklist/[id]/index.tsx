@@ -4,6 +4,7 @@ import { ActivityIndicator, Alert, Image, Platform, ScrollView, StyleSheet, Text
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
 import { brandColors } from '../../../../constants/theme';
+import SecureEvidenceImage from '../../../../src/features/audits/components/secure-evidence-image';
 import { supabase } from '../../../../src/supabaseClient';
 import { offlineStorage } from '../../../../src/offlineStorage';
 
@@ -534,10 +535,9 @@ export default function ChecklistDinamicoPage() {
 
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage.from('evidencias').getPublicUrl(fileRoute);
       const latestAnswer = { ...emptyAnswer, ...answers[questionId] };
       await updateField(questionId, {
-        evidenceUrls: [...latestAnswer.evidenceUrls, publicUrl].slice(0, maxEvidence),
+        evidenceUrls: [...latestAnswer.evidenceUrls, fileRoute].slice(0, maxEvidence),
         uploading: false,
       });
     } catch (err: any) {
@@ -883,7 +883,7 @@ export default function ChecklistDinamicoPage() {
 
             <View style={styles.imageGrid}>
               {[...currentAnswer.localImageUris, ...currentAnswer.evidenceUrls].slice(0, maxEvidence).map((uri, imageIndex) => (
-                <Image key={`${q.id}-${imageIndex}-${uri}`} source={{ uri }} style={styles.imagePreview} />
+                <SecureEvidenceImage key={`${q.id}-${imageIndex}-${uri}`} reference={uri} />
               ))}
               {evidenceCount < maxEvidence && (
                 <TouchableOpacity style={styles.photoButton} onPress={() => handlePickImage(q)} disabled={currentAnswer.uploading}>

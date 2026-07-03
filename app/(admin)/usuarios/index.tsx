@@ -210,6 +210,18 @@ export default function UsuariosAdminPage() {
     setSavingId(null);
   };
 
+  const sendPasswordReset = async (user: ProfileRow) => {
+    if (!canEditUser(user)) {
+      setMessage('No tienes permisos para gestionar este usuario.');
+      return;
+    }
+    setSavingId(user.id);
+    const redirectTo = `${(process.env.EXPO_PUBLIC_WEB_APP_URL || '').replace(/\/$/, '')}/reset-password`;
+    const { error } = await supabase.auth.resetPasswordForEmail(user.email, { redirectTo });
+    setMessage(error ? 'No se pudo enviar el correo de cambio.' : `Correo de cambio enviado a ${user.email}.`);
+    setSavingId(null);
+  };
+
   const canEditUser = (user: ProfileRow) => {
     if (!currentProfile) return false;
     if (isSuperAdmin) return true;
@@ -325,6 +337,11 @@ export default function UsuariosAdminPage() {
             )}
 
             <View style={styles.cardActions}>
+              {!editing && editable && (
+                <TouchableOpacity style={styles.secondaryButton} onPress={() => sendPasswordReset(user)} disabled={savingId === user.id}>
+                  <Text style={styles.secondaryButtonText}>Enviar cambio de contraseña</Text>
+                </TouchableOpacity>
+              )}
               {editing ? (
                 <>
                   <TouchableOpacity style={styles.primaryButton} onPress={() => saveUser(user)} disabled={savingId === user.id}>

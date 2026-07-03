@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { brandColors } from '../../../constants/theme';
 import { supabase } from '../../../src/supabaseClient';
+import { validateInternalPassword } from '../../../src/authPolicy';
 
 type InvitationPreview = {
   email: string;
@@ -28,6 +29,7 @@ export default function AcceptInvitePage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     loadInvitation();
@@ -78,8 +80,9 @@ export default function AcceptInvitePage() {
       return;
     }
 
-    if (password.length < minPasswordLength) {
-      setMessage(`La contrasena debe tener minimo ${minPasswordLength} caracteres.`);
+    const passwordError = validateInternalPassword(password);
+    if (passwordError) {
+      setMessage(passwordError);
       return;
     }
 
@@ -165,7 +168,7 @@ export default function AcceptInvitePage() {
               style={styles.input}
               value={password}
               onChangeText={setPassword}
-              secureTextEntry
+              secureTextEntry={!showPassword}
               autoComplete="new-password"
               placeholder="Minimo 8 caracteres"
             />
@@ -175,10 +178,13 @@ export default function AcceptInvitePage() {
               style={styles.input}
               value={confirmPassword}
               onChangeText={setConfirmPassword}
-              secureTextEntry
+              secureTextEntry={!showPassword}
               autoComplete="new-password"
               placeholder="Repite tu contrasena"
             />
+            <TouchableOpacity onPress={() => setShowPassword((value) => !value)}>
+              <Text style={styles.helperText}>{showPassword ? 'Ocultar contraseñas' : 'Mostrar contraseñas'}</Text>
+            </TouchableOpacity>
 
             <TouchableOpacity style={[styles.primaryButton, submitting && styles.disabledButton]} onPress={acceptInvitation} disabled={submitting}>
               <Text style={styles.primaryButtonText}>{submitting ? 'Aceptando...' : 'Aceptar invitacion'}</Text>

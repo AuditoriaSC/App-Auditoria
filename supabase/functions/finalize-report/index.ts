@@ -34,6 +34,7 @@ type QuestionType = 'compliance' | 'cash_count' | 'pending_deposit' | 'inventory
 
 type ReportRow = {
   id: string
+  user_id: string | null
   region: string | null
   visit_type_id: string | null
   status: string | null
@@ -117,6 +118,23 @@ function formatTime(value?: string | null) {
 function formatNumber(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return ''
   return Number(value).toFixed(2)
+}
+
+function evidencePath(reference: string | null) {
+  if (!reference) return null
+  for (const marker of ['/storage/v1/object/public/evidencias/', '/storage/v1/object/sign/evidencias/']) {
+    const index = reference.indexOf(marker)
+    if (index >= 0) return decodeURIComponent(reference.slice(index + marker.length).split('?')[0])
+  }
+  return reference.replace(/^evidencias:\/\//, '')
+}
+
+async function signedEvidenceReference(supabase: ReturnType<typeof createClient>, reference: string | null) {
+  const path = evidencePath(reference)
+  if (!path) return null
+  const { data, error } = await supabase.storage.from('evidencias').createSignedUrl(path, 60 * 60 * 24 * 7)
+  if (error) throw new Error(`No se pudo autorizar una evidencia: ${error.message}`)
+  return data.signedUrl
 }
 
 function parseEmailList(value?: string | null) {
@@ -472,6 +490,10 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const authHeader = req.headers.get('Authorization') || ''
+    const token = authHeader.replace(/^Bearer\s+/i, '')
+    if (!token) throw new Error('AUTH_REQUIRED')
+
     const { reportId, isResend } = await req.json()
     if (!reportId) throw new Error('Falta el parametro reportId obligatorio.')
     console.log('finalize-report:start', { reportId })
@@ -482,13 +504,26 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
+    const { data: userData, error: userError } = await supabase.auth.getUser(token)
+    if (userError || !userData.user) throw new Error('AUTH_REQUIRED')
+
+    const { data: caller } = await supabase
+      .from('profiles')
+      .select('id, role, region, is_active')
+      .eq('id', userData.user.id)
+      .single<{ id: string; role: string; region: string; is_active: boolean }>()
+    if (!caller?.is_active) throw new Error('AUTH_FORBIDDEN')
+
     const { data: report, error: errReport } = await supabase
       .from('audit_reports')
-      .select('id, region, visit_type_id, status, final_grade, final_percentage, local_codigo, local_code_snapshot, local_name_snapshot, auditor_name_snapshot, responsible_code, responsible_name_snapshot, start_date, start_time, end_time, should_send, edited_after_send, last_edit_reason, last_edited_at, resent_count, last_resent_at, signature_auditor_url, signature_responsible_url, auditor_signature_url, responsible_signature_url, profiles!audit_reports_user_id_fkey(full_name, email), locales(nombre_local)')
+      .select('id, user_id, region, visit_type_id, status, final_grade, final_percentage, local_codigo, local_code_snapshot, local_name_snapshot, auditor_name_snapshot, responsible_code, responsible_name_snapshot, start_date, start_time, end_time, should_send, edited_after_send, last_edit_reason, last_edited_at, resent_count, last_resent_at, signature_auditor_url, signature_responsible_url, auditor_signature_url, responsible_signature_url, profiles!audit_reports_user_id_fkey(full_name, email), locales(nombre_local)')
       .eq('id', reportId)
       .single<ReportRow>()
 
     if (errReport || !report) throw new Error(`Reporte no encontrado: ${errReport?.message}`)
+    const ownsReport = report.user_id === caller.id
+    const managesRegion = ['admin', 'super_admin'].includes(caller.role) && (caller.role === 'super_admin' || caller.region === 'Global' || caller.region === report.region)
+    if (!ownsReport && !managesRegion) throw new Error('AUTH_FORBIDDEN')
     const recipients = reportRecipients(report)
     console.log('finalize-report:report-loaded', {
       reportId,
@@ -526,7 +561,10 @@ Deno.serve(async (req) => {
 
     if (errAnswers) throw new Error(`Error leyendo respuestas: ${errAnswers.message}`)
 
-    const finalAnswers = ((answers || []) as AnswerRow[]).sort(compareAnswerOrder)
+    const finalAnswers = await Promise.all(((answers || []) as AnswerRow[]).sort(compareAnswerOrder).map(async (answer) => ({
+      ...answer,
+      evidence_url: await signedEvidenceReference(supabase, answer.evidence_url),
+    })))
     const obtained = finalAnswers.reduce((total, answer) => total + obtainedPoints(answer), 0)
     const possible = finalAnswers.reduce((total, answer) => total + possiblePoints(answer), 0)
     const scoreText = `${formatNumber(obtained)} / ${formatNumber(possible)} puntos`
@@ -535,8 +573,8 @@ Deno.serve(async (req) => {
     const localCode = report.local_code_snapshot || report.local_codigo || ''
     const sentDate = formatSentDate()
     const subject = `REPORTE DE VISITA ${visitType.toUpperCase()} LOCAL ${localName.toUpperCase()}${localCode ? ` ${localCode.toUpperCase()}` : ''} ENVIADO EL ${sentDate}`
-    const auditorSignatureUrl = report.auditor_signature_url || report.signature_auditor_url
-    const responsibleSignatureUrl = report.responsible_signature_url || report.signature_responsible_url
+    const auditorSignatureUrl = await signedEvidenceReference(supabase, report.auditor_signature_url || report.signature_auditor_url)
+    const responsibleSignatureUrl = await signedEvidenceReference(supabase, report.responsible_signature_url || report.signature_responsible_url)
 
     const questionDetails = finalAnswers
       .filter((answer) => questionType(answer) !== 'additional_novelty')
@@ -630,6 +668,11 @@ Deno.serve(async (req) => {
     const message = error instanceof Error ? error.message : String(error)
     console.error('finalize-report:error', { message })
     const friendlyMessage =
+      message === 'AUTH_REQUIRED'
+        ? 'Tu sesión venció. Inicia sesión nuevamente.'
+        : message === 'AUTH_FORBIDDEN'
+          ? 'No tienes permiso para finalizar este informe.'
+          :
       message === 'CONFIG_RESEND_API_KEY'
         ? 'No se pudo enviar el correo porque falta configurar Resend.'
         : message === 'CONFIG_REPORT_TO_EMAILS'
@@ -640,7 +683,7 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({ success: false, error: friendlyMessage }), {
       headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      status: 500,
+      status: message === 'AUTH_REQUIRED' ? 401 : message === 'AUTH_FORBIDDEN' ? 403 : 500,
     })
   }
 })

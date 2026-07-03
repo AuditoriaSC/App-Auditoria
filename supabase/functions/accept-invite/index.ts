@@ -130,6 +130,9 @@ Deno.serve(async (req) => {
     }
 
     if (!password || password.length < 8) return friendlyError('La contrasena debe tener minimo 8 caracteres.')
+    if (!/^[A-Za-z0-9]+$/.test(password) || !/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+      return friendlyError('La contrasena debe combinar letras y numeros, sin caracteres especiales.')
+    }
     if (!firstName || !lastName) return friendlyError('Ingresa nombre y apellido.')
 
     const fullName = `${firstName} ${lastName}`.trim()
@@ -169,6 +172,7 @@ Deno.serve(async (req) => {
         role: invitation.role,
         region: invitation.region || 'Costa',
         is_active: true,
+        password_changed_at: now,
         updated_at: now,
       }, { onConflict: 'id' })
 

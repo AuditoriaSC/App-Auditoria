@@ -4,6 +4,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-nativ
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { brandColors } from '../../../constants/theme';
 import { clearSupabaseSessionCache, supabase } from '../../../src/supabaseClient';
+import { clearFailedLogins, getLoginAttemptState, lockMessage, markMonthlyLogin, recordFailedLogin } from '../../../src/authPolicy';
 
 const REMEMBER_EMAIL_KEY = '@login_remembered_email';
 
@@ -16,6 +17,7 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     async function loadRememberedEmail() {
@@ -39,8 +41,16 @@ export default function LoginPage() {
     setError(null);
     setSuccessMessage(null);
 
+    const normalizedEmail = email.trim().toLowerCase();
+    const attemptState = await getLoginAttemptState(normalizedEmail);
+    if (attemptState.lockedUntil) {
+      setError(lockMessage(attemptState.lockedUntil));
+      setLoading(false);
+      return;
+    }
+
     const { error: authError } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
+      email: normalizedEmail,
       password,
     });
 
@@ -48,10 +58,14 @@ export default function LoginPage() {
       if (authError.message.toLowerCase().includes('refresh token')) {
         await clearSupabaseSessionCache();
       }
-      setError(authError.message);
+      const failed = await recordFailedLogin(normalizedEmail);
+      setError(failed.lockedUntil ? lockMessage(failed.lockedUntil) : `Correo o contraseña incorrectos. Te quedan ${failed.remaining} intento(s).`);
       setLoading(false);
       return;
     }
+
+    await clearFailedLogins(normalizedEmail);
+    await markMonthlyLogin();
 
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
@@ -101,9 +115,24 @@ export default function LoginPage() {
           style={styles.input}
           value={password}
           onChangeText={setPassword}
-          secureTextEntry
+          secureTextEntry={!showPassword}
           autoComplete="password"
         />
+
+        <TouchableOpacity onPress={() => setShowPassword((value) => !value)}>
+          <Text style={styles.passwordLink}>{showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={async () => {
+          const normalizedEmail = email.trim().toLowerCase();
+          if (!normalizedEmail) return setError('Escribe tu correo para solicitar el cambio.');
+          const redirectTo = `${(process.env.EXPO_PUBLIC_WEB_APP_URL || '').replace(/\/$/, '')}/reset-password`;
+          const { error: resetError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, { redirectTo });
+          setError(resetError ? resetError.message : null);
+          setSuccessMessage(resetError ? null : 'Te enviamos un correo para cambiar tu contraseña.');
+        }}>
+          <Text style={styles.forgotLink}>¿Olvidaste tu contraseña?</Text>
+        </TouchableOpacity>
 
         <TouchableOpacity style={styles.rememberRow} onPress={() => setRememberUser((value) => !value)} activeOpacity={0.8}>
           <View style={[styles.checkbox, rememberUser && styles.checkboxActive]}>
@@ -136,4 +165,6 @@ const styles = StyleSheet.create({
   buttonText: { color: brandColors.white, fontWeight: 'bold' },
   errorText: { color: brandColors.danger, fontSize: 14, textAlign: 'center' },
   successText: { color: brandColors.greenDark, fontSize: 14, textAlign: 'center', fontWeight: '800' },
+  passwordLink: { color: brandColors.textSecondary, fontWeight: '700', textAlign: 'right' },
+  forgotLink: { color: brandColors.greenDark, fontWeight: '900', textAlign: 'center', marginVertical: 2 },
 });
