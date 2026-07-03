@@ -84,7 +84,9 @@ Deno.serve(async (req) => {
     if (!reportId || !reason || payload.length === 0) return respond({ error: 'Ingresa el motivo y los cambios.' }, 400)
     const { data: report } = await admin.from('audit_reports').select('id, user_id, region, should_send, resent_count').eq('id', reportId).single<Report>()
     if (!report) return respond({ error: 'Visita no encontrada.' }, 404)
-    const canEdit = report.user_id === caller.id || caller.role === 'super_admin' || caller.region === 'Global' || (caller.role === 'admin' && caller.region === report.region)
+    const canEdit = report.user_id === caller.id
+      || caller.role === 'super_admin'
+      || (caller.role === 'admin' && (caller.region === 'Global' || caller.region === report.region))
     if (!canEdit) return respond({ error: 'No tienes acceso a esta visita.' }, 403)
 
     const questionIds = payload.map((item) => item.question_id)

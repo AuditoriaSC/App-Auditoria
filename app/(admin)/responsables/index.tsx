@@ -71,10 +71,12 @@ export default function ResponsablesAdminPage() {
     return responsibles.filter((responsible) => {
       const matchesSearch =
         !term || normalize(`${responsible.responsible_code} ${responsible.responsible_name}`).includes(term);
-      const matchesRegion = regionFilter === 'TODAS' || responsible.region === regionFilter;
+      const matchesRegion = regionFilter === 'TODAS'
+        || responsible.region === regionFilter
+        || (!isSuperAdmin && responsible.region === null);
       return matchesSearch && matchesRegion;
     });
-  }, [regionFilter, responsibles, search]);
+  }, [isSuperAdmin, regionFilter, responsibles, search]);
 
   const loadData = async () => {
     setLoading(true);

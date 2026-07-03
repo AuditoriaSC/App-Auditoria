@@ -44,9 +44,10 @@ export default function UsuariosAdminPage() {
     loadData();
   }, []);
 
-  const isSuperAdmin = currentProfile?.role === 'super_admin' || currentProfile?.region === 'Global';
+  const isSuperAdminRole = currentProfile?.role === 'super_admin';
+  const hasGlobalScope = isSuperAdminRole || currentProfile?.region === 'Global';
   const isAdmin = currentProfile?.role === 'admin' || currentProfile?.role === 'super_admin';
-  const availableRoles = isSuperAdmin ? superAdminRoles : adminRoles;
+  const availableRoles = isSuperAdminRole ? superAdminRoles : adminRoles;
 
   const filteredUsers = useMemo(() => {
     const term = normalize(search);
@@ -136,12 +137,12 @@ export default function UsuariosAdminPage() {
       return;
     }
 
-    if (!isSuperAdmin && draft.region !== currentProfile?.region) {
+    if (!hasGlobalScope && draft.region !== currentProfile?.region) {
       setMessage('Admin solo puede mantener usuarios dentro de su region.');
       return;
     }
 
-    if (!isSuperAdmin && draft.role === 'super_admin') {
+    if (!isSuperAdminRole && draft.role === 'super_admin') {
       setMessage('Admin no puede asignar super_admin.');
       return;
     }
@@ -224,8 +225,10 @@ export default function UsuariosAdminPage() {
 
   const canEditUser = (user: ProfileRow) => {
     if (!currentProfile) return false;
-    if (isSuperAdmin) return true;
-    return currentProfile.role === 'admin' && user.region === currentProfile.region && user.role !== 'super_admin';
+    if (isSuperAdminRole) return true;
+    return currentProfile.role === 'admin'
+      && user.role !== 'super_admin'
+      && (currentProfile.region === 'Global' || user.region === currentProfile.region);
   };
 
   if (loading) {
@@ -272,7 +275,7 @@ export default function UsuariosAdminPage() {
         />
         <View style={styles.filterRow}>
           <SelectField label="Rol" value={roleFilter} onChange={setRoleFilter} options={roles} />
-          {isSuperAdmin && <SelectField label="Region" value={regionFilter} onChange={setRegionFilter} options={regions} />}
+          {hasGlobalScope && <SelectField label="Region" value={regionFilter} onChange={setRegionFilter} options={regions} />}
           <SelectField label="Estado" value={statusFilter} onChange={setStatusFilter} options={['TODOS', 'ACTIVO', 'INACTIVO']} />
         </View>
       </View>
@@ -323,11 +326,11 @@ export default function UsuariosAdminPage() {
                     <Picker
                       selectedValue={draft.region}
                       onValueChange={(value) => setDraft((current) => ({ ...current, region: String(value) }))}
-                      enabled={isSuperAdmin}
+                      enabled={hasGlobalScope}
                       style={styles.picker}
                       dropdownIconColor={brandColors.greenDark}
                     >
-                      {(isSuperAdmin ? regions.filter((item) => item !== 'TODAS') : [currentProfile?.region || 'Costa']).map((option) => (
+                      {(hasGlobalScope ? regions.filter((item) => item !== 'TODAS') : [currentProfile?.region || 'Costa']).map((option) => (
                         <Picker.Item key={option} label={option} value={option} />
                       ))}
                     </Picker>

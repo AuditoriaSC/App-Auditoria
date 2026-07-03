@@ -50,8 +50,9 @@ export default function GestionInvitacionesPage() {
   }, []);
 
   const isAdmin = profile?.role === 'admin' || profile?.role === 'super_admin';
-  const isSuperAdmin = profile?.role === 'super_admin' || profile?.region === 'Global';
-  const allowedRoles = isSuperAdmin ? superAdminRoles : adminRoles;
+  const isSuperAdminRole = profile?.role === 'super_admin';
+  const hasGlobalScope = isSuperAdminRole || profile?.region === 'Global';
+  const allowedRoles = isSuperAdminRole ? superAdminRoles : adminRoles;
 
   const goToDashboard = () => {
     if (router.canGoBack()) router.back();
@@ -137,7 +138,7 @@ export default function GestionInvitacionesPage() {
       return;
     }
 
-    if (role === 'super_admin' && !isSuperAdmin) {
+    if (role === 'super_admin' && !isSuperAdminRole) {
       setMessage('Solo super_admin puede invitar otro super_admin.');
       return;
     }
@@ -147,7 +148,7 @@ export default function GestionInvitacionesPage() {
       return;
     }
 
-    if (!isSuperAdmin && region !== profile?.region) {
+    if (!hasGlobalScope && region !== profile?.region) {
       setMessage('Solo puedes invitar usuarios para tu region.');
       return;
     }
@@ -318,11 +319,11 @@ export default function GestionInvitacionesPage() {
             <Picker
               selectedValue={region}
               onValueChange={(value) => setRegion(String(value))}
-              enabled={isSuperAdmin}
+              enabled={hasGlobalScope}
               style={styles.picker}
               dropdownIconColor={brandColors.greenDark}
             >
-              {(isSuperAdmin ? regions : [profile?.region || 'Costa']).map((option) => (
+              {(hasGlobalScope ? regions : [profile?.region || 'Costa']).map((option) => (
                 <Picker.Item key={option} label={option} value={option} />
               ))}
             </Picker>
