@@ -757,7 +757,7 @@ export default function ChecklistDinamicoPage() {
   const isFormValid = useMemo(checkFormValidation, [questions, answers]);
 
   if (loading) {
-    return <View style={styles.center}><ActivityIndicator size="large" /><Text>Cargando datos...</Text></View>;
+    return <View style={styles.center}><ActivityIndicator size="large" color={brandColors.greenDark} /><Text style={styles.loadingText}>Cargando datos...</Text></View>;
   }
 
   if (error) {
@@ -1061,6 +1061,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: brandColors.background },
   container: { padding: 18, paddingBottom: 44, maxWidth: 720, alignSelf: 'center', width: '100%', backgroundColor: brandColors.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40, backgroundColor: brandColors.background },
+  loadingText: { marginTop: 8, color: brandColors.textSecondary },
   errorText: { color: brandColors.danger, fontWeight: '800' },
   networkBanner: { padding: 10, borderRadius: 8, marginBottom: 15, alignItems: 'center' },
   bannerOnline: { backgroundColor: brandColors.greenSoft },

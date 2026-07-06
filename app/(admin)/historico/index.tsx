@@ -88,7 +88,7 @@ export default function HistoricoAuditoriasPage() {
     }
   };
 
-  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={brandColors.greenDark} /></View>;
+  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={brandColors.greenDark} /><Text style={styles.loadingText}>Cargando histórico...</Text></View>;
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container} contentInsetAdjustmentBehavior="automatic">
@@ -140,7 +140,8 @@ export default function HistoricoAuditoriasPage() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: brandColors.greenDark },
   container: { padding: 20, maxWidth: 650, alignSelf: 'center', width: '100%', backgroundColor: brandColors.background },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 50, backgroundColor: brandColors.background },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.background },
+  loadingText: { marginTop: 8, color: brandColors.textSecondary },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottomWidth: 1, borderBottomColor: brandColors.border, paddingBottom: 15, gap: 10, flexWrap: 'wrap' },
   title: { fontSize: 22, fontWeight: 'bold', color: brandColors.greenDark },
   subtitle: { fontSize: 13, color: brandColors.textSecondary, marginTop: 2 },

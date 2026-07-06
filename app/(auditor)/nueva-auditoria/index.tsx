@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'expo-router';
-import { ActivityIndicator, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useNavigation, useRouter } from 'expo-router';
+import { ActivityIndicator, BackHandler, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { brandColors } from '../../../constants/theme';
 import { supabase } from '../../../src/supabaseClient';
 import { listActiveResponsibles, searchResponsibles } from '../../../src/services/responsiblesService';
@@ -50,6 +50,7 @@ function normalize(value: string) {
 
 export default function NuevaAuditoriaPage() {
   const router = useRouter();
+  const navigation = useNavigation();
 
   const now = useMemo(() => new Date(), []);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
@@ -75,6 +76,24 @@ export default function NuevaAuditoriaPage() {
   useEffect(() => {
     loadInitialData();
   }, []);
+
+  useEffect(() => {
+    const goToDashboard = () => {
+      router.replace('/dashboard');
+      return true;
+    };
+    const hardwareBack = BackHandler.addEventListener('hardwareBackPress', goToDashboard);
+    const navigationBack = navigation.addListener('beforeRemove', (event) => {
+      if (!['GO_BACK', 'POP', 'POP_TO_TOP'].includes(event.data.action.type)) return;
+      event.preventDefault();
+      router.replace('/dashboard');
+    });
+
+    return () => {
+      hardwareBack.remove();
+      navigationBack();
+    };
+  }, [navigation, router]);
 
   const loadInitialData = async () => {
     setLoading(true);

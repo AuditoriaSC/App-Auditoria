@@ -78,6 +78,8 @@ const monthLabels: Record<string, string> = {
 
 const round = (value: number) => Math.round(value * 100) / 100;
 
+const formatResendCount = (count: number) => `${count} ${count === 1 ? 'vez' : 'veces'}`;
+
 export default function AdminDashboard() {
   const router = useRouter();
   const [profile, setProfile] = useState<ProfileRow | null>(null);
@@ -430,7 +432,7 @@ function VisitCard({ visit, canDelete, onDelete, onPress }: { visit: VisitRow; c
             <Text style={styles.auditTrailText}>
               {visit.edited_after_send ? 'Editada posterior al envio' : ''}
               {visit.edited_after_send && Number(visit.resent_count || 0) > 0 ? ' · ' : ''}
-              {Number(visit.resent_count || 0) > 0 ? `Reenviada ${visit.resent_count} vez${Number(visit.resent_count || 0) === 1 ? '' : 'es'}` : ''}
+              {Number(visit.resent_count || 0) > 0 ? `Reenviada ${formatResendCount(Number(visit.resent_count))}` : ''}
             </Text>
           )}
         </View>
@@ -613,7 +615,7 @@ function formatTime(date: Date) {
 
 const styles = StyleSheet.create({
   container: { padding: 14, paddingBottom: 36, backgroundColor: brandColors.background, width: '100%', maxWidth: 980, alignSelf: 'center' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.creamSoft },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.background },
   loadingText: { marginTop: 8, color: brandColors.textSecondary },
   errorText: { color: brandColors.danger, fontWeight: '700', textAlign: 'center', marginBottom: 12 },
   hero: { backgroundColor: brandColors.greenDark, borderWidth: 1, borderColor: brandColors.greenDark, borderRadius: 8, padding: 16, marginBottom: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
