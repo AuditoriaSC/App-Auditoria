@@ -269,7 +269,7 @@ export default function FinalizarReportePage() {
   };
 
   if (loading) {
-    return <View style={styles.center}><ActivityIndicator size="large" /><Text style={styles.textStyle}>Preparando cierre...</Text></View>;
+    return <View style={styles.center}><ActivityIndicator size="large" color={brandColors.greenDark} /><Text style={styles.textStyle}>Preparando cierre...</Text></View>;
   }
 
   return (

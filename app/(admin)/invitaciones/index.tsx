@@ -254,7 +254,7 @@ export default function GestionInvitacionesPage() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#0f766e" />
+        <ActivityIndicator size="large" color={brandColors.greenDark} />
         <Text style={styles.loadingText}>Cargando invitaciones...</Text>
       </View>
     );
