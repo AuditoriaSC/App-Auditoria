@@ -334,7 +334,7 @@ export default function NuevaAuditoriaPage() {
             <Text style={styles.subtitle}>Configura la visita antes de abrir el checklist correspondiente.</Text>
           </View>
           <TouchableOpacity style={styles.backButton} onPress={goToDashboard} accessibilityLabel="Volver al Dashboard">
-            <Text style={styles.backButtonText}>🏠</Text>
+            <Text style={styles.backButtonText}>⌂</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -754,7 +754,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 25, fontWeight: '900', color: brandColors.textPrimary },
   subtitle: { fontSize: 13, color: brandColors.textSecondary, marginTop: 5, lineHeight: 18 },
   backButton: { width: 42, height: 42, borderRadius: 21, borderWidth: 1, borderColor: brandColors.greenDark, backgroundColor: brandColors.greenSoft, alignItems: 'center', justifyContent: 'center' },
-  backButtonText: { fontSize: 20, lineHeight: 24 },
+  backButtonText: { color: brandColors.greenDark, fontSize: 23, lineHeight: 25, fontWeight: '900' },
   messageBox: { backgroundColor: '#fff7ed', borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, padding: 12, marginBottom: 14 },
   messageText: { color: brandColors.coffeeDark, fontWeight: '700' },
   section: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 18, marginBottom: 14, width: '100%' },
