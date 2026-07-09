@@ -796,8 +796,8 @@ export default function ChecklistDinamicoPage() {
           <Text style={styles.headerMeta}>Líder/responsable: {headerResponsible}</Text>
           <Text style={styles.headerMeta}>Auditor: {headerAuditor}</Text>
         </View>
-        <TouchableOpacity style={styles.backButton} onPress={goToDashboard}>
-          <Text style={styles.backButtonText}>Volver al Dashboard</Text>
+        <TouchableOpacity style={styles.backButton} onPress={goToDashboard} accessibilityLabel="Volver al Dashboard">
+          <Text style={styles.backButtonText}>🏠</Text>
         </TouchableOpacity>
       </View>
 
@@ -1080,8 +1080,8 @@ const styles = StyleSheet.create({
   headerTextBlock: { flex: 1, minWidth: 0 },
   title: { fontSize: 22, fontWeight: '900', color: brandColors.textPrimary },
   headerMeta: { fontSize: 13, color: brandColors.textSecondary, fontWeight: '800', marginTop: 3 },
-  backButton: { minHeight: 40, borderRadius: 8, borderWidth: 1, borderColor: brandColors.greenDark, backgroundColor: brandColors.greenSoft, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
-  backButtonText: { color: brandColors.greenDark, fontWeight: '900', fontSize: 13 },
+  backButton: { width: 42, height: 42, borderRadius: 21, borderWidth: 1, borderColor: brandColors.greenDark, backgroundColor: brandColors.greenSoft, alignItems: 'center', justifyContent: 'center' },
+  backButtonText: { fontSize: 20, lineHeight: 24 },
   editNotice: { borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, backgroundColor: brandColors.creamSoft, padding: 12, marginBottom: 12 },
   editNoticeTitle: { color: brandColors.coffeeDark, fontWeight: '900', fontSize: 15 },
   editNoticeText: { color: brandColors.textSecondary, fontWeight: '700', fontSize: 12, lineHeight: 17, marginTop: 4 },

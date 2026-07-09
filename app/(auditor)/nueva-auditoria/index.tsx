@@ -333,8 +333,8 @@ export default function NuevaAuditoriaPage() {
             <Text style={styles.title}>Creacion de visita</Text>
             <Text style={styles.subtitle}>Configura la visita antes de abrir el checklist correspondiente.</Text>
           </View>
-          <TouchableOpacity style={styles.backButton} onPress={goToDashboard}>
-            <Text style={styles.backButtonText}>Volver al Dashboard</Text>
+          <TouchableOpacity style={styles.backButton} onPress={goToDashboard} accessibilityLabel="Volver al Dashboard">
+            <Text style={styles.backButtonText}>🏠</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -753,8 +753,8 @@ const styles = StyleSheet.create({
   headerText: { flex: 1, minWidth: 220 },
   title: { fontSize: 25, fontWeight: '900', color: brandColors.textPrimary },
   subtitle: { fontSize: 13, color: brandColors.textSecondary, marginTop: 5, lineHeight: 18 },
-  backButton: { minHeight: 40, borderRadius: 8, borderWidth: 1, borderColor: brandColors.greenDark, backgroundColor: brandColors.greenSoft, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
-  backButtonText: { color: brandColors.greenDark, fontWeight: '900', fontSize: 13 },
+  backButton: { width: 42, height: 42, borderRadius: 21, borderWidth: 1, borderColor: brandColors.greenDark, backgroundColor: brandColors.greenSoft, alignItems: 'center', justifyContent: 'center' },
+  backButtonText: { fontSize: 20, lineHeight: 24 },
   messageBox: { backgroundColor: '#fff7ed', borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, padding: 12, marginBottom: 14 },
   messageText: { color: brandColors.coffeeDark, fontWeight: '700' },
   section: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 18, marginBottom: 14, width: '100%' },
