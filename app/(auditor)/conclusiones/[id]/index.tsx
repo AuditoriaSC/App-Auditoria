@@ -286,7 +286,7 @@ export default function FinalizarReportePage() {
       <View style={styles.headerRow}>
         <Text style={styles.title}>Cierre de auditoria</Text>
         <TouchableOpacity style={styles.backButton} onPress={goToDashboard} accessibilityLabel="Volver al Dashboard">
-          <Text style={styles.backButtonText}>🏠</Text>
+          <Text style={styles.backButtonText}>⌂</Text>
         </TouchableOpacity>
       </View>
 
@@ -395,7 +395,7 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14, flexWrap: 'wrap' },
   title: { fontSize: 22, fontWeight: '900', color: brandColors.textPrimary },
   backButton: { width: 42, height: 42, borderRadius: 21, borderWidth: 1, borderColor: brandColors.greenDark, backgroundColor: brandColors.greenSoft, alignItems: 'center', justifyContent: 'center' },
-  backButtonText: { fontSize: 20, lineHeight: 24 },
+  backButtonText: { color: brandColors.greenDark, fontSize: 23, lineHeight: 25, fontWeight: '900' },
   card: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 14 },
   cardLabel: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 8 },
   scoreText: { fontSize: 28, fontWeight: '900', color: brandColors.textPrimary },
