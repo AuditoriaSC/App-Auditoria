@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { brandColors } from '../../../../constants/theme';
+import { useDashboardBackHandler } from '../../../../src/navigation/useDashboardBackHandler';
 import { supabase } from '../../../../src/supabaseClient';
 import SignaturePad, { SignatureInputType } from '../../../../src/features/audits/components/signature-pad';
 
@@ -64,6 +65,7 @@ function isScoredAnswer(answer: AnswerRecord) {
 export default function FinalizarReportePage() {
   const router = useRouter();
   const { id: reportId, region } = useLocalSearchParams();
+  useDashboardBackHandler();
 
   const [loading, setLoading] = useState(true);
   const [rawAnswers, setRawAnswers] = useState<AnswerRecord[]>([]);
