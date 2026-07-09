@@ -4,6 +4,7 @@ import { ActivityIndicator, Alert, Image, Platform, ScrollView, StyleSheet, Text
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
 import { brandColors } from '../../../../constants/theme';
+import { useDashboardBackHandler } from '../../../../src/navigation/useDashboardBackHandler';
 import SecureEvidenceImage from '../../../../src/features/audits/components/secure-evidence-image';
 import { supabase } from '../../../../src/supabaseClient';
 import { offlineStorage } from '../../../../src/offlineStorage';
@@ -294,6 +295,7 @@ function draftRowToAnswer(question: Question, row: DraftAnswerRow): AnswerState 
 export default function ChecklistDinamicoPage() {
   const router = useRouter();
   const { id: reportId, region, visit_type_id, local_id } = useLocalSearchParams();
+  useDashboardBackHandler();
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [answers, setAnswers] = useState<Record<string, AnswerState>>({});
@@ -747,7 +749,7 @@ export default function ChecklistDinamicoPage() {
     }
 
     await offlineStorage.clearDraft(String(reportId));
-    router.push({
+    router.replace({
       pathname: `/conclusiones/${reportId}`,
       params: { region },
     });
