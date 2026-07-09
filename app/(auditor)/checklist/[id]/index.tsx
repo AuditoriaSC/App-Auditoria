@@ -296,6 +296,7 @@ export default function ChecklistDinamicoPage() {
   const router = useRouter();
   const { id: reportId, region, visit_type_id, local_id } = useLocalSearchParams();
   useDashboardBackHandler();
+  const goToDashboard = () => router.replace('/dashboard');
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [answers, setAnswers] = useState<Record<string, AnswerState>>({});
@@ -795,6 +796,9 @@ export default function ChecklistDinamicoPage() {
           <Text style={styles.headerMeta}>Líder/responsable: {headerResponsible}</Text>
           <Text style={styles.headerMeta}>Auditor: {headerAuditor}</Text>
         </View>
+        <TouchableOpacity style={styles.backButton} onPress={goToDashboard}>
+          <Text style={styles.backButtonText}>Volver al Dashboard</Text>
+        </TouchableOpacity>
       </View>
 
       {isFinalEdit && (
@@ -1071,11 +1075,13 @@ const styles = StyleSheet.create({
   bannerText: { fontSize: 13, fontWeight: '800', color: brandColors.textSecondary },
   saveWarning: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, padding: 10, marginBottom: 12 },
   saveWarningText: { color: brandColors.coffeeDark, fontWeight: '800', fontSize: 12 },
-  headerCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, backgroundColor: brandColors.white, padding: 14, marginBottom: 14 },
+  headerCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, backgroundColor: brandColors.white, padding: 14, marginBottom: 14, flexWrap: 'wrap' },
   headerLogo: { width: 48, height: 48, borderRadius: 8 },
   headerTextBlock: { flex: 1, minWidth: 0 },
   title: { fontSize: 22, fontWeight: '900', color: brandColors.textPrimary },
   headerMeta: { fontSize: 13, color: brandColors.textSecondary, fontWeight: '800', marginTop: 3 },
+  backButton: { minHeight: 40, borderRadius: 8, borderWidth: 1, borderColor: brandColors.greenDark, backgroundColor: brandColors.greenSoft, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
+  backButtonText: { color: brandColors.greenDark, fontWeight: '900', fontSize: 13 },
   editNotice: { borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, backgroundColor: brandColors.creamSoft, padding: 12, marginBottom: 12 },
   editNoticeTitle: { color: brandColors.coffeeDark, fontWeight: '900', fontSize: 15 },
   editNoticeText: { color: brandColors.textSecondary, fontWeight: '700', fontSize: 12, lineHeight: 17, marginTop: 4 },

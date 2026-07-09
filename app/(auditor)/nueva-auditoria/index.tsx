@@ -52,6 +52,7 @@ function normalize(value: string) {
 export default function NuevaAuditoriaPage() {
   const router = useRouter();
   useDashboardBackHandler();
+  const goToDashboard = () => router.replace('/dashboard');
 
   const now = useMemo(() => new Date(), []);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
@@ -327,8 +328,15 @@ export default function NuevaAuditoriaPage() {
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic">
       <View style={styles.header}>
-        <Text style={styles.title}>Creacion de visita</Text>
-        <Text style={styles.subtitle}>Configura la visita antes de abrir el checklist correspondiente.</Text>
+        <View style={styles.headerTop}>
+          <View style={styles.headerText}>
+            <Text style={styles.title}>Creacion de visita</Text>
+            <Text style={styles.subtitle}>Configura la visita antes de abrir el checklist correspondiente.</Text>
+          </View>
+          <TouchableOpacity style={styles.backButton} onPress={goToDashboard}>
+            <Text style={styles.backButtonText}>Volver al Dashboard</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {message && (
@@ -741,8 +749,12 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.background },
   loadingText: { marginTop: 8, color: brandColors.textSecondary },
   header: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 18, marginBottom: 14, width: '100%' },
+  headerTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' },
+  headerText: { flex: 1, minWidth: 220 },
   title: { fontSize: 25, fontWeight: '900', color: brandColors.textPrimary },
   subtitle: { fontSize: 13, color: brandColors.textSecondary, marginTop: 5, lineHeight: 18 },
+  backButton: { minHeight: 40, borderRadius: 8, borderWidth: 1, borderColor: brandColors.greenDark, backgroundColor: brandColors.greenSoft, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
+  backButtonText: { color: brandColors.greenDark, fontWeight: '900', fontSize: 13 },
   messageBox: { backgroundColor: '#fff7ed', borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, padding: 12, marginBottom: 14 },
   messageText: { color: brandColors.coffeeDark, fontWeight: '700' },
   section: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 18, marginBottom: 14, width: '100%' },

@@ -66,6 +66,7 @@ export default function FinalizarReportePage() {
   const router = useRouter();
   const { id: reportId, region } = useLocalSearchParams();
   useDashboardBackHandler();
+  const goToDashboard = () => router.replace('/dashboard');
 
   const [loading, setLoading] = useState(true);
   const [rawAnswers, setRawAnswers] = useState<AnswerRecord[]>([]);
@@ -282,7 +283,12 @@ export default function FinalizarReportePage() {
       contentInsetAdjustmentBehavior="automatic"
       scrollEnabled={scrollEnabled}
     >
-      <Text style={styles.title}>Cierre de auditoria</Text>
+      <View style={styles.headerRow}>
+        <Text style={styles.title}>Cierre de auditoria</Text>
+        <TouchableOpacity style={styles.backButton} onPress={goToDashboard}>
+          <Text style={styles.backButtonText}>Volver al Dashboard</Text>
+        </TouchableOpacity>
+      </View>
 
       <View style={styles.card}>
         <Text style={styles.cardLabel}>Calificacion</Text>
@@ -386,7 +392,10 @@ const styles = StyleSheet.create({
   container: { padding: 18, paddingBottom: 44, maxWidth: 620, alignSelf: 'center', width: '100%', backgroundColor: brandColors.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.background },
   textStyle: { marginTop: 8, color: brandColors.textSecondary },
-  title: { fontSize: 22, fontWeight: '900', color: brandColors.textPrimary, marginBottom: 14 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14, flexWrap: 'wrap' },
+  title: { fontSize: 22, fontWeight: '900', color: brandColors.textPrimary },
+  backButton: { minHeight: 40, borderRadius: 8, borderWidth: 1, borderColor: brandColors.greenDark, backgroundColor: brandColors.greenSoft, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
+  backButtonText: { color: brandColors.greenDark, fontWeight: '900', fontSize: 13 },
   card: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 14 },
   cardLabel: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 8 },
   scoreText: { fontSize: 28, fontWeight: '900', color: brandColors.textPrimary },
