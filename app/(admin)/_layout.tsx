@@ -14,8 +14,9 @@ const webOnlyResourceRoutes = new Set([
 export default function AdminLayout() {
   const segments = useSegments();
   const currentRoute = String(segments[segments.length - 1] || '');
+  const isInventoryRoute = segments.includes('inventarios');
 
-  if (Platform.OS !== 'web' && webOnlyResourceRoutes.has(currentRoute)) {
+  if (Platform.OS !== 'web' && (webOnlyResourceRoutes.has(currentRoute) || isInventoryRoute)) {
     return <Redirect href="/administrador-recursos" />;
   }
 
