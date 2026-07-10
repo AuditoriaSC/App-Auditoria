@@ -24,6 +24,18 @@ const nextSections = [
   ['Evidencias', 'Carga futura de imágenes, PDF, Excel o CSV.'],
 ] as const;
 
+const inventoryCsvTemplate = [
+  'Código de Almacén,Referencia o SKU,Descripción del Item,Stock Contado o Físico,Stock Teórico o Sistema,Diferencia,Costo Unitario,Costo Total',
+  'GM,00123,Producto prueba con ñ,10,8,2,1.50,3.00',
+  'GM,00456,Producto prueba con tilde café,5,7,-2,2.00,-4.00',
+].join('\n');
+
+const crossesCsvTemplate = [
+  'SKU,Descripción del artículo,Cruce asignado,Factor de conversión',
+  '00123,Producto prueba con ñ,Materia prima A,1',
+  '00456,Producto prueba con tilde café,Materia prima B,0.5',
+].join('\n');
+
 type InventoryReportListItem = {
   id: string;
   local_codigo: string;
@@ -63,6 +75,23 @@ export default function InventoryModuleScreen() {
     };
   }, []);
 
+  function downloadCsvTemplate(fileName: string, csvContent: string) {
+    if (typeof document === 'undefined') {
+      setMessage('La descarga de plantillas está disponible solo en Web local.');
+      return;
+    }
+
+    const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <InventoryShell
       title="Informes de Inventario"
@@ -84,6 +113,28 @@ export default function InventoryModuleScreen() {
         <Text style={styles.blockDescription}>
           Por ahora estas pantallas sirven para validar navegación y estructura. El módulo permanece oculto fuera del entorno local/desarrollo y no se publica en Expo Web ni OTA.
         </Text>
+      </View>
+
+      <View style={styles.form}>
+        <Text style={styles.blockTitle}>Plantillas CSV para pruebas locales</Text>
+        <Text style={styles.blockDescription}>
+          Descarga estos modelos para probar el flujo con columnas exactas. Recuerda ajustar el Código de Almacén al local seleccionado en el encabezado.
+        </Text>
+        <View style={styles.grid}>
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => downloadCsvTemplate('plantilla_inventario.csv', inventoryCsvTemplate)}
+          >
+            <Text style={styles.secondaryButtonText}>Descargar plantilla CSV de inventario</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => downloadCsvTemplate('plantilla_cruces_inventario.csv', crossesCsvTemplate)}
+          >
+            <Text style={styles.secondaryButtonText}>Descargar plantilla CSV de cruces</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.hint}>SKU se conserva como texto; no lo conviertas a número para no perder ceros a la izquierda.</Text>
       </View>
 
       <View style={styles.form}>

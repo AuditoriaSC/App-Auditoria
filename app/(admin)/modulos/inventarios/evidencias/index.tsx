@@ -32,6 +32,11 @@ type InventoryReportSummary = {
   local_name_snapshot: string;
   inventory_date: string;
   front_regularization_date: string;
+  start_time: string;
+  end_time: string;
+  has_second_time_range: boolean;
+  second_start_time: string | null;
+  second_end_time: string | null;
   assigned_auditor_name_snapshot: string;
   status: string;
 };
@@ -63,6 +68,19 @@ const categories: EvidenceCategory[] = [
 
 const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'pdf', 'xls', 'xlsx', 'csv'];
 
+const mimeByExtension: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  heic: 'image/heic',
+  heif: 'image/heif',
+  pdf: 'application/pdf',
+  csv: 'text/csv',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+};
+
 function safeSegment(value: string) {
   return value
     .normalize('NFD')
@@ -77,11 +95,26 @@ function fileExtension(name: string) {
   return name.split('.').pop()?.toLowerCase() || '';
 }
 
+function mimeForFile(file: File) {
+  return file.type || mimeByExtension[fileExtension(file.name)] || 'application/octet-stream';
+}
+
 function formatBytes(size?: number | null) {
   if (!size) return 'Sin tamaño';
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDate(date: string) {
+  if (!date) return '-';
+  const [year, month, day] = date.split('-');
+  return [day, month, year].filter(Boolean).join('/');
+}
+
+function formatTime(time?: string | null) {
+  if (!time) return '-';
+  return time.slice(0, 5);
 }
 
 export default function InventoryEvidenceScreen() {
@@ -106,6 +139,15 @@ export default function InventoryEvidenceScreen() {
     return reasons;
   }, [report, summary]);
 
+  const evidencesByCategory = useMemo(() => {
+    return categories
+      .map((item) => ({
+        category: item,
+        evidences: evidences.filter((evidence) => evidence.category === item),
+      }))
+      .filter((group) => group.evidences.length > 0);
+  }, [evidences]);
+
   useEffect(() => {
     loadEvidences();
   }, [inventory_report_id]);
@@ -129,7 +171,7 @@ export default function InventoryEvidenceScreen() {
       .from('inventory_report_evidences')
       .select('*')
       .eq('inventory_report_id', inventory_report_id)
-      .order('uploaded_at', { ascending: false });
+      .order('uploaded_at', { ascending: true });
 
     if (error) {
       setMessage('No se pudieron cargar evidencias. Revisa si la migración ya fue aplicada.');
@@ -143,7 +185,7 @@ export default function InventoryEvidenceScreen() {
 
     const { data: reportData, error: reportError } = await supabase
       .from('inventory_reports')
-      .select('id, local_codigo, local_name_snapshot, inventory_date, front_regularization_date, assigned_auditor_name_snapshot, status')
+      .select('id, local_codigo, local_name_snapshot, inventory_date, front_regularization_date, start_time, end_time, has_second_time_range, second_start_time, second_end_time, assigned_auditor_name_snapshot, status')
       .eq('id', inventory_report_id)
       .single<InventoryReportSummary>();
 
@@ -201,10 +243,13 @@ export default function InventoryEvidenceScreen() {
     input.type = 'file';
     input.multiple = true;
     input.accept = 'image/*,.pdf,.xls,.xlsx,.csv,text/csv,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    input.style.display = 'none';
     input.onchange = () => {
       const files = Array.from(input.files || []);
       if (files.length > 0) uploadFiles(files);
+      input.remove();
     };
+    document.body.appendChild(input);
     input.click();
   }
 
@@ -235,11 +280,12 @@ export default function InventoryEvidenceScreen() {
       const safeCategory = safeSegment(category);
       const safeName = `${timestamp}-${safeSegment(file.name)}`;
       const filePath = `inventory-reports/${inventory_report_id}/${safeCategory}/${safeName}`;
+      const mimeType = mimeForFile(file);
 
       const { error: uploadError } = await supabase.storage
         .from(bucketName)
         .upload(filePath, file, {
-          contentType: file.type || undefined,
+          contentType: mimeType,
           upsert: false,
         });
 
@@ -256,7 +302,7 @@ export default function InventoryEvidenceScreen() {
           category,
           file_name: file.name,
           file_path: filePath,
-          mime_type: file.type || null,
+          mime_type: mimeType,
           size_bytes: file.size,
           uploaded_by: user.id,
         }]);
@@ -380,32 +426,39 @@ export default function InventoryEvidenceScreen() {
           ))}
         </View>
 
-        <TouchableOpacity disabled={uploading || !inventory_report_id} style={[styles.primaryButton, (uploading || !inventory_report_id) && styles.disabledButton]} onPress={selectFiles}>
-          <Text style={styles.primaryButtonText}>{uploading ? 'Subiendo...' : 'Adjuntar archivos'}</Text>
-        </TouchableOpacity>
+        <View style={styles.footerActions}>
+          <TouchableOpacity disabled={uploading || !inventory_report_id} style={[styles.primaryButton, styles.footerPrimaryButton, (uploading || !inventory_report_id) && styles.disabledButton]} onPress={selectFiles}>
+            <Text style={styles.primaryButtonText}>{uploading ? 'Subiendo...' : 'Adjuntar archivos'}</Text>
+          </TouchableOpacity>
+        </View>
 
-        <Text style={styles.hint}>Permitidos: imágenes, PDF, Excel y CSV. Ruta: inventory-reports/{inventory_report_id || '{id}'}/{safeSegment(category)}/archivo</Text>
+        <Text style={styles.hint}>Permitidos: imágenes, PDF, Excel y CSV.</Text>
       </View>
 
       <View style={styles.form}>
-        <Text style={styles.blockTitle}>Archivos adjuntos</Text>
+        <Text style={styles.blockTitle}>Evidencias subidas</Text>
         {evidences.length === 0 ? <Text style={styles.hint}>Aún no hay evidencias adjuntas.</Text> : null}
 
-        {evidences.map((evidence) => (
-          <View key={evidence.id} style={styles.block}>
-            <Text style={styles.blockTitle}>{evidence.file_name}</Text>
-            <Text style={styles.blockDescription}>Categoría: {evidence.category}</Text>
-            <Text style={styles.blockDescription}>Tipo MIME: {evidence.mime_type || 'No informado'}</Text>
-            <Text style={styles.blockDescription}>Tamaño: {formatBytes(evidence.size_bytes)}</Text>
-            <Text style={styles.blockDescription}>Ruta: {evidence.file_path}</Text>
-            <Text style={styles.hint}>Subido: {new Date(evidence.uploaded_at).toLocaleString()}</Text>
-            <View style={styles.grid}>
-              <TouchableOpacity style={styles.secondaryButton} onPress={() => openEvidence(evidence)}>
-                <Text style={styles.secondaryButtonText}>Ver / descargar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.secondaryButton} onPress={() => deleteEvidence(evidence)}>
-                <Text style={styles.secondaryButtonText}>Eliminar</Text>
-              </TouchableOpacity>
+        {evidencesByCategory.map((group) => (
+          <View key={group.category} style={styles.evidenceCategoryGroup}>
+            <Text style={styles.evidenceCategoryTitle}>{group.category}</Text>
+            <View style={styles.evidenceMiniCardList}>
+              {group.evidences.map((evidence, index) => (
+                <View key={evidence.id} style={styles.evidenceMiniCard}>
+                  <View style={styles.evidenceMiniInfo}>
+                    <Text style={styles.evidenceMiniTitle}>{index + 1}. {evidence.file_name}</Text>
+                    <Text style={styles.evidenceMiniMeta}>{formatBytes(evidence.size_bytes)} · {new Date(evidence.uploaded_at).toLocaleString()}</Text>
+                  </View>
+                  <View style={styles.evidenceMiniActions}>
+                    <TouchableOpacity style={styles.evidenceMiniButton} onPress={() => openEvidence(evidence)}>
+                      <Text style={styles.secondaryButtonText}>Ver</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.evidenceMiniButton} onPress={() => deleteEvidence(evidence)}>
+                      <Text style={styles.secondaryButtonText}>Eliminar</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
             </View>
           </View>
         ))}
@@ -416,22 +469,16 @@ export default function InventoryEvidenceScreen() {
         {report ? (
           <>
             <Text style={styles.blockDescription}>Local: {report.local_codigo} · {report.local_name_snapshot}</Text>
-            <Text style={styles.blockDescription}>Fecha inventario: {report.inventory_date}</Text>
-            <Text style={styles.blockDescription}>Fecha regularización: {report.front_regularization_date}</Text>
-            <Text style={styles.blockDescription}>Auditor: {report.assigned_auditor_name_snapshot}</Text>
-            <Text style={styles.blockDescription}>Estado actual: {report.status}</Text>
+            <Text style={styles.blockDescription}>Fecha inventario: {formatDate(report.inventory_date)}</Text>
+            <Text style={styles.blockDescription}>Fecha regularización: {formatDate(report.front_regularization_date)}</Text>
+            <Text style={styles.blockDescription}>Horario: {formatTime(report.start_time)} - {formatTime(report.end_time)}</Text>
+            {report.has_second_time_range ? (
+              <Text style={styles.blockDescription}>Segundo horario: {formatTime(report.second_start_time)} - {formatTime(report.second_end_time)}</Text>
+            ) : null}
           </>
         ) : null}
         {summary ? (
-          <>
-            <Text style={styles.blockDescription}>Total sobrantes: {summary.surplusTotal}</Text>
-            <Text style={styles.blockDescription}>Total faltantes: {summary.shortageTotal}</Text>
-            <Text style={styles.blockDescription}>Reconteos OK: {summary.recountsOk}</Text>
-            <Text style={styles.blockDescription}>Reconteos modificados: {summary.recountsModified}</Text>
-            <Text style={styles.blockDescription}>Diferencia facturas: {summary.invoiceDifference ?? 'No registrada'}</Text>
-            <Text style={styles.blockDescription}>Total diferencias de caja: {summary.cashDifferenceTotal}</Text>
-            <Text style={styles.blockDescription}>Cantidad de evidencias: {summary.evidenceCount}</Text>
-          </>
+          <Text style={styles.blockDescription}>Cantidad de archivos subidos: {evidences.length || summary.evidenceCount}</Text>
         ) : null}
         {incompleteReasons.length > 0 ? (
           <Text style={styles.errorText}>Pendiente: {incompleteReasons.join(' ')}</Text>
@@ -440,15 +487,15 @@ export default function InventoryEvidenceScreen() {
         )}
       </View>
 
-      <View style={styles.grid}>
+      <View style={styles.footerActions}>
         <TouchableOpacity
           disabled={finalizing || incompleteReasons.length > 0}
-          style={[styles.primaryButton, (finalizing || incompleteReasons.length > 0) && styles.disabledButton]}
+          style={[styles.primaryButton, styles.footerPrimaryButton, (finalizing || incompleteReasons.length > 0) && styles.disabledButton]}
           onPress={finalizeInventoryReport}
         >
           <Text style={styles.primaryButtonText}>{finalizing ? 'Finalizando...' : 'Finalizar informe de inventario'}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push('/modulos/inventarios')}>
+        <TouchableOpacity style={[styles.secondaryButton, styles.footerSecondaryButton]} onPress={() => router.push('/modulos/inventarios')}>
           <Text style={styles.secondaryButtonText}>Volver al listado local</Text>
         </TouchableOpacity>
       </View>

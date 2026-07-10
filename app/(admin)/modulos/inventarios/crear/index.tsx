@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Platform, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 import { brandColors } from '../../../../../constants/theme';
 import { supabase } from '../../../../../src/supabaseClient';
 import { InventoryShell, inventoryShellStyles as styles } from '../../../../../src/features/inventory/components/inventory-shell';
+import { listActiveResponsibles, ResponsibleRow } from '../../../../../src/services/responsiblesService';
 
 type ProfileRow = {
   id: string;
@@ -18,6 +20,14 @@ type LocalRow = {
   region: string;
 };
 
+type ResponsibleOption = {
+  id: string;
+  codigo: string;
+  nombre: string;
+  cargo: string | null;
+  region: string | null;
+};
+
 const maxVisibleOptions = 8;
 
 function pad(value: number) {
@@ -26,6 +36,16 @@ function pad(value: number) {
 
 function dateToIsoDate(date: Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function isoDateToDisplayDate(value: string) {
+  const [year, month, day] = value.split('-');
+  if (!year || !month || !day) return value;
+  return `${day}/${month}/${year}`;
+}
+
+function dateToTime(date: Date) {
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function addDaysToIsoDate(value: string, days: number) {
@@ -53,12 +73,29 @@ function isTime(value: string) {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
+function buildCreateReportError(errorMessage?: string) {
+  if (!errorMessage) return 'No se pudo crear el informe de inventario.';
+  if (errorMessage.includes('inventory_module_access')) {
+    return 'No se pudo crear el informe porque falta configurar el acceso interno del módulo Inventarios. Aplica la migración de acceso y habilita tu usuario para inventarios.';
+  }
+  if (errorMessage.toLowerCase().includes('row-level security')) {
+    return 'No se pudo crear el informe por permisos del módulo Inventarios. Verifica que tu usuario tenga acceso habilitado.';
+  }
+  return 'No se pudo crear el informe de inventario: ' + errorMessage;
+}
+
+function pickerDate(dateValue: string, timeValue = '00:00') {
+  const date = new Date(`${dateValue}T${timeValue || '00:00'}:00`);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
 export default function CreateInventoryReportScreen() {
   const router = useRouter();
   const today = useMemo(() => dateToIsoDate(new Date()), []);
 
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [locales, setLocales] = useState<LocalRow[]>([]);
+  const [responsibles, setResponsibles] = useState<ResponsibleOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -66,12 +103,20 @@ export default function CreateInventoryReportScreen() {
   const [localQuery, setLocalQuery] = useState('');
   const [selectedLocal, setSelectedLocal] = useState<LocalRow | null>(null);
   const [localSearchOpen, setLocalSearchOpen] = useState(false);
+  const [responsibleQuery, setResponsibleQuery] = useState('');
+  const [selectedResponsible, setSelectedResponsible] = useState<ResponsibleOption | null>(null);
+  const [responsibleSearchOpen, setResponsibleSearchOpen] = useState(false);
   const [inventoryDate, setInventoryDate] = useState(today);
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [hasSecondTimeRange, setHasSecondTimeRange] = useState(false);
   const [secondStartTime, setSecondStartTime] = useState('');
   const [secondEndTime, setSecondEndTime] = useState('');
+  const [showInventoryDatePicker, setShowInventoryDatePicker] = useState(false);
+  const [showStartTimePicker, setShowStartTimePicker] = useState(false);
+  const [showEndTimePicker, setShowEndTimePicker] = useState(false);
+  const [showSecondStartTimePicker, setShowSecondStartTimePicker] = useState(false);
+  const [showSecondEndTimePicker, setShowSecondEndTimePicker] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -113,6 +158,7 @@ export default function CreateInventoryReportScreen() {
       }
 
       const { data: localesData, error: localesError } = await localesQuery;
+      const { data: responsiblesData, error: responsiblesError } = await listActiveResponsibles(profileData.role, profileData.region);
 
       if (!active) return;
 
@@ -121,6 +167,11 @@ export default function CreateInventoryReportScreen() {
         setMessage('No se pudieron cargar los locales: ' + localesError.message);
       } else {
         setLocales(localesData || []);
+      }
+      if (responsiblesError) {
+        setMessage('No se pudieron cargar los responsables: ' + responsiblesError.message);
+      } else {
+        setResponsibles((responsiblesData || []).map(mapResponsibleRow));
       }
       setLoading(false);
     }
@@ -133,6 +184,11 @@ export default function CreateInventoryReportScreen() {
   }, []);
 
   const regularizationDate = useMemo(() => addDaysToIsoDate(inventoryDate, 1), [inventoryDate]);
+  const selectedInventoryDate = useMemo(() => pickerDate(inventoryDate, startTime), [inventoryDate, startTime]);
+  const selectedStartTime = useMemo(() => pickerDate(inventoryDate, startTime || '08:00'), [inventoryDate, startTime]);
+  const selectedEndTime = useMemo(() => pickerDate(inventoryDate, endTime || '17:00'), [endTime, inventoryDate]);
+  const selectedSecondStartTime = useMemo(() => pickerDate(inventoryDate, secondStartTime || '18:00'), [inventoryDate, secondStartTime]);
+  const selectedSecondEndTime = useMemo(() => pickerDate(inventoryDate, secondEndTime || '20:00'), [inventoryDate, secondEndTime]);
 
   const filteredLocales = useMemo(() => {
     const term = normalize(localQuery);
@@ -145,8 +201,20 @@ export default function CreateInventoryReportScreen() {
     return source.slice(0, maxVisibleOptions);
   }, [localQuery, locales]);
 
+  const filteredResponsibles = useMemo(() => {
+    const term = normalize(responsibleQuery);
+    const source = term
+      ? responsibles.filter((responsible) =>
+          normalize(`${responsible.codigo} ${responsible.nombre} ${responsible.cargo || ''} ${responsible.region || ''}`).includes(term),
+        )
+      : responsibles;
+
+    return source.slice(0, maxVisibleOptions);
+  }, [responsibleQuery, responsibles]);
+
   const formError = useMemo(() => {
     if (!selectedLocal) return 'Selecciona un local.';
+    if (!selectedResponsible) return 'Selecciona el líder o responsable del local.';
     if (!isIsoDate(inventoryDate)) return 'Ingresa una fecha de inventario válida en formato AAAA-MM-DD.';
     if (!regularizationDate) return 'No se pudo calcular la fecha de regularización.';
     if (!isTime(startTime)) return 'Ingresa hora de inicio válida en formato HH:MM.';
@@ -155,7 +223,7 @@ export default function CreateInventoryReportScreen() {
     if (hasSecondTimeRange && !isTime(secondStartTime)) return 'Ingresa segunda hora de inicio válida en formato HH:MM.';
     if (hasSecondTimeRange && !isTime(secondEndTime)) return 'Ingresa segunda hora de finalización válida en formato HH:MM.';
     return null;
-  }, [endTime, hasSecondTimeRange, inventoryDate, profile?.id, regularizationDate, secondEndTime, secondStartTime, selectedLocal, startTime]);
+  }, [endTime, hasSecondTimeRange, inventoryDate, profile?.id, regularizationDate, secondEndTime, secondStartTime, selectedLocal, selectedResponsible, startTime]);
 
   const handleLocalSearch = (value: string) => {
     setLocalQuery(value);
@@ -163,10 +231,47 @@ export default function CreateInventoryReportScreen() {
     setLocalSearchOpen(true);
   };
 
+  const handleResponsibleSearch = (value: string) => {
+    setResponsibleQuery(value);
+    setSelectedResponsible(null);
+    setResponsibleSearchOpen(true);
+  };
+
   const selectLocal = (local: LocalRow) => {
     setSelectedLocal(local);
     setLocalQuery(`${local.codigo_interno} · ${local.nombre_local}`);
     setLocalSearchOpen(false);
+  };
+
+  const selectResponsible = (responsible: ResponsibleOption) => {
+    setSelectedResponsible(responsible);
+    setResponsibleQuery(`${responsible.codigo} · ${responsible.nombre}`);
+    setResponsibleSearchOpen(false);
+  };
+
+  const handleInventoryDateChange = (_event: DateTimePickerEvent, date?: Date) => {
+    if (Platform.OS !== 'ios') setShowInventoryDatePicker(false);
+    if (date) setInventoryDate(dateToIsoDate(date));
+  };
+
+  const handleStartTimeChange = (_event: DateTimePickerEvent, date?: Date) => {
+    if (Platform.OS !== 'ios') setShowStartTimePicker(false);
+    if (date) setStartTime(dateToTime(date));
+  };
+
+  const handleEndTimeChange = (_event: DateTimePickerEvent, date?: Date) => {
+    if (Platform.OS !== 'ios') setShowEndTimePicker(false);
+    if (date) setEndTime(dateToTime(date));
+  };
+
+  const handleSecondStartTimeChange = (_event: DateTimePickerEvent, date?: Date) => {
+    if (Platform.OS !== 'ios') setShowSecondStartTimePicker(false);
+    if (date) setSecondStartTime(dateToTime(date));
+  };
+
+  const handleSecondEndTimeChange = (_event: DateTimePickerEvent, date?: Date) => {
+    if (Platform.OS !== 'ios') setShowSecondEndTimePicker(false);
+    if (date) setSecondEndTime(dateToTime(date));
   };
 
   const toggleSecondTimeRange = () => {
@@ -180,7 +285,7 @@ export default function CreateInventoryReportScreen() {
   };
 
   const handleSave = async () => {
-    if (formError || !selectedLocal || !profile) {
+    if (formError || !selectedLocal || !selectedResponsible || !profile) {
       setMessage(formError || 'Completa los campos obligatorios.');
       return;
     }
@@ -194,6 +299,9 @@ export default function CreateInventoryReportScreen() {
         local_codigo: selectedLocal.codigo_interno,
         local_name_snapshot: selectedLocal.nombre_local,
         region: selectedLocal.region,
+        responsible_id: selectedResponsible.id,
+        responsible_code_snapshot: selectedResponsible.codigo,
+        responsible_name_snapshot: selectedResponsible.nombre,
         inventory_date: inventoryDate,
         front_regularization_date: regularizationDate,
         start_time: startTime,
@@ -212,7 +320,7 @@ export default function CreateInventoryReportScreen() {
     setSaving(false);
 
     if (error || !report) {
-      setMessage('No se pudo crear el informe de inventario: ' + (error?.message || 'sin detalle'));
+      setMessage(buildCreateReportError(error?.message));
       return;
     }
 
@@ -225,7 +333,7 @@ export default function CreateInventoryReportScreen() {
   if (loading) {
     return (
       <InventoryShell
-        title="Crear Informe de Inventario — Encabezado"
+        title="Crear Informe de Inventario"
         subtitle="Cargando datos base del encabezado."
       >
         <View style={styles.center}>
@@ -238,7 +346,7 @@ export default function CreateInventoryReportScreen() {
 
   return (
     <InventoryShell
-      title="Crear Informe de Inventario — Encabezado"
+      title="Crear Informe de Inventario"
       subtitle="Crea el borrador inicial del informe. El auditor encargado se toma del usuario logueado y no se puede cambiar en esta fase."
     >
       <View style={styles.form}>
@@ -272,45 +380,57 @@ export default function CreateInventoryReportScreen() {
           ) : null}
         </View>
 
-        <View style={styles.field}>
-          <Text style={styles.label}>Fecha de inventario *</Text>
-          <TextInput
-            style={styles.input}
-            value={inventoryDate}
-            onChangeText={setInventoryDate}
-            placeholder="AAAA-MM-DD"
-          />
+        <View style={styles.twoColumnRow}>
+          <View style={styles.twoColumnItem}>
+            <DateTimeField
+              label="Fecha de inventario *"
+              value={inventoryDate}
+              mode="date"
+              selectedDate={selectedInventoryDate}
+              visible={showInventoryDatePicker}
+              onOpen={() => setShowInventoryDatePicker(true)}
+              onChange={handleInventoryDateChange}
+              onWebChange={setInventoryDate}
+            />
+          </View>
+
+          <View style={styles.twoColumnItem}>
+            <Text style={styles.label}>Fecha de regularización</Text>
+            <TextInput
+              style={styles.input}
+              value={isoDateToDisplayDate(regularizationDate)}
+              editable={false}
+              placeholder="Se calcula automáticamente"
+            />
+          </View>
         </View>
 
-        <View style={styles.field}>
-          <Text style={styles.label}>Fecha de regularización</Text>
-          <TextInput
-            style={styles.input}
-            value={regularizationDate}
-            editable={false}
-            placeholder="Se calcula automáticamente"
-          />
-          <Text style={styles.hint}>Se calcula automáticamente como fecha de inventario + 1 día.</Text>
-        </View>
+        <View style={styles.twoColumnRow}>
+          <View style={styles.twoColumnItem}>
+            <DateTimeField
+              label="Hora de inicio *"
+              value={startTime}
+              mode="time"
+              selectedDate={selectedStartTime}
+              visible={showStartTimePicker}
+              onOpen={() => setShowStartTimePicker(true)}
+              onChange={handleStartTimeChange}
+              onWebChange={setStartTime}
+            />
+          </View>
 
-        <View style={styles.field}>
-          <Text style={styles.label}>Hora de inicio *</Text>
-          <TextInput
-            style={styles.input}
-            value={startTime}
-            onChangeText={setStartTime}
-            placeholder="HH:MM"
-          />
-        </View>
-
-        <View style={styles.field}>
-          <Text style={styles.label}>Hora de finalización *</Text>
-          <TextInput
-            style={styles.input}
-            value={endTime}
-            onChangeText={setEndTime}
-            placeholder="HH:MM"
-          />
+          <View style={styles.twoColumnItem}>
+            <DateTimeField
+              label="Hora de finalización *"
+              value={endTime}
+              mode="time"
+              selectedDate={selectedEndTime}
+              visible={showEndTimePicker}
+              onOpen={() => setShowEndTimePicker(true)}
+              onChange={handleEndTimeChange}
+              onWebChange={setEndTime}
+            />
+          </View>
         </View>
 
         <TouchableOpacity style={styles.secondaryButton} onPress={toggleSecondTimeRange}>
@@ -320,55 +440,178 @@ export default function CreateInventoryReportScreen() {
         </TouchableOpacity>
 
         {hasSecondTimeRange ? (
-          <>
-            <View style={styles.field}>
-              <Text style={styles.label}>Segunda hora de inicio *</Text>
-              <TextInput
-                style={styles.input}
+          <View style={styles.twoColumnRow}>
+            <View style={styles.twoColumnItem}>
+              <DateTimeField
+                label="Segunda hora de inicio *"
                 value={secondStartTime}
-                onChangeText={setSecondStartTime}
-                placeholder="HH:MM"
+                mode="time"
+                selectedDate={selectedSecondStartTime}
+                visible={showSecondStartTimePicker}
+                onOpen={() => setShowSecondStartTimePicker(true)}
+                onChange={handleSecondStartTimeChange}
+                onWebChange={setSecondStartTime}
               />
             </View>
 
-            <View style={styles.field}>
-              <Text style={styles.label}>Segunda hora de finalización *</Text>
-              <TextInput
-                style={styles.input}
+            <View style={styles.twoColumnItem}>
+              <DateTimeField
+                label="Segunda hora de finalización *"
                 value={secondEndTime}
-                onChangeText={setSecondEndTime}
-                placeholder="HH:MM"
+                mode="time"
+                selectedDate={selectedSecondEndTime}
+                visible={showSecondEndTimePicker}
+                onOpen={() => setShowSecondEndTimePicker(true)}
+                onChange={handleSecondEndTimeChange}
+                onWebChange={setSecondEndTime}
               />
             </View>
-          </>
+          </View>
         ) : null}
 
-        <View style={styles.field}>
-          <Text style={styles.label}>Auditor encargado</Text>
-          <TextInput
-            style={styles.input}
-            value={profile?.full_name || ''}
-            editable={false}
-            placeholder="Usuario logueado"
-          />
-          <Text style={styles.hint}>Este campo se toma del usuario logueado y no es editable para auditor.</Text>
-        </View>
+        <View style={styles.twoColumnRow}>
+          <View style={styles.twoColumnItem}>
+            <Text style={styles.label}>Líder / responsable del local *</Text>
+            <TextInput
+              style={styles.input}
+              value={responsibleQuery}
+              onChangeText={handleResponsibleSearch}
+              onFocus={() => setResponsibleSearchOpen(true)}
+              placeholder="Buscar por código o nombre"
+            />
+            {responsibleSearchOpen ? (
+              <View style={styles.optionsPanel}>
+                {filteredResponsibles.length > 0 ? filteredResponsibles.map((responsible) => (
+                  <TouchableOpacity key={responsible.id} style={styles.optionRow} onPress={() => selectResponsible(responsible)}>
+                    <Text style={styles.optionTitle}>{responsible.codigo} · {responsible.nombre}</Text>
+                    <Text style={styles.optionSubtitle}>{responsible.cargo || 'Sin cargo'} · {responsible.region || 'Sin región'}</Text>
+                  </TouchableOpacity>
+                )) : (
+                  <Text style={styles.hint}>No hay responsables activos que coincidan con la búsqueda.</Text>
+                )}
+              </View>
+            ) : null}
+          </View>
 
-        <View style={styles.field}>
-          <Text style={styles.label}>Estado inicial</Text>
-          <TextInput style={styles.input} value="draft" editable={false} />
+          <View style={styles.twoColumnItem}>
+            <Text style={styles.label}>Auditor encargado</Text>
+            <TextInput
+              style={styles.input}
+              value={profile?.full_name || ''}
+              editable={false}
+              placeholder="Usuario logueado"
+            />
+            <Text style={styles.hint}>Se toma del usuario logueado y no es editable.</Text>
+          </View>
         </View>
 
         {formError ? <Text style={styles.hint}>{formError}</Text> : null}
 
-        <TouchableOpacity
-          disabled={Boolean(formError) || saving}
-          style={[styles.primaryButton, (Boolean(formError) || saving) && styles.disabledButton]}
-          onPress={handleSave}
-        >
-          <Text style={styles.primaryButtonText}>{saving ? 'Guardando...' : 'Guardar encabezado'}</Text>
-        </TouchableOpacity>
+        <View style={styles.footerActions}>
+          <TouchableOpacity
+            disabled={Boolean(formError) || saving}
+            style={[styles.primaryButton, styles.footerPrimaryButton, (Boolean(formError) || saving) && styles.disabledButton]}
+            onPress={handleSave}
+          >
+            <Text style={styles.primaryButtonText}>{saving ? 'Guardando...' : 'Siguiente'}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </InventoryShell>
   );
 }
+
+function mapResponsibleRow(row: ResponsibleRow): ResponsibleOption {
+  return {
+    id: row.id,
+    codigo: row.responsible_code,
+    nombre: row.responsible_name,
+    cargo: row.position,
+    region: row.region,
+  };
+}
+
+function DateTimeField({
+  label,
+  value,
+  mode,
+  selectedDate,
+  visible,
+  onOpen,
+  onChange,
+  onWebChange,
+}: {
+  label: string;
+  value: string;
+  mode: 'date' | 'time';
+  selectedDate: Date;
+  visible: boolean;
+  onOpen: () => void;
+  onChange: (event: DateTimePickerEvent, date?: Date) => void;
+  onWebChange: (value: string) => void;
+}) {
+  const inputRef = React.useRef<HTMLInputElement | null>(null);
+
+  if (Platform.OS === 'web') {
+    const openPicker = () => {
+      const input = inputRef.current;
+      if (!input) return;
+      if (typeof input.showPicker === 'function') {
+        input.showPicker();
+      } else {
+        input.click();
+      }
+    };
+
+    return (
+      <View style={styles.dateTimeItem}>
+        <Text style={styles.label}>{label}</Text>
+        <TouchableOpacity style={styles.webDateTimeShell} onPress={openPicker} activeOpacity={0.85}>
+          <Text style={styles.webDateTimeDisplay}>{mode === 'date' ? isoDateToDisplayDate(value) : value}</Text>
+          {React.createElement('input', {
+            ref: inputRef,
+            type: mode,
+            value,
+            onChange: (event: React.ChangeEvent<HTMLInputElement>) => onWebChange(event.target.value),
+            style: webHiddenPickerInputStyle,
+            'aria-label': label,
+          })}
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.dateTimeItem}>
+      <Text style={styles.label}>{label}</Text>
+      <TouchableOpacity style={styles.clockButton} onPress={onOpen}>
+        <Text style={styles.clockValue}>{value || (mode === 'date' ? 'Seleccionar fecha' : 'Seleccionar hora')}</Text>
+        <Text style={styles.clockHint}>{mode === 'date' ? 'Abrir calendario' : 'Abrir reloj'}</Text>
+      </TouchableOpacity>
+      {visible && (
+        <DateTimePicker
+          value={selectedDate}
+          mode={mode}
+          display={mode === 'date' ? 'calendar' : 'clock'}
+          onChange={onChange}
+          is24Hour
+          positiveButton={{ label: 'Aceptar', textColor: brandColors.greenDark }}
+          negativeButton={{ label: 'Cancelar', textColor: brandColors.greenDark }}
+        />
+      )}
+    </View>
+  );
+}
+
+const webHiddenPickerInputStyle = {
+  maxWidth: '100%',
+  boxSizing: 'border-box',
+  minHeight: 44,
+  opacity: 0,
+  position: 'absolute',
+  right: 0,
+  top: 0,
+  width: 44,
+  height: 44,
+  cursor: 'pointer',
+} as React.CSSProperties;

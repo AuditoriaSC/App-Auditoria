@@ -9,7 +9,15 @@ type InventoryReportHeader = {
   id: string;
   local_codigo: string;
   local_name_snapshot: string;
+  responsible_name_snapshot: string | null;
   inventory_date: string;
+  front_regularization_date: string;
+  start_time: string | null;
+  end_time: string | null;
+  has_second_time_range: boolean | null;
+  second_start_time: string | null;
+  second_end_time: string | null;
+  assigned_auditor_name_snapshot: string;
 };
 
 type InventoryCsvRow = {
@@ -49,6 +57,19 @@ function normalizeHeader(value: string) {
 
 function normalizeWarehouseCode(value: string) {
   return String(value).trim().toUpperCase();
+}
+
+function isoDateToDisplayDate(value: string) {
+  const [year, month, day] = value.split('-');
+  if (!year || !month || !day) return value;
+  return `${day}/${month}/${year}`;
+}
+
+function formatTime(value: string | null | undefined) {
+  if (!value) return 'No registrada';
+  const [hour, minute] = value.split(':');
+  if (!hour || !minute) return value;
+  return `${hour}:${minute}`;
 }
 
 function parseCsv(text: string) {
@@ -159,7 +180,10 @@ function buildRows(csvText: string, expectedWarehouseCode: string) {
     let warning: string | null = null;
 
     if (!warehouseCode) errors.push('Código de almacén vacío');
-    if (warehouseCode && warehouseCode !== expectedCode) warehouseMismatch = true;
+    if (warehouseCode && warehouseCode !== expectedCode) {
+      warehouseMismatch = true;
+      errors.push(`Almacén ${warehouseCode} no coincide con ${expectedCode}`);
+    }
     if (!sku) errors.push('SKU vacío');
     if (physicalStock === null) errors.push('Stock contado/físico inválido');
     if (systemStock === null) errors.push('Stock teórico/sistema inválido');
@@ -204,6 +228,7 @@ export default function InventoryCsvUploadScreen() {
   const [warehouseMismatch, setWarehouseMismatch] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [importConfirmed, setImportConfirmed] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -218,7 +243,7 @@ export default function InventoryCsvUploadScreen() {
       setLoadingReport(true);
       const { data, error } = await supabase
         .from('inventory_reports')
-        .select('id, local_codigo, local_name_snapshot, inventory_date')
+        .select('id, local_codigo, local_name_snapshot, responsible_name_snapshot, inventory_date, front_regularization_date, start_time, end_time, has_second_time_range, second_start_time, second_end_time, assigned_auditor_name_snapshot')
         .eq('id', inventory_report_id)
         .single<InventoryReportHeader>();
 
@@ -241,21 +266,18 @@ export default function InventoryCsvUploadScreen() {
 
   const summary = useMemo(() => {
     const validRows = rows.filter((row) => row.errors.length === 0).length;
-    const warningRows = rows.filter((row) => row.warning).length;
-    const positiveDifference = rows.reduce((total, row) => total + Math.max(row.difference || 0, 0), 0);
-    const negativeDifference = rows.reduce((total, row) => total + Math.min(row.difference || 0, 0), 0);
+    const rejectedRows = rows.filter((row) => row.errors.length > 0).length;
 
     return {
       totalRows: rows.length,
       validRows,
-      warningRows,
-      positiveDifference,
-      negativeDifference,
+      rejectedRows,
     };
   }, [rows]);
 
   const previewRows = rows.slice(0, 10);
   const errorRows = rows.filter((row) => row.errors.length > 0).length;
+  const rejectedRows = rows.filter((row) => row.errors.length > 0);
   const canConfirm = Boolean(report?.id) && rows.length > 0 && missingColumns.length === 0 && !warehouseMismatch && errorRows === 0;
 
   const resetUpload = () => {
@@ -264,6 +286,7 @@ export default function InventoryCsvUploadScreen() {
     setMissingColumns([]);
     setWarehouseMismatch(false);
     setMessage(null);
+    setImportConfirmed(false);
   };
 
   const handleCsvText = (name: string, text: string) => {
@@ -277,6 +300,7 @@ export default function InventoryCsvUploadScreen() {
     setRows(parsed.rows);
     setMissingColumns(parsed.missingColumns);
     setWarehouseMismatch(parsed.warehouseMismatch);
+    setImportConfirmed(false);
 
     if (parsed.missingColumns.length > 0) {
       setMessage(`Faltan columnas obligatorias: ${parsed.missingColumns.join(', ')}.`);
@@ -385,7 +409,11 @@ export default function InventoryCsvUploadScreen() {
       return;
     }
 
-    setMessage(`Importación confirmada: ${payload.length} líneas guardadas para este informe.`);
+    setImportConfirmed(true);
+    setMessage(`Importación confirmada: ${payload.length} filas guardadas correctamente.`);
+    if (typeof window !== 'undefined') {
+      window.alert(`CSV cargado y confirmado correctamente.\n${payload.length} filas fueron guardadas.`);
+    }
   };
 
   if (loadingReport) {
@@ -405,13 +433,49 @@ export default function InventoryCsvUploadScreen() {
       subtitle="Carga y validación estructural del archivo de inventario. Los cruces se implementarán en una fase posterior."
     >
       <View style={styles.form}>
-        {message ? <Text style={(missingColumns.length > 0 || warehouseMismatch || errorRows > 0) ? styles.errorText : styles.hint}>{message}</Text> : null}
+        {message ? (
+          <Text style={(missingColumns.length > 0 || warehouseMismatch || errorRows > 0) ? styles.errorText : importConfirmed ? styles.successText : styles.hint}>
+            {message}
+          </Text>
+        ) : null}
 
         {report ? (
           <View style={styles.block}>
             <Text style={styles.blockTitle}>{report.local_codigo} · {report.local_name_snapshot}</Text>
-            <Text style={styles.blockDescription}>Informe: {report.id}</Text>
-            <Text style={styles.blockDescription}>Fecha de inventario: {report.inventory_date}</Text>
+            <View style={styles.twoColumnRow}>
+              <View style={styles.twoColumnItem}>
+                <Text style={styles.blockDescription}>Líder del local</Text>
+                <Text style={styles.hint}>{report.responsible_name_snapshot || 'No registrado en el encabezado'}</Text>
+              </View>
+              <View style={styles.twoColumnItem}>
+                <Text style={styles.blockDescription}>Auditor encargado</Text>
+                <Text style={styles.hint}>{report.assigned_auditor_name_snapshot}</Text>
+              </View>
+            </View>
+            <View style={styles.twoColumnRow}>
+              <View style={styles.twoColumnItem}>
+                <Text style={styles.blockDescription}>Fecha de inventario</Text>
+                <Text style={styles.hint}>{isoDateToDisplayDate(report.inventory_date)}</Text>
+              </View>
+              <View style={styles.twoColumnItem}>
+                <Text style={styles.blockDescription}>Fecha de regularización</Text>
+                <Text style={styles.hint}>{isoDateToDisplayDate(report.front_regularization_date)}</Text>
+              </View>
+            </View>
+            <View style={styles.twoColumnRow}>
+              <View style={styles.twoColumnItem}>
+                <Text style={styles.blockDescription}>Horario principal</Text>
+                <Text style={styles.hint}>{formatTime(report.start_time)} - {formatTime(report.end_time)}</Text>
+              </View>
+              <View style={styles.twoColumnItem}>
+                <Text style={styles.blockDescription}>Segundo horario</Text>
+                <Text style={styles.hint}>
+                  {report.has_second_time_range
+                    ? `${formatTime(report.second_start_time)} - ${formatTime(report.second_end_time)}`
+                    : 'No aplica'}
+                </Text>
+              </View>
+            </View>
           </View>
         ) : null}
 
@@ -422,27 +486,32 @@ export default function InventoryCsvUploadScreen() {
         {fileName ? <Text style={styles.hint}>Archivo seleccionado: {fileName}</Text> : null}
 
         <View style={styles.grid}>
-          <View style={styles.metricCard}>
+          <View style={styles.smallMetricCard}>
             <Text style={styles.metricValue}>{summary.totalRows}</Text>
-            <Text style={styles.metricLabel}>Filas procesadas</Text>
+            <Text style={styles.metricLabel}>Filas ingresadas</Text>
           </View>
-          <View style={styles.metricCard}>
+          <View style={styles.smallMetricCard}>
             <Text style={styles.metricValue}>{summary.validRows}</Text>
-            <Text style={styles.metricLabel}>Filas válidas</Text>
+            <Text style={styles.metricLabel}>Aceptadas para importación</Text>
           </View>
-          <View style={styles.metricCard}>
-            <Text style={styles.metricValue}>{summary.warningRows}</Text>
-            <Text style={styles.metricLabel}>Advertencias</Text>
-          </View>
-          <View style={styles.metricCard}>
-            <Text style={styles.metricValue}>{summary.positiveDifference}</Text>
-            <Text style={styles.metricLabel}>Diferencia positiva</Text>
-          </View>
-          <View style={styles.metricCard}>
-            <Text style={styles.metricValue}>{summary.negativeDifference}</Text>
-            <Text style={styles.metricLabel}>Diferencia negativa</Text>
+          <View style={styles.smallMetricCard}>
+            <Text style={summary.rejectedRows > 0 ? styles.metricDangerValue : styles.metricValue}>{summary.rejectedRows}</Text>
+            <Text style={styles.metricLabel}>No aceptadas</Text>
           </View>
         </View>
+
+        {rejectedRows.length > 0 ? (
+          <View style={styles.block}>
+            <Text style={styles.blockTitle}>Filas no aceptadas</Text>
+            <Text style={styles.blockDescription}>Corrige estos registros en el CSV y vuelve a cargar el archivo.</Text>
+            {rejectedRows.slice(0, 12).map((row) => (
+              <Text key={`rejected-${row.rowNumber}`} style={styles.errorText}>
+                Fila {row.rowNumber} · SKU {row.sku || 'sin SKU'}: {row.errors.join('; ')}
+              </Text>
+            ))}
+            {rejectedRows.length > 12 ? <Text style={styles.hint}>Hay {rejectedRows.length - 12} filas no aceptadas adicionales.</Text> : null}
+          </View>
+        ) : null}
 
         {previewRows.length > 0 ? (
           <View style={styles.table}>
@@ -466,32 +535,33 @@ export default function InventoryCsvUploadScreen() {
                 <Text style={styles.tableCell}>{row.systemStock ?? '-'}</Text>
                 <Text style={styles.tableCell}>{row.difference ?? '-'}</Text>
                 <Text style={row.errors.length > 0 ? styles.tableErrorCell : styles.tableCell}>
-                  {row.errors.length > 0 ? row.errors.join('; ') : row.warning || 'OK'}
+                  {row.errors.length > 0 ? `No aceptada: ${row.errors.join('; ')}` : row.warning ? `Aceptada con aviso: ${row.warning}` : 'Aceptada'}
                 </Text>
               </View>
             ))}
           </View>
         ) : null}
 
-        <View style={styles.grid}>
-          <TouchableOpacity style={styles.secondaryButton} onPress={resetUpload}>
-            <Text style={styles.secondaryButtonText}>Cancelar</Text>
+        <View style={styles.footerActions}>
+          <TouchableOpacity style={[styles.secondaryButton, styles.footerSecondaryButton]} onPress={resetUpload}>
+            <Text style={styles.secondaryButtonText}>Cancelar carga</Text>
           </TouchableOpacity>
           <TouchableOpacity
             disabled={!canConfirm || saving}
-            style={[styles.primaryButton, (!canConfirm || saving) && styles.disabledButton]}
+            style={[styles.primaryButton, styles.footerPrimaryButton, (!canConfirm || saving) && styles.disabledButton]}
             onPress={confirmImport}
           >
             <Text style={styles.primaryButtonText}>{saving ? 'Guardando...' : 'Confirmar importación'}</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.secondaryButton}
+            disabled={!importConfirmed}
+            style={[styles.secondaryButton, styles.footerSecondaryButton, !importConfirmed && styles.disabledButton]}
             onPress={() => router.push({
               pathname: '/modulos/inventarios/resultados',
               params: { inventory_report_id: report?.id || inventory_report_id },
             })}
           >
-            <Text style={styles.secondaryButtonText}>Ir a Resultados</Text>
+            <Text style={styles.secondaryButtonText}>Siguiente</Text>
           </TouchableOpacity>
         </View>
       </View>

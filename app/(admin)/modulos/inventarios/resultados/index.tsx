@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Modal, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { brandColors } from '../../../../../constants/theme';
 import { supabase } from '../../../../../src/supabaseClient';
@@ -12,6 +12,8 @@ type InventoryItem = {
   inventory_report_id: string;
   sku: string;
   item_description: string | null;
+  physical_stock: number;
+  system_stock: number;
   difference: number;
 };
 
@@ -40,21 +42,9 @@ type InventoryResult = {
   adjusted_by?: string | null;
   adjusted_at?: string | null;
   component_skus?: string[];
+  physical_stock?: number | null;
+  system_stock?: number | null;
 };
-
-const resultTypeLabels: Record<ResultType, string> = {
-  surplus_without_cross: 'Sobrantes de items sin cruce',
-  surplus_cross: 'Cruces con resultado >= 0',
-  shortage_without_cross: 'Faltantes de items sin cruce',
-  shortage_cross: 'Cruces con resultado < 0',
-};
-
-const orderedTypes: ResultType[] = [
-  'surplus_without_cross',
-  'surplus_cross',
-  'shortage_without_cross',
-  'shortage_cross',
-];
 
 function normalizeSku(value: string) {
   return String(value).trim();
@@ -67,6 +57,14 @@ function toNumber(value: unknown) {
 
 function sortByImpact(left: InventoryResult, right: InventoryResult) {
   return Math.abs(toNumber(right.final_result)) - Math.abs(toNumber(left.final_result));
+}
+
+function formatNumber(value: unknown) {
+  const number = toNumber(value);
+  return new Intl.NumberFormat('es-EC', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(number);
 }
 
 function classifyResult(result: InventoryResult): ResultType {
@@ -111,6 +109,8 @@ function calculateResults(reportId: string, items: InventoryItem[], crosses: Inv
         is_manual_adjusted: false,
         manual_comment: null,
         component_skus: [sku],
+        physical_stock: item.physical_stock,
+        system_stock: item.system_stock,
       });
       return;
     }
@@ -159,17 +159,16 @@ export default function InventoryResultsScreen() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [results, setResults] = useState<InventoryResult[]>([]);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [manualDraft, setManualDraft] = useState('');
+  const [commentDraft, setCommentDraft] = useState('');
 
-  const groupedResults = useMemo(() => {
-    return orderedTypes.reduce<Record<ResultType, InventoryResult[]>>((grouped, type) => {
-      grouped[type] = results.filter((result) => result.result_type === type).sort(sortByImpact);
-      return grouped;
-    }, {
-      surplus_without_cross: [],
-      surplus_cross: [],
-      shortage_without_cross: [],
-      shortage_cross: [],
-    });
+  const shortageResults = useMemo(() => {
+    return results.filter((result) => toNumber(result.final_result) < 0).sort(sortByImpact);
+  }, [results]);
+
+  const surplusResults = useMemo(() => {
+    return results.filter((result) => toNumber(result.final_result) >= 0).sort(sortByImpact);
   }, [results]);
 
   useEffect(() => {
@@ -219,7 +218,7 @@ export default function InventoryResultsScreen() {
 
     const { data: items, error: itemsError } = await supabase
       .from('inventory_report_items')
-      .select('id, inventory_report_id, sku, item_description, difference')
+      .select('id, inventory_report_id, sku, item_description, physical_stock, system_stock, difference')
       .eq('inventory_report_id', inventory_report_id);
 
     if (itemsError || !items) {
@@ -250,7 +249,13 @@ export default function InventoryResultsScreen() {
 
     const calculatedResults = calculateResults(
       inventory_report_id,
-      (items as InventoryItem[]).map((item) => ({ ...item, sku: normalizeSku(item.sku), difference: toNumber(item.difference) })),
+      (items as InventoryItem[]).map((item) => ({
+        ...item,
+        sku: normalizeSku(item.sku),
+        physical_stock: toNumber(item.physical_stock),
+        system_stock: toNumber(item.system_stock),
+        difference: toNumber(item.difference),
+      })),
       (crosses as InventoryCross[]).map((cross) => ({ ...cross, sku: normalizeSku(cross.sku), conversion_factor: toNumber(cross.conversion_factor) })),
     );
 
@@ -269,7 +274,7 @@ export default function InventoryResultsScreen() {
 
     setResults(calculatedResults);
     setSaving(false);
-    setMessage(`Resultados calculados: ${calculatedResults.length} registros. Fórmula usada: diferencia * factor_conversion.`);
+    setMessage(`Resultados calculados: ${calculatedResults.length} registros.`);
   }
 
   async function saveResults(nextResults = results) {
@@ -363,6 +368,27 @@ export default function InventoryResultsScreen() {
     }));
   }
 
+  function openManualEdit(index: number) {
+    const result = results[index];
+    if (!result) return;
+    setEditingIndex(index);
+    setManualDraft(result.manual_result !== null && result.manual_result !== undefined ? String(result.manual_result) : '');
+    setCommentDraft(result.manual_comment || '');
+  }
+
+  function closeManualEdit() {
+    setEditingIndex(null);
+    setManualDraft('');
+    setCommentDraft('');
+  }
+
+  function applyManualEdit() {
+    if (editingIndex === null) return;
+    updateManualResult(editingIndex, manualDraft);
+    updateManualComment(editingIndex, commentDraft);
+    closeManualEdit();
+  }
+
   if (loading) {
     return (
       <InventoryShell title="Resultados de Inventario" subtitle="Calculando resultados desde CSV y cruces por SKU.">
@@ -377,91 +403,183 @@ export default function InventoryResultsScreen() {
   return (
     <InventoryShell
       title="Resultados de Inventario"
-      subtitle="Cruces aplicados por SKU exacto normalizado. Fórmula actual: resultado_cruce = diferencia * factor_conversion."
+      subtitle="Cruces aplicados por SKU exacto normalizado."
     >
       <View style={styles.form}>
         {message ? <Text style={styles.hint}>{message}</Text> : null}
 
-        <View style={styles.grid}>
-          <TouchableOpacity disabled={saving} style={[styles.secondaryButton, saving && styles.disabledButton]} onPress={() => recalculateFromCsv(true)}>
+        <View style={styles.footerActions}>
+          <TouchableOpacity disabled={saving} style={[styles.secondaryButton, styles.footerSecondaryButton, saving && styles.disabledButton]} onPress={() => recalculateFromCsv(true)}>
             <Text style={styles.secondaryButtonText}>Recalcular desde CSV</Text>
           </TouchableOpacity>
-          <TouchableOpacity disabled={saving || results.length === 0} style={[styles.primaryButton, (saving || results.length === 0) && styles.disabledButton]} onPress={() => saveResults()}>
+          <TouchableOpacity disabled={saving || results.length === 0} style={[styles.primaryButton, styles.footerPrimaryButton, (saving || results.length === 0) && styles.disabledButton]} onPress={() => saveResults()}>
             <Text style={styles.primaryButtonText}>{saving ? 'Guardando...' : 'Guardar resultados calculados'}</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.secondaryButton}
+            style={[styles.secondaryButton, styles.footerSecondaryButton]}
             onPress={() => router.push({
               pathname: '/modulos/inventarios/validaciones-manuales',
               params: { inventory_report_id },
             })}
           >
-            <Text style={styles.secondaryButtonText}>Validar resultados y continuar</Text>
+            <Text style={styles.secondaryButtonText}>Siguiente</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {orderedTypes.map((type) => (
-        <ResultSection
-          key={type}
-          title={resultTypeLabels[type]}
-          results={groupedResults[type]}
-          allResults={results}
-          onManualResultChange={updateManualResult}
-          onManualCommentChange={updateManualComment}
-        />
-      ))}
+      <ResultSection
+        title="1. Faltantes"
+        description="Incluye ítems sin cruce y cruces cuyo resultado final es negativo."
+        results={shortageResults}
+        allResults={results}
+        onEditResult={openManualEdit}
+      />
+
+      <ResultSection
+        title="2. Sobrantes"
+        description="Incluye ítems sin cruce y cruces cuyo resultado final es cero o positivo."
+        results={surplusResults}
+        allResults={results}
+        onEditResult={openManualEdit}
+      />
+      <ManualEditModal
+        visible={editingIndex !== null}
+        result={editingIndex !== null ? results[editingIndex] : null}
+        manualDraft={manualDraft}
+        commentDraft={commentDraft}
+        onManualDraftChange={setManualDraft}
+        onCommentDraftChange={setCommentDraft}
+        onCancel={closeManualEdit}
+        onApply={applyManualEdit}
+      />
     </InventoryShell>
   );
 }
 
 type ResultSectionProps = {
   title: string;
+  description: string;
   results: InventoryResult[];
   allResults: InventoryResult[];
-  onManualResultChange: (index: number, value: string) => void;
-  onManualCommentChange: (index: number, value: string) => void;
+  onEditResult: (index: number) => void;
 };
 
-function ResultSection({ title, results, allResults, onManualResultChange, onManualCommentChange }: ResultSectionProps) {
+function ResultSection({ title, description, results, allResults, onEditResult }: ResultSectionProps) {
   return (
     <View style={styles.form}>
       <Text style={styles.blockTitle}>{title}</Text>
-      {results.length === 0 ? <Text style={styles.hint}>Sin registros para este bloque.</Text> : null}
-      {results.map((result) => {
-        const globalIndex = allResults.indexOf(result);
-        return (
-          <View key={`${result.result_type}-${result.cross_name || result.sku}-${globalIndex}`} style={styles.block}>
-            <Text style={styles.blockTitle}>{result.cross_name || `${result.sku} · ${result.item_description || 'Sin descripción'}`}</Text>
-            <Text style={styles.blockDescription}>Resultado calculado: {result.calculated_result ?? 0}</Text>
-            <Text style={styles.blockDescription}>Resultado final: {result.final_result ?? 0}</Text>
-            {result.cross_name ? (
-              <Text style={styles.hint}>SKUs incluidos: {(result.component_skus || []).join(', ') || 'Guardado sin detalle de componentes'}</Text>
-            ) : (
-              <Text style={styles.hint}>Diferencia original: {result.original_difference ?? 0}</Text>
-            )}
-            <View style={styles.field}>
-              <Text style={styles.label}>Resultado manual</Text>
-              <TextInput
-                style={styles.input}
-                defaultValue={result.manual_result !== null && result.manual_result !== undefined ? String(result.manual_result) : ''}
-                onChangeText={(value) => onManualResultChange(globalIndex, value)}
-                placeholder="Opcional"
-              />
-            </View>
-            <View style={styles.field}>
-              <Text style={styles.label}>Comentario del auditor</Text>
-              <TextInput
-                style={styles.input}
-                defaultValue={result.manual_comment || ''}
-                onChangeText={(value) => onManualCommentChange(globalIndex, value)}
-                placeholder="Opcional"
-              />
-            </View>
-            {result.is_manual_adjusted ? <Text style={styles.hint}>Modificado manualmente.</Text> : null}
+      <Text style={styles.hint}>{description}</Text>
+
+      {results.length === 0 ? (
+        <Text style={styles.hint}>Sin registros para este bloque.</Text>
+      ) : (
+        <View style={styles.table}>
+          <View style={styles.tableRow}>
+            <Text style={styles.reportTableArticleHeader}>Artículo</Text>
+            <Text style={styles.reportTableNumberHeader}>Stock físico</Text>
+            <Text style={styles.reportTableNumberHeader}>Stock actual</Text>
+            <Text style={styles.reportTableNumberHeader}>Diferencia</Text>
           </View>
-        );
-      })}
+
+          {results.map((result) => {
+            const globalIndex = allResults.indexOf(result);
+            const isCross = Boolean(result.cross_name);
+            const articleText = isCross
+              ? `SKUs: ${(result.component_skus || []).join(', ') || 'sin detalle guardado'} · ${result.cross_name || 'Cruce'}`
+              : `${result.sku || 'sin SKU'} · ${result.item_description || 'Sin descripción'}`;
+
+            return (
+              <View key={`${result.result_type}-${result.cross_name || result.sku}-${globalIndex}`}>
+                <TouchableOpacity style={styles.tableRow} onPress={() => onEditResult(globalIndex)} activeOpacity={0.85}>
+                  <View style={styles.reportTableArticleCell}>
+                    <Text style={styles.reportTableArticleTitle}>{articleText}</Text>
+                    {result.is_manual_adjusted || isCross ? (
+                      <Text style={styles.hint}>{result.is_manual_adjusted ? 'Ajuste manual aplicado' : 'Cruce aplicado'}</Text>
+                    ) : null}
+                  </View>
+                  <Text style={styles.reportTableNumberCell}>{isCross ? '-' : formatNumber(result.physical_stock)}</Text>
+                  <Text style={styles.reportTableNumberCell}>{isCross ? '-' : formatNumber(result.system_stock)}</Text>
+                  <Text style={toNumber(result.final_result) < 0 ? styles.reportTableNegativeCell : styles.reportTablePositiveCell}>
+                    {formatNumber(result.final_result)}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })}
+        </View>
+      )}
     </View>
+  );
+}
+
+type ManualEditModalProps = {
+  visible: boolean;
+  result: InventoryResult | null;
+  manualDraft: string;
+  commentDraft: string;
+  onManualDraftChange: (value: string) => void;
+  onCommentDraftChange: (value: string) => void;
+  onCancel: () => void;
+  onApply: () => void;
+};
+
+function ManualEditModal({
+  visible,
+  result,
+  manualDraft,
+  commentDraft,
+  onManualDraftChange,
+  onCommentDraftChange,
+  onCancel,
+  onApply,
+}: ManualEditModalProps) {
+  const isCross = Boolean(result?.cross_name);
+  const title = result
+    ? isCross
+      ? result.cross_name || 'Cruce'
+      : `${result.sku || 'sin SKU'} · ${result.item_description || 'Sin descripción'}`
+    : '';
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <Text style={styles.blockTitle}>Corregir resultado</Text>
+          <Text style={styles.blockDescription}>{title}</Text>
+          {isCross ? <Text style={styles.hint}>SKUs incluidos: {(result?.component_skus || []).join(', ') || 'sin detalle guardado'}</Text> : null}
+          <Text style={styles.hint}>Resultado calculado: {formatNumber(result?.calculated_result)}</Text>
+          <Text style={styles.hint}>Resultado actual: {formatNumber(result?.final_result)}</Text>
+
+          <View style={styles.field}>
+            <Text style={styles.label}>Resultado corregido</Text>
+            <TextInput
+              style={styles.input}
+              value={manualDraft}
+              onChangeText={onManualDraftChange}
+              placeholder="Ej. -2.50"
+            />
+          </View>
+
+          <View style={styles.field}>
+            <Text style={styles.label}>Comentario del auditor</Text>
+            <TextInput
+              style={styles.input}
+              value={commentDraft}
+              onChangeText={onCommentDraftChange}
+              placeholder="Motivo de la corrección"
+            />
+          </View>
+
+          <View style={styles.footerActions}>
+            <TouchableOpacity style={[styles.secondaryButton, styles.footerSecondaryButton]} onPress={onCancel}>
+              <Text style={styles.secondaryButtonText}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.primaryButton, styles.footerPrimaryButton]} onPress={onApply}>
+              <Text style={styles.primaryButtonText}>Aplicar corrección</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
