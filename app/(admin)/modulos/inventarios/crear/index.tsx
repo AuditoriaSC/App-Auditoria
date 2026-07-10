@@ -44,6 +44,23 @@ function isoDateToDisplayDate(value: string) {
   return `${day}/${month}/${year}`;
 }
 
+function displayDateToIsoDate(value: string) {
+  const [day, month, year] = value.trim().split('/').map((part) => Number.parseInt(part, 10));
+  if (!day || !month || !year) return null;
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return dateToIsoDate(date);
+}
+
+function normalizeDisplayTime(value: string) {
+  const match = value.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hour = Number.parseInt(match[1], 10);
+  const minute = Number.parseInt(match[2], 10);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return `${pad(hour)}:${pad(minute)}`;
+}
+
 function dateToTime(date: Date) {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
@@ -551,6 +568,25 @@ function DateTimeField({
   onWebChange: (value: string) => void;
 }) {
   const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const displayValue = mode === 'date' ? isoDateToDisplayDate(value) : value;
+  const [manualValue, setManualValue] = React.useState(displayValue);
+
+  React.useEffect(() => {
+    setManualValue(displayValue);
+  }, [displayValue]);
+
+  const commitManualValue = () => {
+    if (mode === 'date') {
+      const isoDate = displayDateToIsoDate(manualValue);
+      if (isoDate) onWebChange(isoDate);
+      else setManualValue(displayValue);
+      return;
+    }
+
+    const normalizedTime = normalizeDisplayTime(manualValue);
+    if (normalizedTime) onWebChange(normalizedTime);
+    else setManualValue(displayValue);
+  };
 
   if (Platform.OS === 'web') {
     const openPicker = () => {
@@ -566,8 +602,18 @@ function DateTimeField({
     return (
       <View style={styles.dateTimeItem}>
         <Text style={styles.label}>{label}</Text>
-        <TouchableOpacity style={styles.webDateTimeShell} onPress={openPicker} activeOpacity={0.85}>
-          <Text style={styles.webDateTimeDisplay}>{mode === 'date' ? isoDateToDisplayDate(value) : value}</Text>
+        <View style={styles.webDateTimeShell}>
+          <TextInput
+            style={styles.webDateTimeDisplay}
+            value={manualValue}
+            onChangeText={setManualValue}
+            onBlur={commitManualValue}
+            placeholder={mode === 'date' ? 'dd/mm/aaaa' : 'hh:mm'}
+            placeholderTextColor={brandColors.inputPlaceholder}
+          />
+          <TouchableOpacity onPress={openPicker} activeOpacity={0.85}>
+            <Text style={styles.clockHint}>{mode === 'date' ? 'Calendario' : 'Reloj'}</Text>
+          </TouchableOpacity>
           {React.createElement('input', {
             ref: inputRef,
             type: mode,
@@ -576,7 +622,7 @@ function DateTimeField({
             style: webHiddenPickerInputStyle,
             'aria-label': label,
           })}
-        </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -584,10 +630,19 @@ function DateTimeField({
   return (
     <View style={styles.dateTimeItem}>
       <Text style={styles.label}>{label}</Text>
-      <TouchableOpacity style={styles.clockButton} onPress={onOpen}>
-        <Text style={styles.clockValue}>{value || (mode === 'date' ? 'Seleccionar fecha' : 'Seleccionar hora')}</Text>
-        <Text style={styles.clockHint}>{mode === 'date' ? 'Abrir calendario' : 'Abrir reloj'}</Text>
-      </TouchableOpacity>
+      <View style={styles.clockButton}>
+        <TextInput
+          style={styles.clockValue}
+          value={manualValue}
+          onChangeText={setManualValue}
+          onBlur={commitManualValue}
+          placeholder={mode === 'date' ? 'dd/mm/aaaa' : 'hh:mm'}
+          placeholderTextColor={brandColors.inputPlaceholder}
+        />
+        <TouchableOpacity onPress={onOpen}>
+          <Text style={styles.clockHint}>{mode === 'date' ? 'Abrir calendario' : 'Abrir reloj'}</Text>
+        </TouchableOpacity>
+      </View>
       {visible && (
         <DateTimePicker
           value={selectedDate}

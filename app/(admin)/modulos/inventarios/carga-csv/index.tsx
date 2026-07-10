@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Platform, Text, TouchableOpacity, View } from 'react-native';
+﻿import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { brandColors } from '../../../../../constants/theme';
 import { supabase } from '../../../../../src/supabaseClient';
@@ -34,6 +34,14 @@ type InventoryCsvRow = {
   errors: string[];
 };
 
+type UnmappedCsvItem = {
+  sku: string;
+  itemDescription: string;
+  selectedCrossName: string;
+  customCrossName: string;
+  conversionFactor: string;
+};
+
 const requiredColumns = {
   warehouseCode: 'Código de Almacén',
   sku: 'Referencia o SKU',
@@ -48,6 +56,7 @@ const requiredColumns = {
 function normalizeHeader(value: string) {
   return value
     .replace(/^\uFEFF/, '')
+    .replace(/\uFFFD/g, '?')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -55,8 +64,44 @@ function normalizeHeader(value: string) {
     .trim();
 }
 
+function headerIndex(headerMap: Map<string, number>, aliases: string[]) {
+  for (const alias of aliases) {
+    const index = headerMap.get(normalizeHeader(alias));
+    if (index !== undefined) return index;
+  }
+  return undefined;
+}
+
+function compactHeader(value: string) {
+  return normalizeHeader(value)
+    .replace(/[?]/g, '')
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function headerIndexByTokens(headerRow: string[], tokenSets: string[][]) {
+  const compactHeaders = headerRow.map(compactHeader);
+  return compactHeaders.findIndex((header) =>
+    tokenSets.some((tokens) => tokens.every((token) => header.includes(token))),
+  );
+}
+
+const inventoryColumnAliases = {
+  warehouseCode: ['Código de Almacén', 'Codigo de Almacen', 'Código Almacén', 'Codigo Almacen', 'Almacén', 'Almacen'],
+  sku: ['Referencia o SKU', 'Referencia SKU', 'SKU', 'Referencia'],
+  itemDescription: ['Descripción del Item', 'Descripcion del Item', 'Descripción del Ítem', 'Descripcion del Ítem', 'Descripción', 'Descripcion'],
+  physicalStock: ['Stock Contado o Físico', 'Stock Contado o Fisico', 'Stock Físico', 'Stock Fisico', 'Físico', 'Fisico', 'Stock Contado'],
+  systemStock: ['Stock Teórico o Sistema', 'Stock Teorico o Sistema', 'Stock Sistema', 'Sistema', 'Stock Teórico', 'Stock Teorico'],
+  difference: ['Diferencia', 'Dif.', 'Dif'],
+  unitCost: ['Costo Unitario', 'Coste Unitario', 'Costo Unit'],
+  totalCost: ['Costo Total', 'Coste Total', 'Total Costo'],
+} as const;
+
 function normalizeWarehouseCode(value: string) {
   return String(value).trim().toUpperCase();
+}
+
+function normalizeSku(value: string) {
+  return String(value).trim();
 }
 
 function isoDateToDisplayDate(value: string) {
@@ -72,15 +117,38 @@ function formatTime(value: string | null | undefined) {
   return `${hour}:${minute}`;
 }
 
+function detectDelimiter(text: string) {
+  const firstLine = text.split(/\r?\n/).find((line) => line.trim().length > 0) || '';
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const semicolonCount = (firstLine.match(/;/g) || []).length;
+  if (semicolonCount > 0) return ';';
+  return commaCount > 0 ? ',' : ';';
+}
+
+function unwrapQuotedDelimitedRows(text: string) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.includes(';')) {
+        return trimmed.slice(1, -1).replace(/""/g, '"');
+      }
+      return line;
+    })
+    .join('\n');
+}
+
 function parseCsv(text: string) {
+  const normalizedText = unwrapQuotedDelimitedRows(text);
+  const delimiter = detectDelimiter(normalizedText);
   const rows: string[][] = [];
   let current = '';
   let row: string[] = [];
   let inQuotes = false;
 
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    const nextChar = text[index + 1];
+  for (let index = 0; index < normalizedText.length; index += 1) {
+    const char = normalizedText[index];
+    const nextChar = normalizedText[index + 1];
 
     if (char === '"' && inQuotes && nextChar === '"') {
       current += '"';
@@ -93,7 +161,7 @@ function parseCsv(text: string) {
       continue;
     }
 
-    if (char === ',' && !inQuotes) {
+    if (char === delimiter && !inQuotes) {
       row.push(current);
       current = '';
       continue;
@@ -117,6 +185,20 @@ function parseCsv(text: string) {
   }
 
   return rows.filter((csvRow) => csvRow.some((cell) => cell.trim() !== ''));
+}
+
+async function readCsvFile(file: File) {
+  const buffer = await file.arrayBuffer();
+  const utf8Text = new TextDecoder('utf-8').decode(buffer);
+  if (!utf8Text.includes('\uFFFD')) return utf8Text;
+  return new TextDecoder('windows-1252').decode(buffer);
+}
+
+async function readCsvFileSafe(file: File) {
+  const buffer = await file.arrayBuffer();
+  const utf8Text = new TextDecoder('utf-8').decode(buffer);
+  if (!utf8Text.includes('\uFFFD')) return utf8Text;
+  return new TextDecoder('windows-1252').decode(buffer);
 }
 
 function parseNumber(value: string) {
@@ -146,15 +228,44 @@ function buildRows(csvText: string, expectedWarehouseCode: string) {
   headerRow.forEach((header, index) => headerMap.set(normalizeHeader(header), index));
 
   const columnIndexes = {
-    warehouseCode: headerMap.get(normalizeHeader(requiredColumns.warehouseCode)),
-    sku: headerMap.get(normalizeHeader(requiredColumns.sku)),
-    itemDescription: headerMap.get(normalizeHeader(requiredColumns.itemDescription)),
-    physicalStock: headerMap.get(normalizeHeader(requiredColumns.physicalStock)),
-    systemStock: headerMap.get(normalizeHeader(requiredColumns.systemStock)),
-    difference: headerMap.get(normalizeHeader(requiredColumns.difference)),
-    unitCost: headerMap.get(normalizeHeader(requiredColumns.unitCost)),
-    totalCost: headerMap.get(normalizeHeader(requiredColumns.totalCost)),
+    warehouseCode: headerIndex(headerMap, ['Código de Almacén', 'Codigo de Almacen', requiredColumns.warehouseCode]),
+    sku: headerIndex(headerMap, ['Referencia o SKU', 'SKU', requiredColumns.sku]),
+    itemDescription: headerIndex(headerMap, ['Descripción del Item', 'Descripcion del Item', 'Descripción del Ítem', 'Descripcion del Item', requiredColumns.itemDescription]),
+    physicalStock: headerIndex(headerMap, ['Stock Contado o Físico', 'Stock Contado o Fisico', 'Stock Físico', 'Stock Fisico', requiredColumns.physicalStock]),
+    systemStock: headerIndex(headerMap, ['Stock Teórico o Sistema', 'Stock Teorico o Sistema', 'Stock Sistema', requiredColumns.systemStock]),
+    difference: headerIndex(headerMap, ['Diferencia', requiredColumns.difference]),
+    unitCost: headerIndex(headerMap, ['Costo Unitario', requiredColumns.unitCost]),
+    totalCost: headerIndex(headerMap, ['Costo Total', requiredColumns.totalCost]),
   };
+
+  columnIndexes.warehouseCode = headerIndex(headerMap, [...inventoryColumnAliases.warehouseCode, requiredColumns.warehouseCode]) ?? columnIndexes.warehouseCode;
+  columnIndexes.sku = headerIndex(headerMap, [...inventoryColumnAliases.sku, requiredColumns.sku]) ?? columnIndexes.sku;
+  columnIndexes.itemDescription = headerIndex(headerMap, [...inventoryColumnAliases.itemDescription, requiredColumns.itemDescription]) ?? columnIndexes.itemDescription;
+  columnIndexes.physicalStock = headerIndex(headerMap, [...inventoryColumnAliases.physicalStock, requiredColumns.physicalStock]) ?? columnIndexes.physicalStock;
+  columnIndexes.systemStock = headerIndex(headerMap, [...inventoryColumnAliases.systemStock, requiredColumns.systemStock]) ?? columnIndexes.systemStock;
+  columnIndexes.difference = headerIndex(headerMap, [...inventoryColumnAliases.difference, requiredColumns.difference]) ?? columnIndexes.difference;
+  columnIndexes.unitCost = headerIndex(headerMap, [...inventoryColumnAliases.unitCost, requiredColumns.unitCost]) ?? columnIndexes.unitCost;
+  columnIndexes.totalCost = headerIndex(headerMap, [...inventoryColumnAliases.totalCost, requiredColumns.totalCost]) ?? columnIndexes.totalCost;
+
+  const tokenColumnIndexes = {
+    warehouseCode: headerIndexByTokens(headerRow, [['codigo', 'almacen'], ['almacen']]),
+    sku: headerIndexByTokens(headerRow, [['referencia', 'sku'], ['sku']]),
+    itemDescription: headerIndexByTokens(headerRow, [['descripcion', 'item'], ['descripcion']]),
+    physicalStock: headerIndexByTokens(headerRow, [['stock', 'contado'], ['stock', 'fisico'], ['fisico']]),
+    systemStock: headerIndexByTokens(headerRow, [['stock', 'teorico'], ['stock', 'sistema'], ['sistema']]),
+    difference: headerIndexByTokens(headerRow, [['diferencia'], ['dif']]),
+    unitCost: headerIndexByTokens(headerRow, [['costo', 'unitario']]),
+    totalCost: headerIndexByTokens(headerRow, [['costo', 'total']]),
+  };
+
+  columnIndexes.warehouseCode = tokenColumnIndexes.warehouseCode >= 0 ? tokenColumnIndexes.warehouseCode : columnIndexes.warehouseCode;
+  columnIndexes.sku = tokenColumnIndexes.sku >= 0 ? tokenColumnIndexes.sku : columnIndexes.sku;
+  columnIndexes.itemDescription = tokenColumnIndexes.itemDescription >= 0 ? tokenColumnIndexes.itemDescription : columnIndexes.itemDescription;
+  columnIndexes.physicalStock = tokenColumnIndexes.physicalStock >= 0 ? tokenColumnIndexes.physicalStock : columnIndexes.physicalStock;
+  columnIndexes.systemStock = tokenColumnIndexes.systemStock >= 0 ? tokenColumnIndexes.systemStock : columnIndexes.systemStock;
+  columnIndexes.difference = tokenColumnIndexes.difference >= 0 ? tokenColumnIndexes.difference : columnIndexes.difference;
+  columnIndexes.unitCost = tokenColumnIndexes.unitCost >= 0 ? tokenColumnIndexes.unitCost : columnIndexes.unitCost;
+  columnIndexes.totalCost = tokenColumnIndexes.totalCost >= 0 ? tokenColumnIndexes.totalCost : columnIndexes.totalCost;
 
   const missingColumns = Object.entries(columnIndexes)
     .filter(([, index]) => index === undefined)
@@ -229,6 +340,11 @@ export default function InventoryCsvUploadScreen() {
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [importConfirmed, setImportConfirmed] = useState(false);
+  const [checkingCrosses, setCheckingCrosses] = useState(false);
+  const [crossOptions, setCrossOptions] = useState<string[]>(['COSTO', 'GASTO']);
+  const [unmappedItems, setUnmappedItems] = useState<UnmappedCsvItem[]>([]);
+  const [showUnmappedModal, setShowUnmappedModal] = useState(false);
+  const [openCategoryIndex, setOpenCategoryIndex] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -278,7 +394,7 @@ export default function InventoryCsvUploadScreen() {
   const previewRows = rows.slice(0, 10);
   const errorRows = rows.filter((row) => row.errors.length > 0).length;
   const rejectedRows = rows.filter((row) => row.errors.length > 0);
-  const canConfirm = Boolean(report?.id) && rows.length > 0 && missingColumns.length === 0 && !warehouseMismatch && errorRows === 0;
+  const canConfirm = Boolean(report?.id) && rows.length > 0 && missingColumns.length === 0 && !warehouseMismatch && errorRows === 0 && unmappedItems.length === 0 && !checkingCrosses;
 
   const resetUpload = () => {
     setFileName('');
@@ -287,9 +403,79 @@ export default function InventoryCsvUploadScreen() {
     setWarehouseMismatch(false);
     setMessage(null);
     setImportConfirmed(false);
+    setUnmappedItems([]);
+    setShowUnmappedModal(false);
+    setOpenCategoryIndex(null);
   };
 
-  const handleCsvText = (name: string, text: string) => {
+  const loadCrossOptions = async () => {
+    const { data } = await supabase
+      .from('inventory_crosses')
+      .select('cross_name')
+      .eq('is_active', true)
+      .order('cross_name', { ascending: true });
+
+    const dynamicOptions = (data || [])
+      .map((cross) => String(cross.cross_name || '').trim())
+      .filter(Boolean);
+
+    setCrossOptions(Array.from(new Set(['COSTO', 'GASTO', ...dynamicOptions, 'AGREGAR NUEVO'])));
+  };
+
+  const detectUnmappedItems = async (parsedRows: InventoryCsvRow[]) => {
+    setCheckingCrosses(true);
+    await loadCrossOptions();
+
+    const validRows = parsedRows.filter((row) => row.errors.length === 0 && normalizeSku(row.sku));
+    const uniqueSkus = Array.from(new Set(validRows.map((row) => normalizeSku(row.sku))));
+
+    if (uniqueSkus.length === 0) {
+      setUnmappedItems([]);
+      setShowUnmappedModal(false);
+      setCheckingCrosses(false);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('inventory_crosses')
+      .select('sku')
+      .eq('is_active', true)
+      .in('sku', uniqueSkus);
+
+    if (error) {
+      setUnmappedItems([]);
+      setShowUnmappedModal(false);
+      setMessage('No se pudo validar la base de cruces: ' + error.message);
+      setCheckingCrosses(false);
+      return;
+    }
+
+    const mappedSkus = new Set((data || []).map((cross) => normalizeSku(String(cross.sku || ''))));
+    const pendingBySku = new Map<string, UnmappedCsvItem>();
+
+    validRows.forEach((row) => {
+      const sku = normalizeSku(row.sku);
+      if (!mappedSkus.has(sku) && !pendingBySku.has(sku)) {
+        pendingBySku.set(sku, {
+          sku,
+          itemDescription: row.itemDescription || 'Sin descripción',
+          selectedCrossName: 'COSTO',
+          customCrossName: '',
+          conversionFactor: '1',
+        });
+      }
+    });
+
+    const pendingItems = Array.from(pendingBySku.values());
+    setUnmappedItems(pendingItems);
+    setShowUnmappedModal(pendingItems.length > 0);
+    if (pendingItems.length > 0) {
+      setMessage(`Hay ${pendingItems.length} SKU sin cruce configurado. Clasifícalos antes de confirmar la importación.`);
+    }
+    setCheckingCrosses(false);
+  };
+
+  const handleCsvText = async (name: string, text: string) => {
     if (!report) {
       setMessage('Primero debe cargarse el encabezado del informe.');
       return;
@@ -301,6 +487,9 @@ export default function InventoryCsvUploadScreen() {
     setMissingColumns(parsed.missingColumns);
     setWarehouseMismatch(parsed.warehouseMismatch);
     setImportConfirmed(false);
+    setUnmappedItems([]);
+    setShowUnmappedModal(false);
+    setOpenCategoryIndex(null);
 
     if (parsed.missingColumns.length > 0) {
       setMessage(`Faltan columnas obligatorias: ${parsed.missingColumns.join(', ')}.`);
@@ -308,7 +497,66 @@ export default function InventoryCsvUploadScreen() {
       setMessage('El código de almacén del archivo no coincide con el local seleccionado en el encabezado.');
     } else {
       setMessage(null);
+      await detectUnmappedItems(parsed.rows);
     }
+  };
+
+  const updateUnmappedItem = (index: number, patch: Partial<UnmappedCsvItem>) => {
+    setUnmappedItems((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)));
+  };
+
+  const saveUnmappedItem = async (index: number) => {
+    const item = unmappedItems[index];
+    if (!item) return;
+
+    const crossName = item.selectedCrossName === 'AGREGAR NUEVO' ? item.customCrossName.trim() : item.selectedCrossName.trim();
+    const factor = Number(item.conversionFactor.replace(',', '.'));
+
+    if (!crossName) {
+      setMessage('Indica la categoría o nombre de cruce antes de guardar.');
+      return;
+    }
+
+    if (!Number.isFinite(factor) || factor <= 0) {
+      setMessage('El factor de conversión debe ser mayor a 0.');
+      return;
+    }
+
+    setSaving(true);
+    const { data: authData } = await supabase.auth.getUser();
+    const { error } = await supabase
+      .from('inventory_crosses')
+      .upsert(
+        {
+          sku: item.sku,
+          item_description: item.itemDescription || null,
+          cross_name: crossName,
+          conversion_factor: factor,
+          is_active: true,
+          created_by: authData.user?.id || null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'sku,cross_name' },
+      );
+    setSaving(false);
+
+    if (error) {
+      setMessage('No se pudo guardar el cruce pendiente: ' + error.message);
+      return;
+    }
+
+    setUnmappedItems((current) => {
+      const next = current.filter((_, itemIndex) => itemIndex !== index);
+      if (next.length === 0) {
+        setShowUnmappedModal(false);
+        setOpenCategoryIndex(null);
+        setMessage('Cruces pendientes registrados. Ya puedes confirmar la importación.');
+      } else {
+        setMessage(`Quedan ${next.length} SKU sin cruce configurado.`);
+      }
+      return next;
+    });
+    await loadCrossOptions();
   };
 
   const selectFile = () => {
@@ -330,10 +578,9 @@ export default function InventoryCsvUploadScreen() {
         return;
       }
 
-      const reader = new FileReader();
-      reader.onload = () => handleCsvText(file.name, String(reader.result || ''));
-      reader.onerror = () => setMessage('No se pudo leer el archivo CSV.');
-      reader.readAsText(file, 'utf-8');
+      readCsvFileSafe(file)
+        .then((text) => handleCsvText(file.name, text))
+        .catch(() => setMessage('No se pudo leer el archivo CSV.'));
     };
     input.click();
   };
@@ -434,7 +681,7 @@ export default function InventoryCsvUploadScreen() {
     >
       <View style={styles.form}>
         {message ? (
-          <Text style={(missingColumns.length > 0 || warehouseMismatch || errorRows > 0) ? styles.errorText : importConfirmed ? styles.successText : styles.hint}>
+          <Text style={(missingColumns.length > 0 || warehouseMismatch || errorRows > 0 || unmappedItems.length > 0) ? styles.errorText : importConfirmed ? styles.successText : styles.hint}>
             {message}
           </Text>
         ) : null}
@@ -513,6 +760,18 @@ export default function InventoryCsvUploadScreen() {
           </View>
         ) : null}
 
+        {unmappedItems.length > 0 ? (
+          <View style={styles.block}>
+            <Text style={styles.blockTitle}>SKUs sin cruce configurado</Text>
+            <Text style={styles.blockDescription}>
+              Hay {unmappedItems.length} código(s) del CSV que todavía no existen en la base de cruces.
+            </Text>
+            <TouchableOpacity style={[styles.secondaryButton, styles.footerSecondaryButton]} onPress={() => setShowUnmappedModal(true)}>
+              <Text style={styles.secondaryButtonText}>Clasificar ahora</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {previewRows.length > 0 ? (
           <View style={styles.table}>
             <View style={styles.tableRow}>
@@ -564,7 +823,104 @@ export default function InventoryCsvUploadScreen() {
             <Text style={styles.secondaryButtonText}>Siguiente</Text>
           </TouchableOpacity>
         </View>
+
+        <Modal visible={showUnmappedModal} transparent animationType="fade" onRequestClose={() => setShowUnmappedModal(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalCard, { maxWidth: 980, maxHeight: '86%' }]}>
+              <Text style={styles.blockTitle}>Clasificar SKUs nuevos del CSV</Text>
+              <Text style={styles.blockDescription}>
+                Estos códigos se guardarán en la base de cruces antes de confirmar la importación.
+              </Text>
+
+              <ScrollView style={{ maxHeight: 480 }} contentContainerStyle={styles.evidenceMiniCardList}>
+                {unmappedItems.map((item, index) => (
+                  <View key={`unmapped-${item.sku}`} style={[styles.evidenceMiniCard, { zIndex: openCategoryIndex === index ? 20 : 1 }]}>
+                    <View style={styles.evidenceMiniInfo}>
+                      <Text style={styles.evidenceMiniTitle}>{item.sku} · {item.itemDescription}</Text>
+                      <Text style={styles.evidenceMiniMeta}>SKU nuevo detectado en el CSV</Text>
+                    </View>
+
+                    <View style={[styles.evidenceMiniActions, { flex: 1, minWidth: 420 }]}>
+                      <View style={[styles.field, { minWidth: 190, flex: 1, position: 'relative', zIndex: openCategoryIndex === index ? 30 : 1 }]}>
+                        <TouchableOpacity
+                          style={styles.input}
+                          onPress={() => setOpenCategoryIndex(openCategoryIndex === index ? null : index)}
+                        >
+                          <Text style={styles.hint}>{item.selectedCrossName}</Text>
+                        </TouchableOpacity>
+                        {openCategoryIndex === index ? (
+                          <ScrollView
+                            style={[
+                              styles.optionsPanel,
+                              {
+                                position: 'absolute',
+                                top: 44,
+                                left: 0,
+                                right: 0,
+                                maxHeight: 210,
+                                zIndex: 50,
+                                elevation: 6,
+                              },
+                            ]}
+                          >
+                            {crossOptions.map((option) => (
+                              <TouchableOpacity
+                                key={`${item.sku}-${option}`}
+                                style={styles.optionRow}
+                                onPress={() => {
+                                  updateUnmappedItem(index, { selectedCrossName: option });
+                                  setOpenCategoryIndex(null);
+                                }}
+                              >
+                                <Text style={styles.optionTitle}>{option}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
+                        ) : null}
+                      </View>
+
+                      {item.selectedCrossName === 'AGREGAR NUEVO' ? (
+                        <TextInput
+                          value={item.customCrossName}
+                          onChangeText={(value) => updateUnmappedItem(index, { customCrossName: value })}
+                          placeholder="Nuevo cruce"
+                          placeholderTextColor={brandColors.textSecondary}
+                          style={[styles.input, { minWidth: 170, flex: 1 }]}
+                        />
+                      ) : null}
+
+                      <TextInput
+                        value={item.conversionFactor}
+                        onChangeText={(value) => updateUnmappedItem(index, { conversionFactor: value })}
+                        placeholder="Factor"
+                        placeholderTextColor={brandColors.textSecondary}
+                        keyboardType="decimal-pad"
+                        style={[styles.input, { width: 90 }]}
+                      />
+
+                      <TouchableOpacity
+                        disabled={saving}
+                        style={[styles.primaryButton, styles.footerPrimaryButton, saving && styles.disabledButton]}
+                        onPress={() => saveUnmappedItem(index)}
+                      >
+                        <Text style={styles.primaryButtonText}>Guardar</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+
+              <View style={styles.footerActions}>
+                <TouchableOpacity style={[styles.secondaryButton, styles.footerSecondaryButton]} onPress={() => setShowUnmappedModal(false)}>
+                  <Text style={styles.secondaryButtonText}>Cerrar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     </InventoryShell>
   );
 }
+
+

@@ -67,6 +67,11 @@ const resources = [
     route: '/responsables',
   },
   {
+    title: 'Cruces de Inventario',
+    description: 'Cargar y mantener la base maestra de cruces por SKU para informes de inventario.',
+    route: '/modulos/inventarios/cruces-base',
+  },
+  {
     title: 'Invitaciones',
     description: 'Crear, cancelar y revisar invitaciones de nuevos usuarios.',
     route: '/invitaciones',
