@@ -34,6 +34,11 @@ yarn-error.*
 .env
 .env*.local
 
+# local working documents / Supabase CLI cache
+Informe_Ejecutivo_Puesta_en_Marcha_App_Auditoria.docx
+~$*.docx
+supabase/.temp/
+
 # typescript
 *.tsbuildinfo
 

@@ -3,9 +3,11 @@ import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TouchableOpa
 import { useRouter } from 'expo-router';
 import { brandColors } from '../../../constants/theme';
 import { supabase } from '../../../src/supabaseClient';
+import { canAccessInventoryModule } from '../../../src/features/inventory/access';
 
 type ProfileRow = {
   full_name: string;
+  email: string | null;
   role: 'auditor' | 'admin' | 'super_admin';
   region: string;
 };
@@ -73,6 +75,11 @@ const resources = [
     route: '/responsables',
   },
   {
+    title: 'Cruces de Inventario',
+    description: 'Cargar y mantener la base maestra de cruces por SKU para informes de inventario.',
+    route: '/modulos/inventarios/cruces-base',
+  },
+  {
     title: 'Invitaciones',
     description: 'Crear, cancelar y revisar invitaciones de nuevos usuarios.',
     route: '/invitaciones',
@@ -113,7 +120,7 @@ export default function AdministradorRecursosPage() {
 
     const { data, error } = await supabase
       .from('profiles')
-      .select('full_name, role, region')
+      .select('full_name, email, role, region')
       .eq('id', user.id)
       .single<ProfileRow>();
 
@@ -127,6 +134,10 @@ export default function AdministradorRecursosPage() {
   };
 
   const isAdmin = profile?.role === 'admin' || profile?.role === 'super_admin';
+  const visibleResources = resources.filter((resource) => (
+    resource.route !== '/modulos/inventarios/cruces-base'
+      || canAccessInventoryModule(profile?.role, profile?.email)
+  ));
 
   const goToDashboard = () => {
     router.replace('/dashboard');
@@ -279,7 +290,7 @@ export default function AdministradorRecursosPage() {
       {message && <Text style={styles.message}>{message}</Text>}
 
       <View style={styles.grid}>
-        {resources.map((resource) => (
+        {visibleResources.map((resource) => (
           <TouchableOpacity
             key={resource.route}
             style={[styles.card, Platform.OS !== 'web' && resource.route === '/invitaciones' && styles.disabledCard]}

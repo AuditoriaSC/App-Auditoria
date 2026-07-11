@@ -10,6 +10,11 @@ entrypoint = "./functions/finalize-report/index.ts"
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/finalize-report/*.html" ]
 
+[functions.send-inventory-report]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/send-inventory-report/index.ts"
+
 [functions.update-password]
 enabled = true
 verify_jwt = true
