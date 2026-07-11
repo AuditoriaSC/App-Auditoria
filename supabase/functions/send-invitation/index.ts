@@ -161,7 +161,7 @@ Deno.serve(async (req) => {
 
     if (!profile || !['admin', 'super_admin'].includes(profile.role)) return jsonResponse({ error: 'No tienes permisos para enviar invitaciones.' }, 403)
     if (invitationError || !invitation) return jsonResponse({ error: 'Invitacion no encontrada.' }, 404)
-    if (profile.role !== 'super_admin' && profile.region !== invitation.region) return jsonResponse({ error: 'No puedes enviar invitaciones de otra region.' }, 403)
+    if (profile.role !== 'super_admin' && profile.region !== 'Global' && profile.region !== invitation.region) return jsonResponse({ error: 'No puedes enviar invitaciones de otra region.' }, 403)
     if (!invitation.email.toLowerCase().endsWith(CORPORATE_DOMAIN)) return jsonResponse({ error: 'Solo se permiten correos corporativos.' }, 400)
 
     const state = statusOf(invitation)

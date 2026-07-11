@@ -1,7 +1,7 @@
 
 [functions.finalize-report]
 enabled = true
-verify_jwt = false
+verify_jwt = true
 import_map = "./functions/finalize-report/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
@@ -14,3 +14,13 @@ entrypoint = "./functions/finalize-report/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/send-inventory-report/index.ts"
+
+[functions.update-password]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/update-password/index.ts"
+
+[functions.manage-report-edit]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/manage-report-edit/index.ts"

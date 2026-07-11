@@ -44,9 +44,10 @@ export default function UsuariosAdminPage() {
     loadData();
   }, []);
 
-  const isSuperAdmin = currentProfile?.role === 'super_admin' || currentProfile?.region === 'Global';
+  const isSuperAdminRole = currentProfile?.role === 'super_admin';
+  const hasGlobalScope = isSuperAdminRole || currentProfile?.region === 'Global';
   const isAdmin = currentProfile?.role === 'admin' || currentProfile?.role === 'super_admin';
-  const availableRoles = isSuperAdmin ? superAdminRoles : adminRoles;
+  const availableRoles = isSuperAdminRole ? superAdminRoles : adminRoles;
 
   const filteredUsers = useMemo(() => {
     const term = normalize(search);
@@ -136,12 +137,12 @@ export default function UsuariosAdminPage() {
       return;
     }
 
-    if (!isSuperAdmin && draft.region !== currentProfile?.region) {
+    if (!hasGlobalScope && draft.region !== currentProfile?.region) {
       setMessage('Admin solo puede mantener usuarios dentro de su region.');
       return;
     }
 
-    if (!isSuperAdmin && draft.role === 'super_admin') {
+    if (!isSuperAdminRole && draft.role === 'super_admin') {
       setMessage('Admin no puede asignar super_admin.');
       return;
     }
@@ -210,16 +211,30 @@ export default function UsuariosAdminPage() {
     setSavingId(null);
   };
 
+  const sendPasswordReset = async (user: ProfileRow) => {
+    if (!canEditUser(user)) {
+      setMessage('No tienes permisos para gestionar este usuario.');
+      return;
+    }
+    setSavingId(user.id);
+    const redirectTo = `${(process.env.EXPO_PUBLIC_WEB_APP_URL || '').replace(/\/$/, '')}/reset-password`;
+    const { error } = await supabase.auth.resetPasswordForEmail(user.email, { redirectTo });
+    setMessage(error ? 'No se pudo enviar el correo de cambio.' : `Correo de cambio enviado a ${user.email}.`);
+    setSavingId(null);
+  };
+
   const canEditUser = (user: ProfileRow) => {
     if (!currentProfile) return false;
-    if (isSuperAdmin) return true;
-    return currentProfile.role === 'admin' && user.region === currentProfile.region && user.role !== 'super_admin';
+    if (isSuperAdminRole) return true;
+    return currentProfile.role === 'admin'
+      && user.role !== 'super_admin'
+      && (currentProfile.region === 'Global' || user.region === currentProfile.region);
   };
 
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#0f766e" />
+        <ActivityIndicator size="large" color={brandColors.greenDark} />
         <Text style={styles.loadingText}>Cargando usuarios...</Text>
       </View>
     );
@@ -260,7 +275,7 @@ export default function UsuariosAdminPage() {
         />
         <View style={styles.filterRow}>
           <SelectField label="Rol" value={roleFilter} onChange={setRoleFilter} options={roles} />
-          {isSuperAdmin && <SelectField label="Region" value={regionFilter} onChange={setRegionFilter} options={regions} />}
+          {hasGlobalScope && <SelectField label="Region" value={regionFilter} onChange={setRegionFilter} options={regions} />}
           <SelectField label="Estado" value={statusFilter} onChange={setStatusFilter} options={['TODOS', 'ACTIVO', 'INACTIVO']} />
         </View>
       </View>
@@ -311,11 +326,11 @@ export default function UsuariosAdminPage() {
                     <Picker
                       selectedValue={draft.region}
                       onValueChange={(value) => setDraft((current) => ({ ...current, region: String(value) }))}
-                      enabled={isSuperAdmin}
+                      enabled={hasGlobalScope}
                       style={styles.picker}
                       dropdownIconColor={brandColors.greenDark}
                     >
-                      {(isSuperAdmin ? regions.filter((item) => item !== 'TODAS') : [currentProfile?.region || 'Costa']).map((option) => (
+                      {(hasGlobalScope ? regions.filter((item) => item !== 'TODAS') : [currentProfile?.region || 'Costa']).map((option) => (
                         <Picker.Item key={option} label={option} value={option} />
                       ))}
                     </Picker>
@@ -325,6 +340,11 @@ export default function UsuariosAdminPage() {
             )}
 
             <View style={styles.cardActions}>
+              {!editing && editable && (
+                <TouchableOpacity style={styles.secondaryButton} onPress={() => sendPasswordReset(user)} disabled={savingId === user.id}>
+                  <Text style={styles.secondaryButtonText}>Enviar cambio de contraseña</Text>
+                </TouchableOpacity>
+              )}
               {editing ? (
                 <>
                   <TouchableOpacity style={styles.primaryButton} onPress={() => saveUser(user)} disabled={savingId === user.id}>
@@ -407,8 +427,8 @@ const styles = StyleSheet.create({
   filterItem: { minWidth: 170, flexGrow: 1, flexShrink: 0, flexBasis: 170 },
   label: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 6 },
   searchInput: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700' },
-  pickerShell: { minHeight: 56, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.creamSoft, justifyContent: 'center' },
-  picker: { minHeight: 56, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
+  pickerShell: { height: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.creamSoft, justifyContent: 'center', overflow: 'hidden' },
+  picker: { height: 48, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
   card: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 10 },
   disabledCard: { opacity: 0.62, backgroundColor: brandColors.creamSoft },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },

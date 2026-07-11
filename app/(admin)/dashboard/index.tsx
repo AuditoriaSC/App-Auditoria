@@ -4,6 +4,7 @@ import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
 import { brandColors } from '../../../constants/theme';
 import { supabase } from '../../../src/supabaseClient';
+import { downloadReportPdf } from '../../../src/report-document';
 
 type ProfileRow = {
   id: string;
@@ -76,6 +77,8 @@ const monthLabels: Record<string, string> = {
 };
 
 const round = (value: number) => Math.round(value * 100) / 100;
+
+const formatResendCount = (count: number) => `${count} ${count === 1 ? 'vez' : 'veces'}`;
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -429,7 +432,7 @@ function VisitCard({ visit, canDelete, onDelete, onPress }: { visit: VisitRow; c
             <Text style={styles.auditTrailText}>
               {visit.edited_after_send ? 'Editada posterior al envio' : ''}
               {visit.edited_after_send && Number(visit.resent_count || 0) > 0 ? ' · ' : ''}
-              {Number(visit.resent_count || 0) > 0 ? `Reenviada ${visit.resent_count} vez${Number(visit.resent_count || 0) === 1 ? '' : 'es'}` : ''}
+              {Number(visit.resent_count || 0) > 0 ? `Reenviada ${formatResendCount(Number(visit.resent_count))}` : ''}
             </Text>
           )}
         </View>
@@ -440,6 +443,11 @@ function VisitCard({ visit, canDelete, onDelete, onPress }: { visit: VisitRow; c
         <Text style={styles.footerMetric}>{getAuditorName(visit)}</Text>
         <View style={styles.footerActions}>
           <Text style={styles.footerGrade}>{hasGrade ? `Calificacion ${Number(visit.final_grade || 0).toFixed(2)} / 10` : 'Sin calificacion'}</Text>
+          {visibleStatus !== 'EN_PROCESO' && (
+            <TouchableOpacity style={styles.pdfButton} onPress={async (event) => { event.stopPropagation(); try { await downloadReportPdf(visit.id); } catch (error) { alert(error instanceof Error ? error.message : 'No se pudo generar el PDF.'); } }}>
+              <Text style={styles.pdfButtonText}>⇩ PDF</Text>
+            </TouchableOpacity>
+          )}
           {canDelete && (
             <TouchableOpacity
               style={styles.deleteButton}
@@ -607,7 +615,7 @@ function formatTime(date: Date) {
 
 const styles = StyleSheet.create({
   container: { padding: 14, paddingBottom: 36, backgroundColor: brandColors.background, width: '100%', maxWidth: 980, alignSelf: 'center' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.creamSoft },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.background },
   loadingText: { marginTop: 8, color: brandColors.textSecondary },
   errorText: { color: brandColors.danger, fontWeight: '700', textAlign: 'center', marginBottom: 12 },
   hero: { backgroundColor: brandColors.greenDark, borderWidth: 1, borderColor: brandColors.greenDark, borderRadius: 8, padding: 16, marginBottom: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
@@ -636,8 +644,8 @@ const styles = StyleSheet.create({
   filterItem: { minWidth: 152, flexGrow: 1, flexShrink: 0, flexBasis: 152 },
   searchItem: { width: '100%' },
   label: { fontSize: 12, fontWeight: '800', color: brandColors.textSecondary, marginBottom: 6 },
-  pickerShell: { minHeight: 56, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.white, justifyContent: 'center' },
-  picker: { minHeight: 56, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.white },
+  pickerShell: { height: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.white, justifyContent: 'center', overflow: 'hidden' },
+  picker: { height: 48, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.white },
   searchInput: { minHeight: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.textPrimary, fontWeight: '700' },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, marginBottom: 10 },
   sectionTitle: { fontSize: 17, color: brandColors.textPrimary, fontWeight: '900' },
@@ -664,6 +672,8 @@ const styles = StyleSheet.create({
   footerMetric: { flex: 1, color: '#0f172a', fontWeight: '800' },
   footerGrade: { color: '#0f766e', fontWeight: '900' },
   footerActions: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' },
+  pdfButton: { borderWidth: 1, borderColor: brandColors.greenDark, backgroundColor: brandColors.greenSoft, borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10 },
+  pdfButtonText: { color: brandColors.greenDark, fontSize: 12, fontWeight: '900' },
   deleteButton: { borderWidth: 1, borderColor: '#fecaca', backgroundColor: '#fff1f2', borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10 },
   deleteButtonText: { color: '#be123c', fontSize: 12, fontWeight: '900' },
   summaryList: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dde5eb', borderRadius: 8, paddingHorizontal: 14, marginBottom: 18 },

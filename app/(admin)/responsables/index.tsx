@@ -71,10 +71,12 @@ export default function ResponsablesAdminPage() {
     return responsibles.filter((responsible) => {
       const matchesSearch =
         !term || normalize(`${responsible.responsible_code} ${responsible.responsible_name}`).includes(term);
-      const matchesRegion = regionFilter === 'TODAS' || responsible.region === regionFilter;
+      const matchesRegion = regionFilter === 'TODAS'
+        || responsible.region === regionFilter
+        || (!isSuperAdmin && responsible.region === null);
       return matchesSearch && matchesRegion;
     });
-  }, [regionFilter, responsibles, search]);
+  }, [isSuperAdmin, regionFilter, responsibles, search]);
 
   const loadData = async () => {
     setLoading(true);
@@ -252,7 +254,7 @@ export default function ResponsablesAdminPage() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#0f766e" />
+        <ActivityIndicator size="large" color={brandColors.greenDark} />
         <Text style={styles.loadingText}>Cargando responsables...</Text>
       </View>
     );
@@ -502,8 +504,8 @@ const styles = StyleSheet.create({
   filterItem: { minWidth: 170, flexGrow: 1, flexShrink: 0, flexBasis: 170 },
   label: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 6 },
   searchInput: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700' },
-  pickerShell: { minHeight: 56, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.creamSoft, justifyContent: 'center' },
-  picker: { minHeight: 56, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
+  pickerShell: { height: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.creamSoft, justifyContent: 'center', overflow: 'hidden' },
+  picker: { height: 48, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
   summaryCard: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 14 },
   summaryTitle: { color: brandColors.textPrimary, fontWeight: '900', marginBottom: 4 },
   summaryText: { color: brandColors.textSecondary, fontWeight: '800' },

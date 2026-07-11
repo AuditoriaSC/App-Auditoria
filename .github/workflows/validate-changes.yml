@@ -20,12 +20,18 @@ jobs:
     name: Validar aplicación
     runs-on: ubuntu-latest
 
+    env:
+      EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+      EXPO_PUBLIC_WEB_APP_URL: https://auditoriasc--preview.expo.app
+      EXPO_PUBLIC_ANDROID_DOWNLOAD_URL: ${{ secrets.EXPO_PUBLIC_ANDROID_DOWNLOAD_URL }}
+
     steps:
       - name: Clonar repositorio
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Configurar Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22.13.x
           cache: npm

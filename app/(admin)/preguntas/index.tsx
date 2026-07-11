@@ -97,11 +97,13 @@ export default function GestionPreguntasPage() {
     return questions.filter((question) => {
       const matchesSearch = !term || normalize(question.question_text).includes(term);
       const matchesVisit = visitFilter === allOption || question.visit_type_id === visitFilter;
-      const matchesRegion = regionFilter === allOption || question.region === regionFilter;
+      const matchesRegion = regionFilter === allOption
+        || question.region === regionFilter
+        || (!isSuperAdmin && question.region === 'Global');
       const matchesType = typeFilter === allOption || (question.question_type || 'compliance') === typeFilter;
       return matchesSearch && matchesVisit && matchesRegion && matchesType;
     });
-  }, [questions, regionFilter, search, typeFilter, visitFilter]);
+  }, [isSuperAdmin, questions, regionFilter, search, typeFilter, visitFilter]);
 
   const loadData = async () => {
     setLoading(true);
@@ -144,7 +146,7 @@ export default function GestionPreguntasPage() {
       .order('created_at', { ascending: true });
 
     if (profileData.role !== 'super_admin' && profileData.region !== 'Global') {
-      query = query.eq('region', profileData.region);
+      query = query.in('region', [profileData.region, 'Global']);
     }
 
     const { data, error } = await query;
@@ -159,6 +161,10 @@ export default function GestionPreguntasPage() {
   };
 
   const startEdit = (question: QuestionRow) => {
+    if (!isSuperAdmin && question.region === 'Global') {
+      setMessage('Las preguntas globales son visibles para Costa y Sierra, pero solo pueden modificarse con alcance Global.');
+      return;
+    }
     setEditingId(question.id);
     setDraft({
       question_text: question.question_text,
@@ -284,6 +290,10 @@ export default function GestionPreguntasPage() {
   };
 
   const toggleQuestion = async (question: QuestionRow) => {
+    if (!isSuperAdmin && question.region === 'Global') {
+      setMessage('Solo un administrador con alcance Global puede cambiar el estado de una pregunta global.');
+      return;
+    }
     const action = question.is_active ? 'desactivar' : 'activar';
     const confirmed = typeof window === 'undefined'
       ? true
@@ -312,7 +322,7 @@ export default function GestionPreguntasPage() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#0f766e" />
+        <ActivityIndicator size="large" color={brandColors.greenDark} />
         <Text style={styles.loadingText}>Cargando preguntas...</Text>
       </View>
     );
@@ -380,6 +390,7 @@ export default function GestionPreguntasPage() {
 
       {filteredQuestions.map((question) => {
         const editing = editingId === question.id;
+        const canEditQuestion = isSuperAdmin || question.region !== 'Global';
         return (
           <View key={question.id} style={[styles.card, !question.is_active && styles.disabledCard]}>
             <View style={styles.cardHeader}>
@@ -402,7 +413,7 @@ export default function GestionPreguntasPage() {
               </View>
               <View style={styles.statusColumn}>
                 <Text style={styles.statusText}>{question.is_active ? 'Activa' : 'Inactiva'}</Text>
-                <Switch value={question.is_active} onValueChange={() => toggleQuestion(question)} disabled={savingId === question.id} />
+                <Switch value={question.is_active} onValueChange={() => toggleQuestion(question)} disabled={!canEditQuestion || savingId === question.id} />
               </View>
             </View>
 
@@ -419,9 +430,13 @@ export default function GestionPreguntasPage() {
                   </TouchableOpacity>
                 </>
               ) : (
-                <TouchableOpacity style={styles.secondaryButton} onPress={() => startEdit(question)}>
-                  <Text style={styles.secondaryButtonText}>Editar</Text>
-                </TouchableOpacity>
+                canEditQuestion ? (
+                  <TouchableOpacity style={styles.secondaryButton} onPress={() => startEdit(question)}>
+                    <Text style={styles.secondaryButtonText}>Editar</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={styles.meta}>Global · solo lectura</Text>
+                )
               )}
             </View>
           </View>
@@ -606,8 +621,8 @@ const styles = StyleSheet.create({
   filterItem: { flexGrow: 1, flexShrink: 0, flexBasis: 170, minWidth: 170 },
   label: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 6 },
   searchInput: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700' },
-  pickerShell: { minHeight: 56, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.creamSoft, justifyContent: 'center' },
-  picker: { minHeight: 56, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
+  pickerShell: { height: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.creamSoft, justifyContent: 'center', overflow: 'hidden' },
+  picker: { height: 48, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
   card: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 10 },
   createCard: { borderColor: brandColors.green, borderWidth: 2 },
   formTitle: { color: brandColors.greenDark, fontSize: 18, fontWeight: '900', marginBottom: 12 },

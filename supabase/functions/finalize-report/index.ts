@@ -34,6 +34,7 @@ type QuestionType = 'compliance' | 'cash_count' | 'pending_deposit' | 'inventory
 
 type ReportRow = {
   id: string
+  user_id: string | null
   region: string | null
   visit_type_id: string | null
   status: string | null
@@ -117,6 +118,36 @@ function formatTime(value?: string | null) {
 function formatNumber(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return ''
   return Number(value).toFixed(2)
+}
+
+function renderGradeBadge(gradeValue: number | null | undefined) {
+  const grade = Math.max(0, Math.min(10, Number(gradeValue || 0)))
+  const tone = grade <= 5
+    ? { background: '#FDE8E7', border: '#B23B32', color: '#8F251F' }
+    : grade <= 7
+      ? { background: '#FFF4CC', border: '#D99A00', color: '#775000' }
+      : { background: '#E2F3E8', border: '#1F6B47', color: '#165034' }
+
+  return `<span style="display:inline-block; padding:4px 9px; border:1px solid ${tone.border}; border-radius:6px; background:${tone.background}; color:${tone.color}; font-family:inherit; font-size:inherit; line-height:inherit; font-weight:700;">${formatNumber(grade)} / 10</span>`
+}
+
+function evidencePath(reference: string | null) {
+  if (!reference) return null
+  for (const marker of ['/storage/v1/object/public/evidencias/', '/storage/v1/object/sign/evidencias/']) {
+    const index = reference.indexOf(marker)
+    if (index >= 0) return decodeURIComponent(reference.slice(index + marker.length).split('?')[0])
+  }
+  return reference.replace(/^evidencias:\/\//, '')
+}
+
+async function signedEvidenceReference(supabase: ReturnType<typeof createClient>, reference: string | null) {
+  const path = evidencePath(reference)
+  if (!path) return null
+  // El correo conserva acceso por 180 dias. La app almacena la ruta original y
+  // puede regenerar una URL nueva para evidencias historicas cuando sea necesario.
+  const { data, error } = await supabase.storage.from('evidencias').createSignedUrl(path, 60 * 60 * 24 * 180)
+  if (error) throw new Error(`No se pudo autorizar una evidencia: ${error.message}`)
+  return data.signedUrl
 }
 
 function parseEmailList(value?: string | null) {
@@ -407,7 +438,7 @@ function renderNoveltySection(answers: AnswerRow[]) {
   `).join('')
 }
 
-function buildHeaderTable(report: ReportRow, scoreText: string) {
+function buildHeaderTable(report: ReportRow) {
   const local = report.local_name_snapshot || report.locales?.nombre_local || report.local_codigo || 'Sin local'
   const localWithCode = report.local_code_snapshot ? `${report.local_code_snapshot} · ${local}` : local
   const responsible = report.responsible_code
@@ -415,22 +446,22 @@ function buildHeaderTable(report: ReportRow, scoreText: string) {
     : report.responsible_name_snapshot || 'Responsable'
 
   const rows = [
-    ['Local', localWithCode],
-    ['Fecha', formatDate(report.start_date)],
-    ['Auditor', report.auditor_name_snapshot || report.profiles?.full_name || 'Auditor'],
-    ['Hora Inicio', formatTime(report.start_time)],
-    ['Responsable Auditado', responsible],
-    ['Hora de Término', formatTime(report.end_time)],
-    ['Calificación', scoreText],
+    { label: 'Local', value: localWithCode },
+    { label: 'Fecha', value: formatDate(report.start_date) },
+    { label: 'Auditor', value: report.auditor_name_snapshot || report.profiles?.full_name || 'Auditor' },
+    { label: 'Hora Inicio', value: formatTime(report.start_time) },
+    { label: 'Responsable Auditado', value: responsible },
+    { label: 'Hora de Finalización', value: formatTime(report.end_time) },
+    { label: 'Calificación', value: renderGradeBadge(report.final_grade), isHtml: true },
   ]
 
   return `
     <table style="width:100%; border-collapse:collapse; margin:14px 0 18px 0; font-size:16px;">
       <tbody>
-        ${rows.map(([label, value]) => `
+        ${rows.map(({ label, value, isHtml }) => `
           <tr>
             <td style="width:38%; border:1px solid ${emailColors.border}; padding:8px; background:${emailColors.cream}; font-weight:700;">${escapeHtml(label)}</td>
-            <td style="border:1px solid ${emailColors.border}; padding:8px;">${escapeHtml(value)}</td>
+            <td style="border:1px solid ${emailColors.border}; padding:8px;">${isHtml ? value : escapeHtml(value)}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -472,6 +503,10 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const authHeader = req.headers.get('Authorization') || ''
+    const token = authHeader.replace(/^Bearer\s+/i, '')
+    if (!token) throw new Error('AUTH_REQUIRED')
+
     const { reportId, isResend } = await req.json()
     if (!reportId) throw new Error('Falta el parametro reportId obligatorio.')
     console.log('finalize-report:start', { reportId })
@@ -482,13 +517,26 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
+    const { data: userData, error: userError } = await supabase.auth.getUser(token)
+    if (userError || !userData.user) throw new Error('AUTH_REQUIRED')
+
+    const { data: caller } = await supabase
+      .from('profiles')
+      .select('id, role, region, is_active')
+      .eq('id', userData.user.id)
+      .single<{ id: string; role: string; region: string; is_active: boolean }>()
+    if (!caller?.is_active) throw new Error('AUTH_FORBIDDEN')
+
     const { data: report, error: errReport } = await supabase
       .from('audit_reports')
-      .select('id, region, visit_type_id, status, final_grade, final_percentage, local_codigo, local_code_snapshot, local_name_snapshot, auditor_name_snapshot, responsible_code, responsible_name_snapshot, start_date, start_time, end_time, should_send, edited_after_send, last_edit_reason, last_edited_at, resent_count, last_resent_at, signature_auditor_url, signature_responsible_url, auditor_signature_url, responsible_signature_url, profiles!audit_reports_user_id_fkey(full_name, email), locales(nombre_local)')
+      .select('id, user_id, region, visit_type_id, status, final_grade, final_percentage, local_codigo, local_code_snapshot, local_name_snapshot, auditor_name_snapshot, responsible_code, responsible_name_snapshot, start_date, start_time, end_time, should_send, edited_after_send, last_edit_reason, last_edited_at, resent_count, last_resent_at, signature_auditor_url, signature_responsible_url, auditor_signature_url, responsible_signature_url, profiles!audit_reports_user_id_fkey(full_name, email), locales(nombre_local)')
       .eq('id', reportId)
       .single<ReportRow>()
 
     if (errReport || !report) throw new Error(`Reporte no encontrado: ${errReport?.message}`)
+    const ownsReport = report.user_id === caller.id
+    const managesRegion = ['admin', 'super_admin'].includes(caller.role) && (caller.role === 'super_admin' || caller.region === 'Global' || caller.region === report.region)
+    if (!ownsReport && !managesRegion) throw new Error('AUTH_FORBIDDEN')
     const recipients = reportRecipients(report)
     console.log('finalize-report:report-loaded', {
       reportId,
@@ -526,17 +574,17 @@ Deno.serve(async (req) => {
 
     if (errAnswers) throw new Error(`Error leyendo respuestas: ${errAnswers.message}`)
 
-    const finalAnswers = ((answers || []) as AnswerRow[]).sort(compareAnswerOrder)
-    const obtained = finalAnswers.reduce((total, answer) => total + obtainedPoints(answer), 0)
-    const possible = finalAnswers.reduce((total, answer) => total + possiblePoints(answer), 0)
-    const scoreText = `${formatNumber(obtained)} / ${formatNumber(possible)} puntos`
+    const finalAnswers = await Promise.all(((answers || []) as AnswerRow[]).sort(compareAnswerOrder).map(async (answer) => ({
+      ...answer,
+      evidence_url: await signedEvidenceReference(supabase, answer.evidence_url),
+    })))
     const visitType = report.visit_type_id || 'Visita'
     const localName = report.local_name_snapshot || report.locales?.nombre_local || report.local_codigo || 'Local'
     const localCode = report.local_code_snapshot || report.local_codigo || ''
     const sentDate = formatSentDate()
     const subject = `REPORTE DE VISITA ${visitType.toUpperCase()} LOCAL ${localName.toUpperCase()}${localCode ? ` ${localCode.toUpperCase()}` : ''} ENVIADO EL ${sentDate}`
-    const auditorSignatureUrl = report.auditor_signature_url || report.signature_auditor_url
-    const responsibleSignatureUrl = report.responsible_signature_url || report.signature_responsible_url
+    const auditorSignatureUrl = await signedEvidenceReference(supabase, report.auditor_signature_url || report.signature_auditor_url)
+    const responsibleSignatureUrl = await signedEvidenceReference(supabase, report.responsible_signature_url || report.signature_responsible_url)
 
     const questionDetails = finalAnswers
       .filter((answer) => questionType(answer) !== 'additional_novelty')
@@ -555,14 +603,14 @@ Deno.serve(async (req) => {
         <div style="background:${emailColors.greenDark}; color:${emailColors.logoWhite}; border-radius:12px 12px 0 0; padding:16px 24px;">
           <table role="presentation" style="width:100%; border-collapse:collapse;"><tr><td style="vertical-align:middle; text-align:left; padding-right:18px;">
           <h2 style="margin:0; font-size:22px; color:${emailColors.white};">Reporte de visita ${escapeHtml(visitType)}</h2>
-          <p style="margin:8px 0 0 0; color:${emailColors.logoWhite};">${escapeHtml(localName)}${localCode ? ` · ${escapeHtml(localCode)}` : ''} · ${scoreText}</p>
+          <p style="margin:8px 0 0 0; color:${emailColors.logoWhite};">${escapeHtml(localName)}${localCode ? ` · ${escapeHtml(localCode)}` : ''}</p>
           </td><td style="width:230px; vertical-align:middle; text-align:right;">${renderReportLogo()}</td></tr></table>
         </div>
         <div style="background:${emailColors.white}; border:1px solid ${emailColors.border}; border-top:0; border-radius:0 0 12px 12px; padding:28px;">
           <p style="margin:0 0 12px 0;">Buen Día Estimados,</p>
           <p style="margin:0 0 12px 0;">A continuación se presenta el resultado de la visita ${escapeHtml(visitType)} realizada:</p>
 
-          ${buildHeaderTable(report, scoreText)}
+          ${buildHeaderTable(report)}
           ${renderEditTracking(report, Boolean(isResend))}
 
           <h3 style="margin:18px 0 10px 0; color:${emailColors.greenDark};">Detalle de preguntas</h3>
@@ -630,6 +678,11 @@ Deno.serve(async (req) => {
     const message = error instanceof Error ? error.message : String(error)
     console.error('finalize-report:error', { message })
     const friendlyMessage =
+      message === 'AUTH_REQUIRED'
+        ? 'Tu sesión venció. Inicia sesión nuevamente.'
+        : message === 'AUTH_FORBIDDEN'
+          ? 'No tienes permiso para finalizar este informe.'
+          :
       message === 'CONFIG_RESEND_API_KEY'
         ? 'No se pudo enviar el correo porque falta configurar Resend.'
         : message === 'CONFIG_REPORT_TO_EMAILS'
@@ -640,7 +693,7 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({ success: false, error: friendlyMessage }), {
       headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      status: 500,
+      status: message === 'AUTH_REQUIRED' ? 401 : message === 'AUTH_FORBIDDEN' ? 403 : 500,
     })
   }
 })

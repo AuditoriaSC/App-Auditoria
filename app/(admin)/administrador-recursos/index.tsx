@@ -13,6 +13,7 @@ type ProfileRow = {
 type ExportReportRow = {
   id: string;
   region: string | null;
+  visit_type_id: string | null;
   local_name_snapshot: string | null;
   local_code_snapshot: string | null;
   auditor_name_snapshot: string | null;
@@ -21,6 +22,11 @@ type ExportReportRow = {
   final_grade: number | null;
   status: string | null;
   should_send: boolean | null;
+  edited_after_send: boolean | null;
+  last_edit_reason: string | null;
+  last_edited_at: string | null;
+  resent_count: number | null;
+  last_resent_at: string | null;
   created_at: string | null;
   locales?: { nombre_local: string | null; codigo_interno: string | null } | { nombre_local: string | null; codigo_interno: string | null }[] | null;
   profiles?: { full_name: string | null } | { full_name: string | null }[] | null;
@@ -81,6 +87,11 @@ const resources = [
     description: 'Administrar roles, regiones y estado de usuarios existentes.',
     route: '/usuarios',
   },
+  {
+    title: 'Solicitudes de recalificacion',
+    description: 'Aprobar o rechazar cambios que modifican la calificacion de una visita.',
+    route: '/solicitudes-edicion',
+  },
 ];
 
 export default function AdministradorRecursosPage() {
@@ -138,7 +149,7 @@ export default function AdministradorRecursosPage() {
 
     let reportQuery = supabase
       .from('audit_reports')
-      .select('id, region, local_name_snapshot, local_code_snapshot, auditor_name_snapshot, responsible_name_snapshot, start_date, final_grade, status, should_send, created_at, locales(nombre_local, codigo_interno), profiles!audit_reports_user_id_fkey(full_name)')
+      .select('id, region, visit_type_id, local_name_snapshot, local_code_snapshot, auditor_name_snapshot, responsible_name_snapshot, start_date, final_grade, status, should_send, edited_after_send, last_edit_reason, last_edited_at, resent_count, last_resent_at, created_at, locales(nombre_local, codigo_interno), profiles!audit_reports_user_id_fkey(full_name)')
       .eq('status', 'finalized')
       .order('start_date', { ascending: false })
       .order('created_at', { ascending: false });
@@ -188,10 +199,11 @@ export default function AdministradorRecursosPage() {
       'Nombre del Auditor',
       'Fecha de Visita',
       'Nombre del Responsable',
+      'Tipo de Visita',
       'Calificacion Obtenida',
     ];
     const dynamicColumns = buildDynamicColumns(answersByReport);
-    const headers = [...baseHeaders, ...dynamicColumns.map((column) => column.header), 'Status de Envio'];
+    const headers = [...baseHeaders, ...dynamicColumns.map((column) => column.header), 'Status de Envio', 'Editado Posterior al Envio', 'Motivo Ultima Edicion', 'Fecha Ultima Edicion', 'Cantidad Reenvios', 'Fecha Ultimo Reenvio'];
 
     const rows = reports.map((report) => {
       const answers = answersByReport[report.id] || [];
@@ -204,9 +216,15 @@ export default function AdministradorRecursosPage() {
         report.auditor_name_snapshot || getRelationValue(report.profiles, 'full_name') || '',
         report.start_date || formatDateForCsv(report.created_at),
         report.responsible_name_snapshot || '',
+        report.visit_type_id || '',
         report.final_grade == null ? '' : Number(report.final_grade).toFixed(2),
         ...answerColumns,
         formatSendStatus(report),
+        report.edited_after_send ? 'SI' : 'NO',
+        report.last_edit_reason || '',
+        report.last_edited_at || '',
+        String(report.resent_count || 0),
+        report.last_resent_at || '',
       ];
     });
 
@@ -219,7 +237,7 @@ export default function AdministradorRecursosPage() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#0f766e" />
+        <ActivityIndicator size="large" color={brandColors.greenDark} />
         <Text style={styles.loadingText}>Cargando recursos...</Text>
       </View>
     );

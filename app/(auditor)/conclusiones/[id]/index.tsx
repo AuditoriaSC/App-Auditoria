@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { brandColors } from '../../../../constants/theme';
+import { useDashboardBackHandler } from '../../../../src/navigation/useDashboardBackHandler';
 import { supabase } from '../../../../src/supabaseClient';
 import SignaturePad, { SignatureInputType } from '../../../../src/features/audits/components/signature-pad';
 
@@ -47,6 +47,10 @@ function dateToTime(date: Date) {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function dateToIsoDate(date: Date) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 function roundToTwo(value: number) {
   return Math.round(value * 100) / 100;
 }
@@ -61,14 +65,15 @@ function isScoredAnswer(answer: AnswerRecord) {
 export default function FinalizarReportePage() {
   const router = useRouter();
   const { id: reportId, region } = useLocalSearchParams();
+  useDashboardBackHandler();
+  const goToDashboard = () => router.replace('/dashboard');
 
   const [loading, setLoading] = useState(true);
   const [rawAnswers, setRawAnswers] = useState<AnswerRecord[]>([]);
   const [weightedScore, setWeightedScore] = useState(0);
   const [maxScore, setMaxScore] = useState(0);
   const [reportSnapshot, setReportSnapshot] = useState<ReportSnapshot | null>(null);
-  const [endTime, setEndTime] = useState(dateToTime(new Date()));
-  const [showEndTimePicker, setShowEndTimePicker] = useState(false);
+  const completionPreview = useMemo(() => new Date(), []);
   const [isSaving, setIsSaving] = useState(false);
   const [scrollEnabled, setScrollEnabled] = useState(true);
 
@@ -131,12 +136,7 @@ export default function FinalizarReportePage() {
     return code ? `${code} · ${name}` : name;
   }, [reportSnapshot]);
 
-  const canFinalize = Boolean(endTime.trim()) && Boolean(auditorSignature) && shouldSend !== null && rawAnswers.length > 0;
-
-  const handleEndTimeChange = (_event: DateTimePickerEvent, date?: Date) => {
-    if (Platform.OS !== 'ios') setShowEndTimePicker(false);
-    if (date) setEndTime(dateToTime(date));
-  };
+  const canFinalize = Boolean(auditorSignature) && shouldSend !== null && rawAnswers.length > 0;
 
   const base64ToArrayBuffer = (signatureData: string) => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
@@ -167,20 +167,21 @@ export default function FinalizarReportePage() {
       : await fetch(signatureData).then((response) => response.arrayBuffer());
     const { error } = await supabase.storage.from('evidencias').upload(path, uploadBody, { contentType, upsert: true });
     if (error) throw error;
-    const { data: { publicUrl } } = supabase.storage.from('evidencias').getPublicUrl(path);
-    return publicUrl;
+    return path;
   };
 
   const handleFinalizarReporte = async () => {
     if (!canFinalize || !auditorSignature || !auditorSignatureType) {
-      alert('Completa hora de culminacion, firma del auditor y la opcion Enviar.');
+      alert('Completa la firma del auditor y la opción Enviar.');
       return;
     }
 
     setIsSaving(true);
     try {
+      const completedAt = new Date();
+      const endTime = dateToTime(completedAt);
       const folderRegion = String(region || 'general').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      const folderDate = new Date().toISOString().slice(0, 10);
+      const folderDate = completedAt.toISOString().slice(0, 10);
       const storageBasePath = `${folderRegion}/${folderDate}/${reportId}/firmas`;
 
       const pathAuditor = `${storageBasePath}/firma_auditor.png`;
@@ -202,7 +203,7 @@ export default function FinalizarReportePage() {
         numeric_value_current: answer.numeric_value_current ?? null,
         numeric_value_previous: answer.numeric_value_previous ?? null,
         numeric_items: answer.numeric_items ?? [],
-        created_at: new Date().toISOString(),
+        created_at: completedAt.toISOString(),
       }));
 
       const { error: errInsertAnswers } = await supabase
@@ -226,7 +227,7 @@ export default function FinalizarReportePage() {
           final_percentage: finalScorePercentage,
           final_grade: finalGradeBaseTen,
           status: 'finalized',
-          updated_at: new Date().toISOString(),
+          updated_at: completedAt.toISOString(),
         })
         .eq('id', reportId);
 
@@ -271,7 +272,7 @@ export default function FinalizarReportePage() {
   };
 
   if (loading) {
-    return <View style={styles.center}><ActivityIndicator size="large" /><Text style={styles.textStyle}>Preparando cierre...</Text></View>;
+    return <View style={styles.center}><ActivityIndicator size="large" color={brandColors.greenDark} /><Text style={styles.textStyle}>Preparando cierre...</Text></View>;
   }
 
   return (
@@ -282,7 +283,12 @@ export default function FinalizarReportePage() {
       contentInsetAdjustmentBehavior="automatic"
       scrollEnabled={scrollEnabled}
     >
-      <Text style={styles.title}>Cierre de auditoria</Text>
+      <View style={styles.headerRow}>
+        <Text style={styles.title}>Cierre de auditoria</Text>
+        <TouchableOpacity style={styles.backButton} onPress={goToDashboard} accessibilityLabel="Volver al Dashboard">
+          <Text style={styles.backButtonText}>⌂</Text>
+        </TouchableOpacity>
+      </View>
 
       <View style={styles.card}>
         <Text style={styles.cardLabel}>Calificacion</Text>
@@ -290,8 +296,9 @@ export default function FinalizarReportePage() {
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardLabel}>Hora de culminacion</Text>
-        <TimeField value={endTime} visible={showEndTimePicker} onOpen={() => setShowEndTimePicker(true)} onChange={handleEndTimeChange} onWebChange={setEndTime} />
+        <Text style={styles.cardLabel}>Fecha y hora de culminación</Text>
+        <Text style={styles.timeValue}>{dateToIsoDate(completionPreview)} · {dateToTime(completionPreview)}</Text>
+        <Text style={styles.clockHint}>Se registrarán automáticamente al finalizar</Text>
       </View>
 
       <View style={styles.card}>
@@ -360,48 +367,6 @@ export default function FinalizarReportePage() {
   );
 }
 
-function TimeField({
-  value,
-  visible,
-  onOpen,
-  onChange,
-  onWebChange,
-}: {
-  value: string;
-  visible: boolean;
-  onOpen: () => void;
-  onChange: (event: DateTimePickerEvent, date?: Date) => void;
-  onWebChange: (value: string) => void;
-}) {
-  if (Platform.OS === 'web') {
-    return React.createElement('input', {
-      type: 'time',
-      value,
-      onChange: (event: React.ChangeEvent<HTMLInputElement>) => onWebChange(event.target.value),
-      style: webInputStyle,
-    });
-  }
-
-  return (
-    <View>
-      <TouchableOpacity style={styles.timeButton} onPress={onOpen}>
-        <Text style={styles.timeValue}>{value}</Text>
-      </TouchableOpacity>
-      {visible && (
-        <DateTimePicker
-          value={new Date(`2026-01-01T${value || '00:00'}:00`)}
-          mode="time"
-          display="clock"
-          onChange={onChange}
-          is24Hour
-          positiveButton={{ label: 'Aceptar', textColor: brandColors.greenDark }}
-          negativeButton={{ label: 'Cancelar', textColor: brandColors.greenDark }}
-        />
-      )}
-    </View>
-  );
-}
-
 function ColorPicker({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
     <View style={styles.colorSection}>
@@ -422,30 +387,20 @@ function ColorPicker({ label, value, onChange }: { label: string; value: string;
   );
 }
 
-const webInputStyle = {
-  width: '100%',
-  height: 48,
-  border: '1px solid #cbd5e1',
-  borderRadius: 8,
-  boxSizing: 'border-box',
-  padding: '0 12px',
-  fontSize: 16,
-  fontWeight: 800,
-  color: brandColors.textPrimary,
-  backgroundColor: brandColors.white,
-};
-
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: brandColors.background },
   container: { padding: 18, paddingBottom: 44, maxWidth: 620, alignSelf: 'center', width: '100%', backgroundColor: brandColors.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.background },
   textStyle: { marginTop: 8, color: brandColors.textSecondary },
-  title: { fontSize: 22, fontWeight: '900', color: brandColors.textPrimary, marginBottom: 14 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14, flexWrap: 'wrap' },
+  title: { fontSize: 22, fontWeight: '900', color: brandColors.textPrimary },
+  backButton: { width: 42, height: 42, borderRadius: 21, borderWidth: 1, borderColor: brandColors.greenDark, backgroundColor: brandColors.greenSoft, alignItems: 'center', justifyContent: 'center' },
+  backButtonText: { color: brandColors.greenDark, fontSize: 23, lineHeight: 25, fontWeight: '900' },
   card: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 14 },
   cardLabel: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 8 },
   scoreText: { fontSize: 28, fontWeight: '900', color: brandColors.textPrimary },
-  timeButton: { minHeight: 50, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, justifyContent: 'center', paddingHorizontal: 12, backgroundColor: brandColors.white },
   timeValue: { fontSize: 18, fontWeight: '900', color: brandColors.textPrimary },
+  clockHint: { color: brandColors.textSecondary, fontSize: 12, fontWeight: '700', marginTop: 5 },
   colorSection: { marginBottom: 10 },
   colorGroup: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   colorButton: { width: 34, height: 34, borderWidth: 2, borderColor: '#dbe4ea', borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: brandColors.creamSoft },

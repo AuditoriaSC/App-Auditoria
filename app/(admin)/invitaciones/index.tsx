@@ -50,8 +50,9 @@ export default function GestionInvitacionesPage() {
   }, []);
 
   const isAdmin = profile?.role === 'admin' || profile?.role === 'super_admin';
-  const isSuperAdmin = profile?.role === 'super_admin' || profile?.region === 'Global';
-  const allowedRoles = isSuperAdmin ? superAdminRoles : adminRoles;
+  const isSuperAdminRole = profile?.role === 'super_admin';
+  const hasGlobalScope = isSuperAdminRole || profile?.region === 'Global';
+  const allowedRoles = isSuperAdminRole ? superAdminRoles : adminRoles;
 
   const goToDashboard = () => {
     if (router.canGoBack()) router.back();
@@ -137,7 +138,7 @@ export default function GestionInvitacionesPage() {
       return;
     }
 
-    if (role === 'super_admin' && !isSuperAdmin) {
+    if (role === 'super_admin' && !isSuperAdminRole) {
       setMessage('Solo super_admin puede invitar otro super_admin.');
       return;
     }
@@ -147,7 +148,7 @@ export default function GestionInvitacionesPage() {
       return;
     }
 
-    if (!isSuperAdmin && region !== profile?.region) {
+    if (!hasGlobalScope && region !== profile?.region) {
       setMessage('Solo puedes invitar usuarios para tu region.');
       return;
     }
@@ -253,7 +254,7 @@ export default function GestionInvitacionesPage() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#0f766e" />
+        <ActivityIndicator size="large" color={brandColors.greenDark} />
         <Text style={styles.loadingText}>Cargando invitaciones...</Text>
       </View>
     );
@@ -318,11 +319,11 @@ export default function GestionInvitacionesPage() {
             <Picker
               selectedValue={region}
               onValueChange={(value) => setRegion(String(value))}
-              enabled={isSuperAdmin}
+              enabled={hasGlobalScope}
               style={styles.picker}
               dropdownIconColor={brandColors.greenDark}
             >
-              {(isSuperAdmin ? regions : [profile?.region || 'Costa']).map((option) => (
+              {(hasGlobalScope ? regions : [profile?.region || 'Costa']).map((option) => (
                 <Picker.Item key={option} label={option} value={option} />
               ))}
             </Picker>
@@ -491,8 +492,8 @@ const styles = StyleSheet.create({
   helperText: { color: brandColors.textSecondary, fontWeight: '700', lineHeight: 18, marginBottom: 14, textAlign: 'center' },
   input: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700', flex: 1, minWidth: 220 },
   searchInput: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700' },
-  pickerShell: { minHeight: 56, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.creamSoft, justifyContent: 'center', flex: 1, minWidth: 170 },
-  picker: { minHeight: 56, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
+  pickerShell: { height: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.creamSoft, justifyContent: 'center', overflow: 'hidden', flexGrow: 1, flexShrink: 1, flexBasis: 170, minWidth: 170 },
+  picker: { height: 48, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
   card: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', gap: 10, alignItems: 'center' },
   cardText: { flex: 1 },
   cardTitle: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 15 },

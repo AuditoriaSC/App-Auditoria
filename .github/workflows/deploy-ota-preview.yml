@@ -1,0 +1,51 @@
+name: Publicar OTA Preview
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+      - 'assets/**'
+      - 'components/**'
+      - 'constants/**'
+      - 'src/**'
+      - '.github/workflows/deploy-ota-preview.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-ota-preview
+  cancel-in-progress: false
+
+jobs:
+  publish-ota-preview:
+    name: Publicar OTA Android Preview
+    runs-on: ubuntu-latest
+
+    env:
+      CI: 1
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v5
+
+      - name: Configurar Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22.13.x
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Validar TypeScript
+        run: npx tsc --noEmit
+
+      - name: Validar Expo SDK 56
+        run: npx expo-doctor
+
+      - name: Publicar actualización OTA en preview
+        run: npx --yes eas-cli@20.5.1 update --channel preview --platform android --environment preview --message "main ${GITHUB_SHA}" --non-interactive
