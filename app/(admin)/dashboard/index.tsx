@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
 import { brandColors } from '../../../constants/theme';
@@ -293,20 +293,6 @@ export default function AdminDashboard() {
         <SummaryCard label="Incidencias" value={String(totalIncidents)} />
       </View>
 
-      {canDeleteVisits && (
-        <View style={styles.adminSection}>
-          <AdminCard
-            title="Administrador de Recursos"
-            description="Gestionar preguntas, locales, responsables, invitaciones y usuarios."
-            action={Platform.OS === 'web' ? 'Abrir' : 'Disponible en Web'}
-            disabled={Platform.OS !== 'web'}
-            onPress={() => {
-              if (Platform.OS === 'web') router.push('/administrador-recursos');
-            }}
-          />
-        </View>
-      )}
-
       <View style={styles.filterBand}>
         <View style={styles.filterRow}>
           <FilterSelect label="Tipo de visita" value={visitTypeFilter} onChange={setVisitTypeFilter} options={visitTypes} />
@@ -389,16 +375,6 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
       <Text style={styles.summaryCardLabel}>{label}</Text>
       <Text style={styles.summaryCardValue}>{value}</Text>
     </View>
-  );
-}
-
-function AdminCard({ title, description, action, disabled, onPress }: { title: string; description: string; action: string; disabled: boolean; onPress: () => void }) {
-  return (
-    <TouchableOpacity style={[styles.adminCard, disabled && styles.disabledAdminCard]} onPress={onPress} activeOpacity={disabled ? 1 : 0.84} disabled={disabled}>
-      <Text style={styles.adminCardTitle}>{title}</Text>
-      <Text style={styles.adminCardDescription}>{description}</Text>
-      <Text style={styles.adminCardAction}>{action}</Text>
-    </TouchableOpacity>
   );
 }
 
@@ -633,12 +609,6 @@ const styles = StyleSheet.create({
   summaryCard: { flexGrow: 1, flexBasis: 135, minWidth: 0, backgroundColor: brandColors.surface, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12 },
   summaryCardLabel: { fontSize: 12, color: brandColors.textSecondary, fontWeight: '700' },
   summaryCardValue: { fontSize: 22, color: brandColors.textPrimary, fontWeight: '900', marginTop: 6 },
-  adminSection: { backgroundColor: brandColors.surface, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, marginBottom: 14 },
-  adminCard: { width: '100%', borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, backgroundColor: brandColors.creamSoft, padding: 14 },
-  disabledAdminCard: { opacity: 0.72 },
-  adminCardTitle: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 15 },
-  adminCardDescription: { color: brandColors.textSecondary, fontWeight: '700', fontSize: 12, lineHeight: 17, marginTop: 5 },
-  adminCardAction: { color: brandColors.greenDark, fontWeight: '900', marginTop: 10 },
   filterBand: { backgroundColor: brandColors.surface, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, marginBottom: 14, gap: 10 },
   filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' },
   filterItem: { minWidth: 152, flexGrow: 1, flexShrink: 0, flexBasis: 152 },

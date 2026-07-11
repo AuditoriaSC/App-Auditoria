@@ -18,7 +18,7 @@ export const appModules: AppModule[] = [
   {
     key: 'evaluations',
     label: 'Evaluaciones',
-    description: 'Visitas, checklist y reportes',
+    description: 'Visitas Sabatinas y Nocturnas',
     route: '/dashboard',
     icon: '✓',
     roles: ['auditor', 'admin', 'super_admin'],
@@ -27,7 +27,7 @@ export const appModules: AppModule[] = [
   {
     key: 'inventory',
     label: 'Informes de Inventario',
-    description: 'Inventarios físicos y validaciones',
+    description: 'Elaboración y consulta de informes',
     route: '/modulos/inventarios',
     icon: '▦',
     roles: ['auditor', 'admin', 'super_admin'],
