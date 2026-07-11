@@ -37,6 +37,7 @@ type InventoryReportPdfSummary = {
   second_end_time: string | null;
   assigned_auditor_name_snapshot: string | null;
   responsible_name_snapshot: string | null;
+  inventory_cutoff_label: string | null;
   status: string | null;
 };
 
@@ -374,7 +375,7 @@ export async function downloadInventoryReportPdf(inventoryReportId: string) {
   ] = await Promise.all([
     supabase
       .from('inventory_reports')
-      .select('id, local_codigo, local_name_snapshot, inventory_date, front_regularization_date, start_time, end_time, has_second_time_range, second_start_time, second_end_time, assigned_auditor_name_snapshot, responsible_name_snapshot, status')
+      .select('id, local_codigo, local_name_snapshot, inventory_cutoff_label, inventory_date, front_regularization_date, start_time, end_time, has_second_time_range, second_start_time, second_end_time, assigned_auditor_name_snapshot, responsible_name_snapshot, status')
       .eq('id', inventoryReportId)
       .single<InventoryReportPdfSummary>(),
     supabase
@@ -452,6 +453,7 @@ export async function downloadInventoryReportPdf(inventoryReportId: string) {
   pdf.section('1. Encabezado');
   pdf.textLine('Local', `${report.local_codigo || '-'} - ${report.local_name_snapshot || '-'}`);
   pdf.textLine('Código local / almacén', report.local_codigo || '-');
+  pdf.textLine('Corte de Inventario', report.inventory_cutoff_label || 'Sin corte asignado');
   pdf.textLine('Fecha inventario', formatDate(report.inventory_date));
   pdf.textLine('Fecha regularización', formatDate(report.front_regularization_date));
   pdf.textLine('Hora inicio', formatTime(report.start_time));

@@ -10,6 +10,7 @@ type InventoryReportHeader = {
   local_codigo: string;
   local_name_snapshot: string;
   responsible_name_snapshot: string | null;
+  inventory_cutoff_label: string | null;
   inventory_date: string;
   front_regularization_date: string;
   start_time: string | null;
@@ -359,7 +360,7 @@ export default function InventoryCsvUploadScreen() {
       setLoadingReport(true);
       const { data, error } = await supabase
         .from('inventory_reports')
-        .select('id, local_codigo, local_name_snapshot, responsible_name_snapshot, inventory_date, front_regularization_date, start_time, end_time, has_second_time_range, second_start_time, second_end_time, assigned_auditor_name_snapshot')
+        .select('id, local_codigo, local_name_snapshot, responsible_name_snapshot, inventory_cutoff_label, inventory_date, front_regularization_date, start_time, end_time, has_second_time_range, second_start_time, second_end_time, assigned_auditor_name_snapshot')
         .eq('id', inventory_report_id)
         .single<InventoryReportHeader>();
 
@@ -697,6 +698,12 @@ export default function InventoryCsvUploadScreen() {
               <View style={styles.twoColumnItem}>
                 <Text style={styles.blockDescription}>Auditor encargado</Text>
                 <Text style={styles.hint}>{report.assigned_auditor_name_snapshot}</Text>
+              </View>
+            </View>
+            <View style={styles.twoColumnRow}>
+              <View style={styles.twoColumnItem}>
+                <Text style={styles.blockDescription}>Corte de Inventario</Text>
+                <Text style={styles.hint}>{report.inventory_cutoff_label || 'Sin corte asignado'}</Text>
               </View>
             </View>
             <View style={styles.twoColumnRow}>
