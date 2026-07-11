@@ -1,8 +1,9 @@
-import { ReactNode } from 'react';
-import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ReactNode, useEffect, useState } from 'react';
+import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { brandColors } from '../../../../constants/theme';
 import { canAccessInventoryModule } from '../access';
+import { supabase } from '../../../supabaseClient';
 
 type InventoryShellProps = {
   title: string;
@@ -13,6 +14,41 @@ type InventoryShellProps = {
 
 export function InventoryShell({ title, subtitle, children, showBackToModule = true }: InventoryShellProps) {
   const router = useRouter();
+  const [profile, setProfile] = useState<{ role: string | null; email: string | null } | null>(null);
+  const [loadingProfile, setLoadingProfile] = useState(Platform.OS === 'web');
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadProfile() {
+      if (Platform.OS !== 'web') return;
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!active) return;
+
+      if (!user) {
+        setProfile(null);
+        setLoadingProfile(false);
+        return;
+      }
+
+      const { data } = await supabase
+        .from('profiles')
+        .select('role, email')
+        .eq('id', user.id)
+        .single<{ role: string | null; email: string | null }>();
+
+      if (!active) return;
+      setProfile(data || null);
+      setLoadingProfile(false);
+    }
+
+    loadProfile();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   if (Platform.OS !== 'web') {
     return (
@@ -26,7 +62,16 @@ export function InventoryShell({ title, subtitle, children, showBackToModule = t
     );
   }
 
-  if (!canAccessInventoryModule()) {
+  if (loadingProfile) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color={brandColors.greenDark} />
+        <Text style={styles.restrictedText}>Validando acceso...</Text>
+      </View>
+    );
+  }
+
+  if (!canAccessInventoryModule(profile?.role, profile?.email)) {
     return (
       <View style={styles.center}>
         <Text style={styles.restrictedTitle}>Módulo no disponible</Text>

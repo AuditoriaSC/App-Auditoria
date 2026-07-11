@@ -461,12 +461,18 @@ Deno.serve(async (req) => {
     const { inventoryReportId, recipients } = requestBody
     if (!inventoryReportId) return jsonResponse({ error: 'Informe de inventario requerido.' }, 400)
 
-    const [{ data: profile }, { data: report, error: reportError }] = await Promise.all([
+    const [{ data: profile }, { data: accessRow }, { data: report, error: reportError }] = await Promise.all([
       supabase
         .from('profiles')
         .select('id, full_name, email, role, region')
         .eq('id', userData.user.id)
         .single<ProfileRow>(),
+      supabase
+        .from('inventory_module_access')
+        .select('user_id')
+        .eq('user_id', userData.user.id)
+        .eq('is_active', true)
+        .maybeSingle(),
       supabase
         .from('inventory_reports')
         .select('id, local_codigo, local_name_snapshot, inventory_date, front_regularization_date, start_time, end_time, has_second_time_range, second_start_time, second_end_time, assigned_auditor_id, assigned_auditor_name_snapshot, responsible_name_snapshot, status')
@@ -474,7 +480,8 @@ Deno.serve(async (req) => {
         .single<InventoryReportRow>(),
     ])
 
-    if (!profile || !['super_admin', 'admin'].includes(String(profile.role))) {
+    const hasInventoryAccess = profile?.role === 'super_admin' || Boolean(accessRow);
+    if (!profile || !hasInventoryAccess) {
       return jsonResponse({ error: 'No tienes permisos para enviar este informe.' }, 403)
     }
     if (reportError || !report) return jsonResponse({ error: 'Informe de inventario no encontrado.' }, 404)
