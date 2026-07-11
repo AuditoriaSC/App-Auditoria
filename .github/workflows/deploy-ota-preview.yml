@@ -5,12 +5,27 @@ on:
     branches:
       - main
     paths:
-      - 'app/**'
+      # OTA Android Preview solo debe correr cuando cambia el flujo de Visitas/APK
+      # o código compartido usado por la app móvil. Inventarios es web-only.
+      - 'app/(auditor)/**'
+      - 'app/(auth)/**'
+      - 'app/index.tsx'
       - 'assets/**'
       - 'components/**'
       - 'constants/**'
-      - 'src/**'
-      - '.github/workflows/deploy-ota-preview.yml'
+      - 'src/features/audits/**'
+      - 'src/navigation/**'
+      - 'src/services/**'
+      - 'src/types/**'
+      - 'src/supabaseClient.ts'
+      - 'src/authPolicy.ts'
+      - 'src/evidenceStorage.ts'
+      - 'src/report-document.ts'
+      - 'app.json'
+      - 'eas.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
 
 permissions:
   contents: read
