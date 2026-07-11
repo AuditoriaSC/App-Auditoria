@@ -1,5 +1,6 @@
 import { Redirect, Slot, useSegments } from 'expo-router';
 import { Platform } from 'react-native';
+import { AppShell } from '../../src/navigation/AppShell';
 
 const webOnlyResourceRoutes = new Set([
   'preguntas',
@@ -20,5 +21,9 @@ export default function AdminLayout() {
     return <Redirect href="/administrador-recursos" />;
   }
 
-  return <Slot />;
+  return (
+    <AppShell>
+      <Slot />
+    </AppShell>
+  );
 }
