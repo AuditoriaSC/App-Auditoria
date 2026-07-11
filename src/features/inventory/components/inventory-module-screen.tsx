@@ -38,6 +38,7 @@ type InventoryReportListItem = {
   id: string;
   local_codigo: string;
   local_name_snapshot: string;
+  inventory_cutoff_label?: string | null;
   inventory_date: string;
   status: string;
   created_at: string;
@@ -112,7 +113,7 @@ export default function InventoryModuleScreen() {
     async function loadReports() {
       const { data, error } = await supabase
         .from('inventory_reports')
-        .select('id, local_codigo, local_name_snapshot, inventory_date, status, created_at, inventory_email_sent, inventory_email_status')
+        .select('id, local_codigo, local_name_snapshot, inventory_cutoff_label, inventory_date, status, created_at, inventory_email_sent, inventory_email_status')
         .order('created_at', { ascending: false })
         .limit(20);
 
@@ -223,6 +224,7 @@ export default function InventoryModuleScreen() {
           return (
           <View key={report.id} style={styles.block}>
             <Text style={styles.blockTitle}>{report.local_codigo} · {report.local_name_snapshot}</Text>
+            <Text style={styles.blockDescription}>Corte: {report.inventory_cutoff_label || 'Sin corte asignado'}</Text>
             <Text style={styles.blockDescription}>Fecha inventario: {formatDate(report.inventory_date)}</Text>
             <Text style={styles.blockDescription}>Estado: {reportStatusLabel(report)}</Text>
             <View style={styles.footerActions}>

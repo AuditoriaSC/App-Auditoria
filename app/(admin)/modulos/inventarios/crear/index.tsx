@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
 import { brandColors } from '../../../../../constants/theme';
 import { supabase } from '../../../../../src/supabaseClient';
@@ -29,6 +30,20 @@ type ResponsibleOption = {
 };
 
 const maxVisibleOptions = 8;
+const monthNames = [
+  'Enero',
+  'Febrero',
+  'Marzo',
+  'Abril',
+  'Mayo',
+  'Junio',
+  'Julio',
+  'Agosto',
+  'Septiembre',
+  'Octubre',
+  'Noviembre',
+  'Diciembre',
+];
 
 function pad(value: number) {
   return String(value).padStart(2, '0');
@@ -106,6 +121,23 @@ function pickerDate(dateValue: string, timeValue = '00:00') {
   return Number.isNaN(date.getTime()) ? new Date() : date;
 }
 
+function buildCutoffOptions(baseDate = new Date()) {
+  const startYear = baseDate.getFullYear();
+  const startMonth = baseDate.getMonth();
+  return Array.from({ length: 18 }, (_, index) => {
+    const date = new Date(startYear, startMonth + index, 1);
+    const month = date.getMonth() + 1;
+    const year = date.getFullYear();
+    const label = `${monthNames[month - 1]} ${year}`;
+    return {
+      value: `${year}-${pad(month)}`,
+      label,
+      month,
+      year,
+    };
+  });
+}
+
 export default function CreateInventoryReportScreen() {
   const router = useRouter();
   const today = useMemo(() => dateToIsoDate(new Date()), []);
@@ -124,6 +156,7 @@ export default function CreateInventoryReportScreen() {
   const [selectedResponsible, setSelectedResponsible] = useState<ResponsibleOption | null>(null);
   const [responsibleSearchOpen, setResponsibleSearchOpen] = useState(false);
   const [inventoryDate, setInventoryDate] = useState(today);
+  const [inventoryCutoffValue, setInventoryCutoffValue] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [hasSecondTimeRange, setHasSecondTimeRange] = useState(false);
@@ -201,6 +234,11 @@ export default function CreateInventoryReportScreen() {
   }, []);
 
   const regularizationDate = useMemo(() => addDaysToIsoDate(inventoryDate, 1), [inventoryDate]);
+  const cutoffOptions = useMemo(() => buildCutoffOptions(new Date()), []);
+  const selectedCutoff = useMemo(
+    () => cutoffOptions.find((option) => option.value === inventoryCutoffValue) || null,
+    [cutoffOptions, inventoryCutoffValue],
+  );
   const selectedInventoryDate = useMemo(() => pickerDate(inventoryDate, startTime), [inventoryDate, startTime]);
   const selectedStartTime = useMemo(() => pickerDate(inventoryDate, startTime || '08:00'), [inventoryDate, startTime]);
   const selectedEndTime = useMemo(() => pickerDate(inventoryDate, endTime || '17:00'), [endTime, inventoryDate]);
@@ -231,6 +269,7 @@ export default function CreateInventoryReportScreen() {
 
   const formError = useMemo(() => {
     if (!selectedLocal) return 'Selecciona un local.';
+    if (!selectedCutoff) return 'Selecciona el corte de inventario.';
     if (!selectedResponsible) return 'Selecciona el líder o responsable del local.';
     if (!isIsoDate(inventoryDate)) return 'Ingresa una fecha de inventario válida en formato AAAA-MM-DD.';
     if (!regularizationDate) return 'No se pudo calcular la fecha de regularización.';
@@ -240,7 +279,7 @@ export default function CreateInventoryReportScreen() {
     if (hasSecondTimeRange && !isTime(secondStartTime)) return 'Ingresa segunda hora de inicio válida en formato HH:MM.';
     if (hasSecondTimeRange && !isTime(secondEndTime)) return 'Ingresa segunda hora de finalización válida en formato HH:MM.';
     return null;
-  }, [endTime, hasSecondTimeRange, inventoryDate, profile?.id, regularizationDate, secondEndTime, secondStartTime, selectedLocal, selectedResponsible, startTime]);
+  }, [endTime, hasSecondTimeRange, inventoryDate, profile?.id, regularizationDate, secondEndTime, secondStartTime, selectedCutoff, selectedLocal, selectedResponsible, startTime]);
 
   const handleLocalSearch = (value: string) => {
     setLocalQuery(value);
@@ -306,6 +345,10 @@ export default function CreateInventoryReportScreen() {
       setMessage(formError || 'Completa los campos obligatorios.');
       return;
     }
+    if (!selectedCutoff) {
+      setMessage('Selecciona el corte de inventario.');
+      return;
+    }
 
     setSaving(true);
     setMessage(null);
@@ -319,6 +362,9 @@ export default function CreateInventoryReportScreen() {
         responsible_id: selectedResponsible.id,
         responsible_code_snapshot: selectedResponsible.codigo,
         responsible_name_snapshot: selectedResponsible.nombre,
+        inventory_cutoff_month: selectedCutoff.month,
+        inventory_cutoff_year: selectedCutoff.year,
+        inventory_cutoff_label: selectedCutoff.label,
         inventory_date: inventoryDate,
         front_regularization_date: regularizationDate,
         start_time: startTime,
@@ -395,6 +441,22 @@ export default function CreateInventoryReportScreen() {
               Se guardará código {selectedLocal.codigo_interno} y snapshot “{selectedLocal.nombre_local}”.
             </Text>
           ) : null}
+        </View>
+
+        <View style={styles.field}>
+          <Text style={styles.label}>Corte de Inventario *</Text>
+          <View style={styles.input}>
+            <Picker
+              selectedValue={inventoryCutoffValue}
+              onValueChange={(value) => setInventoryCutoffValue(String(value))}
+            >
+              <Picker.Item label="Seleccione el mes y año del corte" value="" />
+              {cutoffOptions.map((option) => (
+                <Picker.Item key={option.value} label={option.label} value={option.value} />
+              ))}
+            </Picker>
+          </View>
+          <Text style={styles.hint}>Seleccione el corte operativo al que corresponde el inventario.</Text>
         </View>
 
         <View style={styles.twoColumnRow}>

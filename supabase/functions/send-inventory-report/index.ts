@@ -49,6 +49,7 @@ type InventoryReportRow = {
   assigned_auditor_id: string | null
   assigned_auditor_name_snapshot: string | null
   responsible_name_snapshot: string | null
+  inventory_cutoff_label: string | null
   status: string | null
 }
 
@@ -226,7 +227,7 @@ function resultRows(results: ResultRow[], positive: boolean) {
 }
 
 function buildSubject(report: InventoryReportRow) {
-  return `INFORME DE INVENTARIO GENERAL LOCAL ${report.local_name_snapshot || 'LOCAL'} (${report.local_codigo || '-'}) - Corte Vigente`
+  return `INFORME DE INVENTARIO GENERAL LOCAL ${report.local_name_snapshot || 'LOCAL'} (${report.local_codigo || '-'}) - CORTE ${report.inventory_cutoff_label || 'SIN CORTE ASIGNADO'}`
 }
 
 function buildHtml(params: {
@@ -263,20 +264,21 @@ function buildHtml(params: {
             <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;">
               <tr>
                 <td>${renderLogo()}</td>
-                <td align="right" style="font-size:13px; color:${colors.creamSoft};">Inventarios · Desarrollo controlado</td>
+                <td align="right" style="font-size:13px; color:${colors.creamSoft};">GERENCIA DE AUDITORIA</td>
               </tr>
             </table>
-            <h1 style="margin:20px 0 0 0; font-size:23px; line-height:1.25;">Informe de Inventario General</h1>
+            <h1 style="margin:20px 0 0 0; font-size:23px; line-height:1.25;">Informe de Visita por Inventario General</h1>
             <p style="margin:8px 0 0 0; color:${colors.creamSoft};">${escapeHtml(report.local_name_snapshot || '-')} (${escapeHtml(report.local_codigo || '-')})</p>
           </div>
 
           <div style="padding:26px 28px;">
-            <h2 style="color:${colors.greenDark}; margin:0 0 12px 0; font-size:18px;">Resumen</h2>
+            <h2 style="color:${colors.greenDark}; margin:0 0 12px 0; font-size:18px;">Datos principales</h2>
             <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%; border:1px solid ${colors.border}; border-radius:10px; border-collapse:separate; overflow:hidden;">
               <tr><td style="padding:10px; background:${colors.greenSoft}; font-weight:700;">Local</td><td style="padding:10px;">${escapeHtml(report.local_name_snapshot || '-')}</td></tr>
-              <tr><td style="padding:10px; background:${colors.greenSoft}; font-weight:700;">Código de almacén</td><td style="padding:10px;">${escapeHtml(report.local_codigo || '-')}</td></tr>
+              <tr><td style="padding:10px; background:${colors.greenSoft}; font-weight:700;">Codigo de almacen</td><td style="padding:10px;">${escapeHtml(report.local_codigo || '-')}</td></tr>
+              <tr><td style="padding:10px; background:${colors.greenSoft}; font-weight:700;">Corte de Inventario</td><td style="padding:10px;">${escapeHtml(report.inventory_cutoff_label || 'Sin corte asignado')}</td></tr>
               <tr><td style="padding:10px; background:${colors.greenSoft}; font-weight:700;">Fecha de inventario</td><td style="padding:10px;">${formatDate(report.inventory_date)}</td></tr>
-              <tr><td style="padding:10px; background:${colors.greenSoft}; font-weight:700;">Fecha de regularización</td><td style="padding:10px;">${formatDate(report.front_regularization_date)}</td></tr>
+              <tr><td style="padding:10px; background:${colors.greenSoft}; font-weight:700;">Fecha de regularizacion</td><td style="padding:10px;">${formatDate(report.front_regularization_date)}</td></tr>
               <tr><td style="padding:10px; background:${colors.greenSoft}; font-weight:700;">Horario</td><td style="padding:10px;">${formatTime(report.start_time)} - ${formatTime(report.end_time)}${report.has_second_time_range ? ` / ${formatTime(report.second_start_time)} - ${formatTime(report.second_end_time)}` : ''}</td></tr>
               <tr><td style="padding:10px; background:${colors.greenSoft}; font-weight:700;">Auditor</td><td style="padding:10px;">${escapeHtml(report.assigned_auditor_name_snapshot || '-')}</td></tr>
             </table>
@@ -294,8 +296,8 @@ function buildHtml(params: {
               </tr>
             </table>
 
-            ${table('Detalle de sobrantes (incluye cruces)', ['Artículo / Cruce', 'Diferencia'], resultRows(results, true))}
-            ${table('Detalle de faltantes (incluye cruces)', ['Artículo / Cruce', 'Diferencia'], resultRows(results, false))}
+            ${table('4. Resultados preliminares - Sobrantes', ['Articulo / Cruce', 'Diferencia'], resultRows(results, true))}
+            ${table('4. Resultados preliminares - Faltantes', ['Articulo / Cruce', 'Diferencia'], resultRows(results, false))}
             ${table('Reconteos', ['Estado', 'Cantidad'], [['Recuento OK', String(recountsOk)], ['Recuento Modificado', String(recountsModified)]])}
 
             <h3 style="color:${colors.greenDark}; margin:22px 0 8px 0; font-size:16px;">Observaciones adicionales</h3>
@@ -304,12 +306,12 @@ function buildHtml(params: {
             </div>
 
             <p style="margin:22px 0 0 0; color:${colors.textSecondary}; font-size:13px;">
-              El detalle completo se encuentra en el informe adjunto o descargable desde la app, según configuración.
+              El detalle completo se encuentra en el informe adjunto o descargable desde la app, segun configuracion.
             </p>
             ${reportUrl ? `<p style="margin:10px 0 0 0;"><a href="${escapeHtml(reportUrl)}" style="display:inline-block; padding:12px 16px; background:${colors.greenDark}; color:${colors.white}; text-decoration:none; border-radius:8px; font-weight:700;">Abrir informe en la app</a></p>` : ''}
 
             <div style="margin-top:24px; padding-top:14px; border-top:1px solid ${colors.border}; color:${colors.textSecondary}; font-size:12px;">
-              Este correo fue generado automáticamente por el Módulo de Informes de Inventario Sweet & Coffee.
+              Este correo fue generado automaticamente por el Modulo de Informes de Inventario Sweet & Coffee.
               ${SUPPORT_EMAIL ? `<br>Soporte: ${escapeHtml(SUPPORT_EMAIL)}` : ''}
             </div>
           </div>
@@ -475,7 +477,7 @@ Deno.serve(async (req) => {
         .maybeSingle(),
       supabase
         .from('inventory_reports')
-        .select('id, local_codigo, local_name_snapshot, inventory_date, front_regularization_date, start_time, end_time, has_second_time_range, second_start_time, second_end_time, assigned_auditor_id, assigned_auditor_name_snapshot, responsible_name_snapshot, status')
+        .select('id, local_codigo, local_name_snapshot, inventory_cutoff_label, inventory_date, front_regularization_date, start_time, end_time, has_second_time_range, second_start_time, second_end_time, assigned_auditor_id, assigned_auditor_name_snapshot, responsible_name_snapshot, status')
         .eq('id', inventoryReportId)
         .single<InventoryReportRow>(),
     ])
