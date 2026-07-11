@@ -677,7 +677,7 @@ export default function InventoryCsvUploadScreen() {
   return (
     <InventoryShell
       title="Carga CSV de Inventario"
-      subtitle="Carga y validación estructural del archivo de inventario. Los cruces se implementarán en una fase posterior."
+      subtitle="Carga el archivo del inventario, valida columnas y resuelve códigos sin cruce antes de continuar a resultados."
     >
       <View style={styles.form}>
         {message ? (

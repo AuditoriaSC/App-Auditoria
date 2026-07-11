@@ -602,17 +602,21 @@ function DateTimeField({
     return (
       <View style={styles.dateTimeItem}>
         <Text style={styles.label}>{label}</Text>
-        <View style={styles.webDateTimeShell}>
+        <View style={[styles.webDateTimeShell, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, position: 'relative' }]}>
           <TextInput
-            style={styles.webDateTimeDisplay}
+            style={[styles.webDateTimeDisplay, { flex: 1, minWidth: 0 }]}
             value={manualValue}
             onChangeText={setManualValue}
             onBlur={commitManualValue}
             placeholder={mode === 'date' ? 'dd/mm/aaaa' : 'hh:mm'}
             placeholderTextColor={brandColors.inputPlaceholder}
           />
-          <TouchableOpacity onPress={openPicker} activeOpacity={0.85}>
-            <Text style={styles.clockHint}>{mode === 'date' ? 'Calendario' : 'Reloj'}</Text>
+          <TouchableOpacity
+            onPress={openPicker}
+            activeOpacity={0.85}
+            style={{ width: 34, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: brandColors.greenSoft }}
+          >
+            <Text style={{ fontSize: 16 }}>{mode === 'date' ? '📅' : '🕒'}</Text>
           </TouchableOpacity>
           {React.createElement('input', {
             ref: inputRef,
@@ -630,17 +634,20 @@ function DateTimeField({
   return (
     <View style={styles.dateTimeItem}>
       <Text style={styles.label}>{label}</Text>
-      <View style={styles.clockButton}>
+      <View style={[styles.clockButton, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }]}>
         <TextInput
-          style={styles.clockValue}
+          style={[styles.clockValue, { flex: 1, minWidth: 0 }]}
           value={manualValue}
           onChangeText={setManualValue}
           onBlur={commitManualValue}
           placeholder={mode === 'date' ? 'dd/mm/aaaa' : 'hh:mm'}
           placeholderTextColor={brandColors.inputPlaceholder}
         />
-        <TouchableOpacity onPress={onOpen}>
-          <Text style={styles.clockHint}>{mode === 'date' ? 'Abrir calendario' : 'Abrir reloj'}</Text>
+        <TouchableOpacity
+          onPress={onOpen}
+          style={{ width: 34, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: brandColors.greenSoft }}
+        >
+          <Text style={{ fontSize: 16 }}>{mode === 'date' ? '📅' : '🕒'}</Text>
         </TouchableOpacity>
       </View>
       {visible && (
@@ -669,4 +676,5 @@ const webHiddenPickerInputStyle = {
   width: 44,
   height: 44,
   cursor: 'pointer',
+  pointerEvents: 'none',
 } as React.CSSProperties;

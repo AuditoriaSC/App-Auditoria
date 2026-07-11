@@ -7,21 +7,18 @@ import { InventoryShell, inventoryShellStyles as styles } from './inventory-shel
 const actions = [
   {
     title: 'Crear Informe de Inventario',
-    description: 'Abrir el encabezado inicial del informe. En esta fase no guarda datos reales.',
+    description: 'Inicia el flujo del informe: encabezado, CSV, resultados, validaciones, evidencias y cierre local.',
     route: '/modulos/inventarios/crear',
-  },
-  {
-    title: 'Cargar Cruces de Inventario',
-    description: 'Espacio reservado para subir la base de cruces cuando implementemos la lógica CSV.',
-    route: '/modulos/inventarios/cruces-base',
   },
 ] as const;
 
-const nextSections = [
-  ['Carga CSV de Inventario', 'Placeholder para el archivo fuente del inventario.'],
-  ['Resultados de Inventario', 'Bloques base para sobrantes, faltantes y cruces.'],
-  ['Validaciones Manuales', 'Facturas manuales, reconteos, producto terminado y cierres de caja.'],
-  ['Evidencias', 'Carga futura de imágenes, PDF, Excel o CSV.'],
+const flowSteps = [
+  'Encabezado',
+  'Carga CSV',
+  'Resultados',
+  'Validaciones Manuales',
+  'Evidencias',
+  'Revisión / Cierre',
 ] as const;
 
 const inventoryCsvTemplate = [
@@ -95,7 +92,7 @@ export default function InventoryModuleScreen() {
   return (
     <InventoryShell
       title="Informes de Inventario"
-      subtitle="Módulo en desarrollo local. Esta estructura no procesa archivos, no genera reportes y no modifica Auditoría 1.0."
+      subtitle="Módulo en desarrollo local. Permanece oculto fuera del entorno de pruebas y no modifica Auditoría 1.0."
       showBackToModule={false}
     >
       <View style={styles.grid}>
@@ -109,10 +106,17 @@ export default function InventoryModuleScreen() {
       </View>
 
       <View style={styles.block}>
-        <Text style={styles.blockTitle}>Módulo en desarrollo local</Text>
+        <Text style={styles.blockTitle}>Flujo del informe</Text>
         <Text style={styles.blockDescription}>
-          Por ahora estas pantallas sirven para validar navegación y estructura. El módulo permanece oculto fuera del entorno local/desarrollo y no se publica en Expo Web ni OTA.
+          Crea un informe y avanza por las pantallas en orden. La base maestra de cruces se mantiene desde Administrador de Recursos para evitar accesos duplicados.
         </Text>
+        <View style={styles.flowStepRow}>
+          {flowSteps.map((step, index) => (
+            <View key={step} style={styles.flowStepPill}>
+              <Text style={styles.flowStepText}>{index + 1}. {step}</Text>
+            </View>
+          ))}
+        </View>
       </View>
 
       <View style={styles.form}>
@@ -168,26 +172,26 @@ export default function InventoryModuleScreen() {
               <TouchableOpacity
                 style={styles.secondaryButton}
                 onPress={() => router.push({
+                  pathname: '/modulos/inventarios/validaciones-manuales',
+                  params: { inventory_report_id: report.id },
+                })}
+              >
+                <Text style={styles.secondaryButtonText}>Abrir validaciones</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.secondaryButton}
+                onPress={() => router.push({
                   pathname: '/modulos/inventarios/evidencias',
                   params: { inventory_report_id: report.id },
                 })}
               >
-                <Text style={styles.secondaryButtonText}>Abrir cierre</Text>
+                <Text style={styles.secondaryButtonText}>Abrir evidencias / cierre</Text>
               </TouchableOpacity>
             </View>
           </View>
         ))}
       </View>
 
-      <View style={styles.grid}>
-        {nextSections.map(([title, description]) => (
-          <View key={title} style={styles.card}>
-            <Text style={styles.cardTitle}>{title}</Text>
-            <Text style={styles.cardDescription}>{description}</Text>
-            <Text style={styles.cardStatus}>Pendiente</Text>
-          </View>
-        ))}
-      </View>
     </InventoryShell>
   );
 }

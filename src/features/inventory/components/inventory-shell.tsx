@@ -167,6 +167,23 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     marginTop: 14,
   },
+  flowStepRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 6,
+  },
+  flowStepPill: {
+    backgroundColor: brandColors.greenSoft,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  flowStepText: {
+    color: brandColors.greenDark,
+    fontSize: 12,
+    fontWeight: '900',
+  },
   block: {
     backgroundColor: brandColors.surface,
     borderWidth: 1,
