@@ -1,10 +1,27 @@
 import { ReactNode, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import Constants from 'expo-constants';
 import { useRouter, useSegments } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { brandColors, brandRadii } from '../../constants/theme';
 import { supabase } from '../supabaseClient';
-import { AppModule, getActiveModuleKey, getCurrentPlatform, getVisibleAppModules, isModuleAvailableOnCurrentPlatform } from './app-modules';
+import {
+  AppModule,
+  getActiveModuleKey,
+  getCurrentPlatform,
+  getVisibleAppModules,
+  isModuleAvailableOnCurrentPlatform,
+} from './app-modules';
 
 type AppShellProps = {
   children: ReactNode;
@@ -20,6 +37,7 @@ export function AppShell({ children }: AppShellProps) {
   const router = useRouter();
   const segments = useSegments();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [profile, setProfile] = useState<ShellProfile | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -136,7 +154,7 @@ export function AppShell({ children }: AppShellProps) {
         <Modal visible={drawerOpen} transparent animationType="fade" onRequestClose={() => setDrawerOpen(false)}>
           <View style={styles.modalBackdrop}>
             <TouchableOpacity style={styles.backdropPressable} activeOpacity={1} onPress={() => setDrawerOpen(false)} />
-            <View style={styles.drawerPanel}>
+            <View style={[styles.drawerPanel, Platform.OS !== 'web' && { paddingTop: insets.top }]}>
               <DrawerContent
                 loadingProfile={loadingProfile}
                 profile={profile}
@@ -205,11 +223,11 @@ function DrawerContent({ loadingProfile, profile, userEmail, activeModuleKey, vi
               <View style={styles.moduleText}>
                 <View style={styles.moduleTitleRow}>
                   <Text style={styles.moduleTitle}>{module.label}</Text>
-                  <View style={[styles.platformBadge, available ? styles.webBadge : styles.disabledBadge]}>
-                    <Text style={[styles.platformBadgeText, !available && styles.disabledBadgeText]}>
-                      {available ? (getCurrentPlatform() === 'web' ? 'Web' : 'APK') : 'Disponible en Web'}
-                    </Text>
-                  </View>
+                  {!available ? (
+                    <View style={[styles.platformBadge, styles.disabledBadge]}>
+                      <Text style={[styles.platformBadgeText, styles.disabledBadgeText]}>Disponible en Web</Text>
+                    </View>
+                  ) : null}
                 </View>
                 <Text style={styles.moduleDescription}>{module.description}</Text>
               </View>
@@ -454,9 +472,6 @@ const styles = StyleSheet.create({
     borderRadius: brandRadii.pill,
     paddingHorizontal: 8,
     paddingVertical: 3,
-  },
-  webBadge: {
-    backgroundColor: brandColors.white,
   },
   disabledBadge: {
     backgroundColor: '#F3E8D7',
