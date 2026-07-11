@@ -3,6 +3,7 @@ import { Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../../supabaseClient';
 import { InventoryShell, inventoryShellStyles as styles } from './inventory-shell';
+import { downloadInventoryReportPdf } from '../inventory-pdf';
 
 const actions = [
   {
@@ -40,12 +41,70 @@ type InventoryReportListItem = {
   inventory_date: string;
   status: string;
   created_at: string;
+  inventory_email_sent?: boolean | null;
+  inventory_email_status?: string | null;
 };
+
+function formatDate(date: string) {
+  if (!date) return '-';
+  const [year, month, day] = date.split('-');
+  return [day, month, year].filter(Boolean).join('/');
+}
+
+function reportStatusLabel(report: InventoryReportListItem) {
+  if (report.inventory_email_sent || report.inventory_email_status === 'sent') return 'Enviado';
+
+  const labels: Record<string, string> = {
+    draft: 'Borrador',
+    csv_loaded: 'CSV cargado',
+    results_validated: 'Resultados guardados',
+    manual_validations_completed: 'Validaciones guardadas',
+    finalized: 'Finalizado',
+  };
+
+  return labels[report.status] || report.status || 'Borrador';
+}
+
+function primaryActionForReport(report: InventoryReportListItem) {
+  if (report.inventory_email_sent || report.inventory_email_status === 'sent' || report.status === 'finalized') {
+    return {
+      label: 'Ver informe',
+      pathname: '/modulos/inventarios/evidencias',
+    } as const;
+  }
+
+  if (report.status === 'manual_validations_completed') {
+    return {
+      label: 'Continuar a evidencias',
+      pathname: '/modulos/inventarios/evidencias',
+    } as const;
+  }
+
+  if (report.status === 'results_validated') {
+    return {
+      label: 'Continuar validaciones',
+      pathname: '/modulos/inventarios/validaciones-manuales',
+    } as const;
+  }
+
+  if (report.status === 'csv_loaded') {
+    return {
+      label: 'Continuar resultados',
+      pathname: '/modulos/inventarios/resultados',
+    } as const;
+  }
+
+  return {
+    label: 'Continuar CSV',
+    pathname: '/modulos/inventarios/carga-csv',
+  } as const;
+}
 
 export default function InventoryModuleScreen() {
   const router = useRouter();
   const [reports, setReports] = useState<InventoryReportListItem[]>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const [generatingPdfReportId, setGeneratingPdfReportId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -53,7 +112,7 @@ export default function InventoryModuleScreen() {
     async function loadReports() {
       const { data, error } = await supabase
         .from('inventory_reports')
-        .select('id, local_codigo, local_name_snapshot, inventory_date, status, created_at')
+        .select('id, local_codigo, local_name_snapshot, inventory_date, status, created_at, inventory_email_sent, inventory_email_status')
         .order('created_at', { ascending: false })
         .limit(20);
 
@@ -87,6 +146,19 @@ export default function InventoryModuleScreen() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  }
+
+  async function handleDownloadPdf(reportId: string) {
+    setGeneratingPdfReportId(reportId);
+    setMessage(null);
+    try {
+      await downloadInventoryReportPdf(reportId);
+      setMessage('PDF generado correctamente.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo generar el PDF.');
+    } finally {
+      setGeneratingPdfReportId(null);
+    }
   }
 
   return (
@@ -145,11 +217,25 @@ export default function InventoryModuleScreen() {
         <Text style={styles.blockTitle}>Listado local de informes de inventario</Text>
         {message ? <Text style={styles.hint}>{message}</Text> : null}
         {reports.length === 0 ? <Text style={styles.hint}>Aún no hay informes de inventario para mostrar.</Text> : null}
-        {reports.map((report) => (
+        {reports.map((report) => {
+          const primaryAction = primaryActionForReport(report);
+
+          return (
           <View key={report.id} style={styles.block}>
             <Text style={styles.blockTitle}>{report.local_codigo} · {report.local_name_snapshot}</Text>
-            <Text style={styles.blockDescription}>Fecha inventario: {report.inventory_date}</Text>
-            <Text style={styles.blockDescription}>Estado: {report.status}</Text>
+            <Text style={styles.blockDescription}>Fecha inventario: {formatDate(report.inventory_date)}</Text>
+            <Text style={styles.blockDescription}>Estado: {reportStatusLabel(report)}</Text>
+            <View style={styles.footerActions}>
+              <TouchableOpacity
+                style={[styles.primaryButton, styles.footerPrimaryButton]}
+                onPress={() => router.push({
+                  pathname: primaryAction.pathname,
+                  params: { inventory_report_id: report.id },
+                })}
+              >
+                <Text style={styles.primaryButtonText}>{primaryAction.label}</Text>
+              </TouchableOpacity>
+            </View>
             <View style={styles.grid}>
               <TouchableOpacity
                 style={styles.secondaryButton}
@@ -187,9 +273,17 @@ export default function InventoryModuleScreen() {
               >
                 <Text style={styles.secondaryButtonText}>Abrir evidencias / cierre</Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                disabled={generatingPdfReportId === report.id}
+                style={[styles.secondaryButton, generatingPdfReportId === report.id && styles.disabledButton]}
+                onPress={() => handleDownloadPdf(report.id)}
+              >
+                <Text style={styles.secondaryButtonText}>{generatingPdfReportId === report.id ? 'Generando...' : '⬇ PDF'}</Text>
+              </TouchableOpacity>
             </View>
           </View>
-        ))}
+          );
+        })}
       </View>
 
     </InventoryShell>

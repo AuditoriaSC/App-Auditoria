@@ -45,6 +45,14 @@ type AdditionalObservationRow = {
   observation: string | null;
 };
 
+type ManualValidationDraft = {
+  invoiceCheck: InvoiceCheck;
+  recounts: RecountRow[];
+  finishedProducts: FinishedProductRow[];
+  cashClosures: CashClosureRow[];
+  additionalObservation: string;
+};
+
 const emptyInvoiceCheck: InvoiceCheck = {
   lastSystemInvoice: '',
   lastPhysicalBlockInvoice: '',
@@ -172,6 +180,37 @@ function getInvoiceBlockExpirationStatus(value: string) {
   return null;
 }
 
+function manualDraftKey(reportId?: string) {
+  return reportId ? `inventory_manual_validations_draft_${reportId}` : null;
+}
+
+function readManualDraft(reportId?: string): ManualValidationDraft | null {
+  const key = manualDraftKey(reportId);
+  if (!key || Platform.OS !== 'web' || typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as ManualValidationDraft;
+  } catch {
+    return null;
+  }
+}
+
+function writeManualDraft(reportId: string | undefined, draft: ManualValidationDraft) {
+  const key = manualDraftKey(reportId);
+  if (!key || Platform.OS !== 'web' || typeof window === 'undefined') return;
+
+  window.localStorage.setItem(key, JSON.stringify(draft));
+}
+
+function clearManualDraft(reportId?: string) {
+  const key = manualDraftKey(reportId);
+  if (!key || Platform.OS !== 'web' || typeof window === 'undefined') return;
+
+  window.localStorage.removeItem(key);
+}
+
 export default function InventoryManualValidationsScreen() {
   const router = useRouter();
   const { inventory_report_id } = useLocalSearchParams<{ inventory_report_id?: string }>();
@@ -189,10 +228,23 @@ export default function InventoryManualValidationsScreen() {
   const [showBlockExpirationDatePicker, setShowBlockExpirationDatePicker] = useState(false);
   const [skuSearchIndex, setSkuSearchIndex] = useState<number | null>(null);
   const [skuSearchQuery, setSkuSearchQuery] = useState('');
+  const [draftReady, setDraftReady] = useState(false);
 
   useEffect(() => {
+    setDraftReady(false);
     loadManualValidations();
   }, [inventory_report_id]);
+
+  useEffect(() => {
+    if (!inventory_report_id || loading || !draftReady) return;
+    writeManualDraft(inventory_report_id, {
+      invoiceCheck,
+      recounts,
+      finishedProducts,
+      cashClosures,
+      additionalObservation,
+    });
+  }, [additionalObservation, cashClosures, draftReady, finishedProducts, inventory_report_id, invoiceCheck, loading, recounts]);
 
   const invoiceDifference = useMemo(() => {
     const systemInvoice = parseInteger(invoiceCheck.lastSystemInvoice);
@@ -340,6 +392,16 @@ export default function InventoryManualValidationsScreen() {
       setAdditionalObservation(((additionalObservationResult.data as AdditionalObservationRow[])[0].observation || ''));
     }
 
+    const localDraft = readManualDraft(inventory_report_id);
+    if (localDraft) {
+      setInvoiceCheck(localDraft.invoiceCheck || emptyInvoiceCheck);
+      setRecounts(Array.isArray(localDraft.recounts) ? localDraft.recounts : []);
+      setFinishedProducts(Array.isArray(localDraft.finishedProducts) ? localDraft.finishedProducts : []);
+      setCashClosures(Array.isArray(localDraft.cashClosures) ? localDraft.cashClosures : []);
+      setAdditionalObservation(localDraft.additionalObservation || '');
+      setMessage('Se restauró un borrador local de validaciones manuales pendiente de guardar.');
+    }
+
     const errors = [
       invoiceResult.error,
       recountResult.error,
@@ -349,6 +411,7 @@ export default function InventoryManualValidationsScreen() {
     ].filter(Boolean);
     if (errors.length > 0) setMessage('Algunas secciones no pudieron cargarse. Revisa si las migraciones ya fueron aplicadas.');
 
+    setDraftReady(true);
     setLoading(false);
   }
 
@@ -553,6 +616,7 @@ export default function InventoryManualValidationsScreen() {
         .update({ status: 'manual_validations_completed', updated_at: new Date().toISOString() })
         .eq('id', inventory_report_id);
 
+      clearManualDraft(inventory_report_id);
       setMessage('Validaciones manuales guardadas correctamente.');
       if (continueToEvidence) {
         router.push({

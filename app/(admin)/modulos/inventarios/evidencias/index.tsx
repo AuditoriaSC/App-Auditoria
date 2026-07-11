@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { brandColors } from '../../../../../constants/theme';
 import { supabase } from '../../../../../src/supabaseClient';
 import { InventoryShell, inventoryShellStyles as styles } from '../../../../../src/features/inventory/components/inventory-shell';
+import { downloadInventoryReportPdf } from '../../../../../src/features/inventory/inventory-pdf';
 
 type EvidenceCategory =
   | 'Tirillas de cierre de caja'
@@ -24,6 +25,11 @@ type EvidenceRow = {
   size_bytes: number | null;
   uploaded_by: string | null;
   uploaded_at: string;
+  delete_after_send: boolean;
+  attached_to_email: boolean;
+  deleted_after_send: boolean;
+  deleted_after_send_at: string | null;
+  cleanup_error: string | null;
 };
 
 type InventoryReportSummary = {
@@ -99,6 +105,16 @@ function mimeForFile(file: File) {
   return file.type || mimeByExtension[fileExtension(file.name)] || 'application/octet-stream';
 }
 
+function isImageEvidence(evidence: Pick<EvidenceRow, 'file_name' | 'mime_type'>) {
+  const mime = String(evidence.mime_type || '').toLowerCase();
+  const name = evidence.file_name.toLowerCase();
+  return mime.startsWith('image/') || /\.(jpg|jpeg|png|webp|heic|heif)$/i.test(name);
+}
+
+function canDeleteAfterSend(evidence: EvidenceRow) {
+  return !isImageEvidence(evidence) && !evidence.deleted_after_send;
+}
+
 function formatBytes(size?: number | null) {
   if (!size) return 'Sin tamaño';
   if (size < 1024) return `${size} B`;
@@ -128,6 +144,8 @@ export default function InventoryEvidenceScreen() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const incompleteReasons = useMemo(() => {
@@ -321,6 +339,11 @@ export default function InventoryEvidenceScreen() {
   }
 
   async function openEvidence(evidence: EvidenceRow) {
+    if (evidence.deleted_after_send) {
+      setMessage('Este archivo ya fue eliminado de Storage después del envío. Se conserva el registro del adjunto.');
+      return;
+    }
+
     const { data, error } = await supabase.storage
       .from(bucketName)
       .createSignedUrl(evidence.file_path, 60 * 5);
@@ -336,6 +359,11 @@ export default function InventoryEvidenceScreen() {
   }
 
   async function deleteEvidence(evidence: EvidenceRow) {
+    if (evidence.deleted_after_send) {
+      setMessage('Este archivo ya fue eliminado de Storage después del envío. Se conserva solo la trazabilidad.');
+      return;
+    }
+
     if (typeof window !== 'undefined') {
       const shouldDelete = window.confirm(`¿Eliminar evidencia "${evidence.file_name}"?`);
       if (!shouldDelete) return;
@@ -361,6 +389,38 @@ export default function InventoryEvidenceScreen() {
     }
 
     setMessage('Evidencia eliminada.');
+    await loadEvidences();
+  }
+
+  async function toggleDeleteAfterSend(evidence: EvidenceRow) {
+    if (!canDeleteAfterSend(evidence)) {
+      setMessage('Las imágenes no se eliminan automáticamente. Esta opción solo aplica para documentos.');
+      return;
+    }
+
+    const nextValue = !evidence.delete_after_send;
+
+    if (nextValue && typeof window !== 'undefined') {
+      const shouldMark = window.confirm('Este archivo será adjuntado al correo y eliminado de Supabase Storage solo después de enviarse correctamente. Se conservará registro del envío. ¿Continuar?');
+      if (!shouldMark) return;
+    }
+
+    const { error } = await supabase
+      .from('inventory_report_evidences')
+      .update({
+        delete_after_send: nextValue,
+        cleanup_error: null,
+      })
+      .eq('id', evidence.id);
+
+    if (error) {
+      setMessage('No se pudo actualizar la regla del archivo: ' + error.message);
+      return;
+    }
+
+    setMessage(nextValue
+      ? 'Archivo marcado para adjuntar al correo y eliminar después del envío exitoso.'
+      : 'Archivo desmarcado. No se eliminará automáticamente.');
     await loadEvidences();
   }
 
@@ -392,6 +452,57 @@ export default function InventoryEvidenceScreen() {
     }
 
     router.push('/modulos/inventarios');
+  }
+
+  async function handleDownloadPdf() {
+    if (!inventory_report_id) return;
+    if (Platform.OS !== 'web') {
+      setMessage('La descarga del PDF está disponible solo en Web.');
+      return;
+    }
+
+    setGeneratingPdf(true);
+    setMessage(null);
+    try {
+      await downloadInventoryReportPdf(inventory_report_id);
+      setMessage('PDF generado correctamente.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo generar el PDF.');
+    } finally {
+      setGeneratingPdf(false);
+    }
+  }
+
+  async function handleSendEmail() {
+    if (!inventory_report_id) return;
+    if (typeof window !== 'undefined') {
+      const shouldSend = window.confirm('¿Cerrar y enviar informe de inventario por correo? El PDF seguirá disponible para descarga desde la app y no se enviará como adjunto.');
+      if (!shouldSend) return;
+    }
+
+    setSendingEmail(true);
+    setMessage(null);
+
+    const { data, error } = await supabase.functions.invoke('send-inventory-report', {
+      body: { inventoryReportId: inventory_report_id },
+    });
+
+    setSendingEmail(false);
+
+    if (error) {
+      setMessage('No se pudo enviar el correo: ' + error.message);
+      return;
+    }
+
+    const response = data as { message?: string; recipients?: string[]; error?: string } | null;
+    if (response?.error) {
+      setMessage('No se pudo enviar el correo: ' + response.error);
+      return;
+    }
+
+    const recipients = response?.recipients?.length ? ` Destinatarios: ${response.recipients.join(', ')}.` : '';
+    setMessage(`${response?.message || 'Correo enviado correctamente.'}${recipients}`);
+    await loadEvidences();
   }
 
   if (loading) {
@@ -448,11 +559,27 @@ export default function InventoryEvidenceScreen() {
                   <View style={styles.evidenceMiniInfo}>
                     <Text style={styles.evidenceMiniTitle}>{index + 1}. {evidence.file_name}</Text>
                     <Text style={styles.evidenceMiniMeta}>{formatBytes(evidence.size_bytes)} · {new Date(evidence.uploaded_at).toLocaleString()}</Text>
+                    {evidence.deleted_after_send ? (
+                      <Text style={styles.evidenceMiniMeta}>Archivo eliminado de Storage tras envío · registro conservado</Text>
+                    ) : evidence.delete_after_send ? (
+                      <Text style={styles.errorText}>Se adjuntará al correo y se eliminará después del envío exitoso.</Text>
+                    ) : null}
+                    {evidence.attached_to_email && !evidence.deleted_after_send ? (
+                      <Text style={styles.evidenceMiniMeta}>Adjuntado al último correo.</Text>
+                    ) : null}
+                    {evidence.cleanup_error ? (
+                      <Text style={styles.errorText}>Error de limpieza: {evidence.cleanup_error}</Text>
+                    ) : null}
                   </View>
                   <View style={styles.evidenceMiniActions}>
                     <TouchableOpacity style={styles.evidenceMiniButton} onPress={() => openEvidence(evidence)}>
                       <Text style={styles.secondaryButtonText}>Ver</Text>
                     </TouchableOpacity>
+                    {canDeleteAfterSend(evidence) ? (
+                      <TouchableOpacity style={[styles.evidenceMiniButton, evidence.delete_after_send && styles.selectedButton]} onPress={() => toggleDeleteAfterSend(evidence)}>
+                        <Text style={styles.secondaryButtonText}>{evidence.delete_after_send ? 'No eliminar' : 'Adjuntar y eliminar'}</Text>
+                      </TouchableOpacity>
+                    ) : null}
                     <TouchableOpacity style={styles.evidenceMiniButton} onPress={() => deleteEvidence(evidence)}>
                       <Text style={styles.secondaryButtonText}>Eliminar</Text>
                     </TouchableOpacity>
@@ -488,6 +615,20 @@ export default function InventoryEvidenceScreen() {
       </View>
 
       <View style={styles.footerActions}>
+        <TouchableOpacity
+          disabled={generatingPdf || !inventory_report_id}
+          style={[styles.secondaryButton, styles.footerSecondaryButton, (generatingPdf || !inventory_report_id) && styles.disabledButton]}
+          onPress={handleDownloadPdf}
+        >
+          <Text style={styles.secondaryButtonText}>{generatingPdf ? 'Generando PDF...' : '⬇ Descargar PDF'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          disabled={sendingEmail || !inventory_report_id}
+          style={[styles.secondaryButton, styles.footerSecondaryButton, (sendingEmail || !inventory_report_id) && styles.disabledButton]}
+          onPress={handleSendEmail}
+        >
+          <Text style={styles.secondaryButtonText}>{sendingEmail ? 'Enviando...' : '✉ Cerrar y enviar'}</Text>
+        </TouchableOpacity>
         <TouchableOpacity
           disabled={finalizing || incompleteReasons.length > 0}
           style={[styles.primaryButton, styles.footerPrimaryButton, (finalizing || incompleteReasons.length > 0) && styles.disabledButton]}

@@ -363,6 +363,37 @@ function mergeSavedResultsWithCalculatedDetails(savedResults: InventoryResult[],
   });
 }
 
+function resultsDraftKey(reportId?: string) {
+  return reportId ? `inventory_results_draft_${reportId}` : null;
+}
+
+function readResultsDraft(reportId?: string) {
+  const key = resultsDraftKey(reportId);
+  if (!key || typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as InventoryResult[];
+  } catch {
+    return null;
+  }
+}
+
+function writeResultsDraft(reportId: string | undefined, nextResults: InventoryResult[]) {
+  const key = resultsDraftKey(reportId);
+  if (!key || typeof window === 'undefined') return;
+
+  window.localStorage.setItem(key, JSON.stringify(nextResults));
+}
+
+function clearResultsDraft(reportId?: string) {
+  const key = resultsDraftKey(reportId);
+  if (!key || typeof window === 'undefined') return;
+
+  window.localStorage.removeItem(key);
+}
+
 export default function InventoryResultsScreen() {
   const router = useRouter();
   const { inventory_report_id } = useLocalSearchParams<{ inventory_report_id?: string }>();
@@ -376,6 +407,7 @@ export default function InventoryResultsScreen() {
   const [commentDraft, setCommentDraft] = useState('');
   const [unmappedItems, setUnmappedItems] = useState<UnmappedInventoryItem[]>([]);
   const [showUnmappedItems, setShowUnmappedItems] = useState(false);
+  const [draftReady, setDraftReady] = useState(false);
 
   const shortageResults = useMemo(() => {
     return results.filter((result) => toNumber(result.final_result) < 0 && !isExpenseCross(result.cross_name)).sort(sortByImpact);
@@ -386,8 +418,14 @@ export default function InventoryResultsScreen() {
   }, [results]);
 
   useEffect(() => {
+    setDraftReady(false);
     loadResults();
   }, [inventory_report_id]);
+
+  useEffect(() => {
+    if (!inventory_report_id || loading || !draftReady || results.length === 0) return;
+    writeResultsDraft(inventory_report_id, results);
+  }, [draftReady, inventory_report_id, loading, results]);
 
   async function loadResults() {
     if (!inventory_report_id) {
@@ -407,9 +445,14 @@ export default function InventoryResultsScreen() {
 
     if (!savedError && savedResults && savedResults.length > 0) {
       const calculatedFromCsv = await calculateResultsFromCsv(inventory_report_id);
+      const localDraft = readResultsDraft(inventory_report_id);
       setUnmappedItems(calculatedFromCsv.unmappedItems);
       setShowUnmappedItems(calculatedFromCsv.unmappedItems.length > 0);
-      setResults(mergeSavedResultsWithCalculatedDetails(savedResults as InventoryResult[], calculatedFromCsv.results));
+      setResults(localDraft?.length
+        ? localDraft
+        : mergeSavedResultsWithCalculatedDetails(savedResults as InventoryResult[], calculatedFromCsv.results));
+      if (localDraft?.length) setMessage('Se restauró un borrador local de resultados pendiente de guardar.');
+      setDraftReady(true);
       setLoading(false);
       return;
     }
@@ -464,19 +507,22 @@ export default function InventoryResultsScreen() {
     setUnmappedItems(calculatedFromCsv.unmappedItems);
     setShowUnmappedItems(calculatedFromCsv.unmappedItems.length > 0);
     setResults(calculatedFromCsv.results);
+    setDraftReady(true);
+
+    if (!confirmFirst && calculatedFromCsv.results.length > 0) {
+      await persistResults(calculatedFromCsv.results);
+    }
+
     setSaving(false);
     setMessage(calculatedFromCsv.unmappedItems.length > 0
       ? `Resultados calculados: ${calculatedFromCsv.results.length} registros. Hay ${calculatedFromCsv.unmappedItems.length} SKU sin cruce configurado.`
       : `Resultados calculados: ${calculatedFromCsv.results.length} registros.`);
   }
-  async function saveResults(nextResults = results) {
-    if (!inventory_report_id || nextResults.length === 0) {
-      setMessage('No hay resultados para guardar.');
-      return;
-    }
 
-    setSaving(true);
-    setMessage(null);
+  async function persistResults(nextResults: InventoryResult[]) {
+    if (!inventory_report_id || nextResults.length === 0) {
+      return false;
+    }
 
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -486,9 +532,8 @@ export default function InventoryResultsScreen() {
       .eq('inventory_report_id', inventory_report_id);
 
     if (deleteError) {
-      setSaving(false);
       setMessage('No se pudieron reemplazar resultados: ' + deleteError.message);
-      return;
+      return false;
     }
 
     const payload = nextResults.map((result) => ({
@@ -519,14 +564,37 @@ export default function InventoryResultsScreen() {
         .eq('id', inventory_report_id);
     }
 
-    setSaving(false);
-
     if (error) {
       setMessage('No se pudieron guardar resultados: ' + error.message);
-      return;
+      return false;
     }
 
+    return true;
+  }
+
+  async function saveResults(nextResults = results) {
+    if (!inventory_report_id || nextResults.length === 0) {
+      setMessage('No hay resultados para guardar.');
+      return false;
+    }
+
+    setSaving(true);
+    setMessage(null);
+    const ok = await persistResults(nextResults);
+    setSaving(false);
+    if (!ok) return false;
+    clearResultsDraft(inventory_report_id);
     setMessage('Resultados guardados correctamente.');
+    return true;
+  }
+
+  async function saveAndContinue() {
+    const ok = await saveResults();
+    if (!ok) return;
+    router.push({
+      pathname: '/modulos/inventarios/validaciones-manuales',
+      params: { inventory_report_id },
+    });
   }
 
   function updateManualResult(index: number, value: string) {
@@ -672,11 +740,9 @@ export default function InventoryResultsScreen() {
             <Text style={styles.primaryButtonText}>{saving ? 'Guardando...' : 'Guardar resultados calculados'}</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.secondaryButton, styles.footerSecondaryButton]}
-            onPress={() => router.push({
-              pathname: '/modulos/inventarios/validaciones-manuales',
-              params: { inventory_report_id },
-            })}
+            disabled={saving || results.length === 0}
+            style={[styles.secondaryButton, styles.footerSecondaryButton, (saving || results.length === 0) && styles.disabledButton]}
+            onPress={saveAndContinue}
           >
             <Text style={styles.secondaryButtonText}>Siguiente</Text>
           </TouchableOpacity>
