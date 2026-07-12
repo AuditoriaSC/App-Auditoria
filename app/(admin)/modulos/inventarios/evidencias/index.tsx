@@ -62,15 +62,17 @@ type ClosingSummary = {
 
 const bucketName = 'inventory-report-evidences';
 
-const categories: EvidenceCategory[] = [
-  'Tirillas de cierre de caja',
-  'Facturas manuales',
-  'Traspasos pendientes',
-  'Albaranes de compra pendientes',
-  'Imagen del extracto de movimientos',
-  'Imagen de regularización de bodega de diferencias',
-  'Otro',
+const categoryOptions: Array<{ value: EvidenceCategory; label: string }> = [
+  { value: 'Tirillas de cierre de caja', label: 'Tirillas de cierre de caja' },
+  { value: 'Facturas manuales', label: 'Facturas manuales' },
+  { value: 'Traspasos pendientes', label: 'Traspasos pendientes' },
+  { value: 'Albaranes de compra pendientes', label: 'Albaranes de compra pendientes' },
+  { value: 'Imagen del extracto de movimientos', label: 'Extracto de movimientos' },
+  { value: 'Imagen de regularización de bodega de diferencias', label: 'Regularización de bodega de diferencias' },
+  { value: 'Otro', label: 'Otro' },
 ];
+
+const categories = categoryOptions.map((option) => option.value);
 
 const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'pdf', 'xls', 'xlsx', 'csv'];
 
@@ -133,11 +135,19 @@ function formatTime(time?: string | null) {
   return time.slice(0, 5);
 }
 
+function categoryLabel(category: string) {
+  const normalized = category
+    .replace(/^Imagen del /i, '')
+    .replace(/^Imagen de /i, '');
+  return categoryOptions.find((option) => option.value === category)?.label || normalized;
+}
+
 export default function InventoryEvidenceScreen() {
   const router = useRouter();
   const { inventory_report_id } = useLocalSearchParams<{ inventory_report_id?: string }>();
 
   const [category, setCategory] = useState<EvidenceCategory>('Tirillas de cierre de caja');
+  const [showCategoryOptions, setShowCategoryOptions] = useState(false);
   const [evidences, setEvidences] = useState<EvidenceRow[]>([]);
   const [report, setReport] = useState<InventoryReportSummary | null>(null);
   const [summary, setSummary] = useState<ClosingSummary | null>(null);
@@ -525,16 +535,31 @@ export default function InventoryEvidenceScreen() {
         {message ? <Text style={styles.hint}>{message}</Text> : null}
 
         <Text style={styles.blockTitle}>Categoría de evidencia</Text>
-        <View style={styles.grid}>
-          {categories.map((item) => (
-            <TouchableOpacity
-              key={item}
-              style={[styles.secondaryButton, category === item && styles.selectedButton]}
-              onPress={() => setCategory(item)}
-            >
-              <Text style={styles.secondaryButtonText}>{item}</Text>
-            </TouchableOpacity>
-          ))}
+        <View style={styles.categoryDropdown}>
+          <TouchableOpacity
+            style={styles.categoryDropdownButton}
+            onPress={() => setShowCategoryOptions((current) => !current)}
+          >
+            <Text style={styles.categoryDropdownLabel}>{categoryLabel(category)}</Text>
+            <Text style={styles.categoryDropdownIcon}>{showCategoryOptions ? '⌃' : '⌄'}</Text>
+          </TouchableOpacity>
+
+          {showCategoryOptions ? (
+            <View style={styles.categoryDropdownPanel}>
+              {categoryOptions.map((item) => (
+                <TouchableOpacity
+                  key={item.value}
+                  style={[styles.categoryDropdownOption, category === item.value && styles.categoryDropdownOptionActive]}
+                  onPress={() => {
+                    setCategory(item.value);
+                    setShowCategoryOptions(false);
+                  }}
+                >
+                  <Text style={styles.categoryDropdownOptionText}>{item.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.footerActions}>
@@ -552,7 +577,7 @@ export default function InventoryEvidenceScreen() {
 
         {evidencesByCategory.map((group) => (
           <View key={group.category} style={styles.evidenceCategoryGroup}>
-            <Text style={styles.evidenceCategoryTitle}>{group.category}</Text>
+            <Text style={styles.evidenceCategoryTitle}>{categoryLabel(group.category)}</Text>
             <View style={styles.evidenceMiniCardList}>
               {group.evidences.map((evidence, index) => (
                 <View key={evidence.id} style={styles.evidenceMiniCard}>
