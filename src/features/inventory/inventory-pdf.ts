@@ -128,10 +128,18 @@ function groupResults(results: InventoryResultPdfRow[]) {
 async function evidenceToSignedUrl(evidence: EvidencePdfRow) {
   const { data, error } = await supabase.storage
     .from(bucketName)
-    .createSignedUrl(evidence.file_path, 60 * 10);
+    .createSignedUrl(evidence.file_path, 60 * 60);
 
   if (error || !data?.signedUrl) return null;
   return data.signedUrl;
+}
+
+function evidenceCategoryLabel(category: string) {
+  return category
+    .replace(/-/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^\w|\s\w/g, (letter) => letter.toUpperCase());
 }
 
 function signedImageHtml(evidence: EvidencePdfRow, signedUrl: string | null) {
@@ -141,10 +149,30 @@ function signedImageHtml(evidence: EvidencePdfRow, signedUrl: string | null) {
 
   return `
     <figure class="evidence-image">
-      <figcaption>${escapeHtml(evidence.category)} - ${escapeHtml(evidence.file_name)}</figcaption>
-      <img src="${escapeHtml(signedUrl)}" alt="${escapeHtml(evidence.file_name)}" />
+      <img src="${escapeHtml(signedUrl)}" alt="${escapeHtml(evidence.file_name)}" loading="eager" />
+      <figcaption>${escapeHtml(evidence.file_name)}</figcaption>
     </figure>
   `;
+}
+
+function evidenceImageGroupsHtml(groups: Record<string, string[]>) {
+  const categoryBlocks = Object.entries(groups)
+    .filter(([, images]) => images.length > 0)
+    .map(([category, images]) => `
+      <div class="evidence-category-block">
+        <h3>${escapeHtml(evidenceCategoryLabel(category))}</h3>
+        <div class="evidence-grid">
+          ${images.join('')}
+        </div>
+      </div>
+    `)
+    .join('');
+
+  if (!categoryBlocks) {
+    return '<p class="muted">No hay imágenes adjuntas para insertar en el informe.</p>';
+  }
+
+  return categoryBlocks;
 }
 
 function table(headers: string[], rows: string[][]) {
@@ -231,9 +259,12 @@ function buildPrintableHtml(params: {
           .neutral { color: #374151; font-weight: 900; }
           .muted { color: #6b7280; }
           .note { border: 1px solid #9ca3af; min-height: 42px; padding: 8px; }
-          .evidence-image { margin: 12px 0; page-break-inside: avoid; }
-          .evidence-image figcaption { font-weight: 900; margin-bottom: 5px; color: #165034; }
-          .evidence-image img { max-width: 100%; max-height: 520px; object-fit: contain; border: 1px solid #9ca3af; }
+          .evidence-category-block { margin-top: 12px; page-break-inside: avoid; }
+          .evidence-category-block h3 { margin: 0 0 8px; color: #165034; font-size: 12px; text-transform: uppercase; }
+          .evidence-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: start; }
+          .evidence-image { margin: 0; page-break-inside: avoid; border: 1px solid #9ca3af; padding: 6px; background: #fff; }
+          .evidence-image figcaption { font-size: 9px; font-weight: 700; margin-top: 5px; color: #374151; overflow-wrap: anywhere; }
+          .evidence-image img { display: block; width: 100%; max-height: 360px; object-fit: contain; background: #f9fafb; }
           .evidence-missing { border: 1px dashed #9ca3af; padding: 8px; color: #6b7280; margin: 8px 0; }
           .actions { margin: 12px 0; }
           .print-button { background: #165034; color: white; border: 0; padding: 10px 14px; border-radius: 6px; font-weight: 900; cursor: pointer; }
@@ -312,10 +343,11 @@ function buildPrintableHtml(params: {
 
           ${section('10. Evidencias', `
             ${table(['Categoría', 'Archivo', 'Referencia'], evidences.map((evidence) => [
-              escapeHtml(evidence.category),
+              escapeHtml(evidenceCategoryLabel(evidence.category)),
               escapeHtml(evidence.file_name),
               escapeHtml(evidence.file_path),
             ]))}
+            <h3 style="margin:14px 0 8px;color:#165034;font-size:12px;text-transform:uppercase;">Evidencias fotográficas</h3>
             ${imageHtml}
           `)}
 
@@ -325,8 +357,26 @@ function buildPrintableHtml(params: {
           ]))}
         </div>
         <script>
+          function waitForImages() {
+            var images = Array.prototype.slice.call(document.images || []);
+            if (!images.length) return Promise.resolve();
+            var waits = images.map(function (image) {
+              if (image.complete) return Promise.resolve();
+              return new Promise(function (resolve) {
+                image.addEventListener('load', resolve, { once: true });
+                image.addEventListener('error', resolve, { once: true });
+              });
+            });
+            return Promise.race([
+              Promise.all(waits),
+              new Promise(function (resolve) { setTimeout(resolve, 7000); })
+            ]);
+          }
+
           window.addEventListener('load', function () {
-            setTimeout(function () { window.print(); }, 500);
+            waitForImages().then(function () {
+              setTimeout(function () { window.print(); }, 300);
+            });
           });
         </script>
       </body>
@@ -461,11 +511,17 @@ export async function downloadInventoryReportPdf(inventoryReportId: string) {
   }
 
   const evidences = (evidencesResult.data || []) as EvidencePdfRow[];
-  const imageHtml = (await Promise.all(
+  const imageGroups: Record<string, string[]> = {};
+  await Promise.all(
     evidences
       .filter(isImageEvidence)
-      .map(async (evidence) => signedImageHtml(evidence, await evidenceToSignedUrl(evidence))),
-  )).join('');
+      .map(async (evidence) => {
+        const html = signedImageHtml(evidence, await evidenceToSignedUrl(evidence));
+        const key = evidence.category || 'Otro';
+        imageGroups[key] = [...(imageGroups[key] || []), html];
+      }),
+  );
+  const imageHtml = evidenceImageGroupsHtml(imageGroups);
 
   const html = buildPrintableHtml({
     report: reportResult.data,
