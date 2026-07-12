@@ -90,8 +90,8 @@ const resources = [
     route: '/usuarios',
   },
   {
-    title: 'Solicitudes de recalificacion',
-    description: 'Aprobar o rechazar cambios que modifican la calificacion de una visita.',
+    title: 'Autorizaciones',
+    description: 'Aprobar recalificaciones de visitas y solicitudes especiales de inventarios.',
     route: '/solicitudes-edicion',
   },
 ];

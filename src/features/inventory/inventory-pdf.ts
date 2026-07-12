@@ -22,7 +22,13 @@ type InventoryResultPdfRow = {
   sku: string | null;
   item_description: string | null;
   cross_name: string | null;
+  manual_comment: string | null;
+  is_manual_adjusted: boolean | null;
   final_result: number | string | null;
+  component_skus?: string[];
+  component_items?: InventoryResultComponentPdfRow[];
+  physical_stock?: number | string | null;
+  system_stock?: number | string | null;
 };
 
 type InventoryItemPdfRow = {
@@ -30,6 +36,23 @@ type InventoryItemPdfRow = {
   item_description: string | null;
   physical_stock: number | string | null;
   system_stock: number | string | null;
+  difference: number | string | null;
+};
+
+type InventoryCrossPdfRow = {
+  sku: string;
+  cross_name: string;
+  conversion_factor: number | string | null;
+  is_active: boolean | null;
+};
+
+type InventoryResultComponentPdfRow = {
+  sku: string;
+  item_description: string | null;
+  physical_stock: number | string | null;
+  system_stock: number | string | null;
+  difference: number | string | null;
+  converted_difference: number | string | null;
 };
 
 type ManualInvoicePdfRow = {
@@ -73,6 +96,16 @@ type EvidencePdfRow = {
 };
 
 const bucketName = 'inventory-report-evidences';
+const displayAsIndependentMarker = '[display_as_independent]';
+const evidenceCategoryOrder = [
+  'tirillas-de-cierre-de-caja',
+  'facturas-manuales',
+  'traspasos-pendientes',
+  'albaranes-de-compra-pendientes',
+  'imagen-del-extracto-de-movimientos',
+  'imagen-de-regularizacion-de-bodega-de-diferencias',
+  'otro',
+];
 
 function toNumber(value: unknown) {
   const parsed = Number(value);
@@ -112,17 +145,188 @@ function isImageEvidence(evidence: EvidencePdfRow) {
   return mime.startsWith('image/') || /\.(jpg|jpeg|png|webp)$/i.test(name);
 }
 
-function sortByImpact(left: InventoryResultPdfRow, right: InventoryResultPdfRow) {
-  return Math.abs(toNumber(right.final_result)) - Math.abs(toNumber(left.final_result));
+function normalizeSku(value: string | null | undefined) {
+  return String(value || '').trim();
+}
+
+function normalizeCrossName(value: string | null | undefined) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function isCostCross(value: string | null | undefined) {
+  return normalizeCrossName(value) === 'COSTO';
+}
+
+function isExpenseCross(value: string | null | undefined) {
+  return normalizeCrossName(value) === 'GASTO';
+}
+
+function isDisplayAsIndependent(result: InventoryResultPdfRow) {
+  return Boolean(result.cross_name && result.manual_comment?.includes(displayAsIndependentMarker));
+}
+
+function classifyResult(result: Pick<InventoryResultPdfRow, 'cross_name' | 'final_result'>) {
+  if (toNumber(result.final_result) >= 0) {
+    return result.cross_name ? 'surplus_cross' : 'surplus_without_cross';
+  }
+
+  return result.cross_name ? 'shortage_cross' : 'shortage_without_cross';
 }
 
 function groupResults(results: InventoryResultPdfRow[]) {
+  const visibleResults = results.filter((row) => !isExpenseCross(row.cross_name));
   return {
-    surplusWithoutCross: results.filter((row) => row.result_type === 'surplus_without_cross').sort(sortByImpact),
-    surplusCross: results.filter((row) => row.result_type === 'surplus_cross').sort(sortByImpact),
-    shortageWithoutCross: results.filter((row) => row.result_type === 'shortage_without_cross').sort(sortByImpact),
-    shortageCross: results.filter((row) => row.result_type === 'shortage_cross').sort(sortByImpact),
+    surplus: visibleResults.filter((row) => row.result_type === 'surplus_without_cross' || row.result_type === 'surplus_cross'),
+    shortage: visibleResults.filter((row) => row.result_type === 'shortage_without_cross' || row.result_type === 'shortage_cross'),
   };
+}
+
+function getStockDifference(item: InventoryItemPdfRow) {
+  return toNumber(item.physical_stock) - toNumber(item.system_stock);
+}
+
+function getConvertedDifference(item: InventoryItemPdfRow, conversionFactor: number) {
+  if (conversionFactor === 1) {
+    return toNumber(item.difference);
+  }
+
+  return getStockDifference(item) * conversionFactor;
+}
+
+function calculatePdfResultDetails(items: InventoryItemPdfRow[], crosses: InventoryCrossPdfRow[]) {
+  const activeCrossesBySku = new Map<string, InventoryCrossPdfRow[]>();
+  crosses
+    .filter((cross) => cross.is_active)
+    .forEach((cross) => {
+      const sku = normalizeSku(cross.sku);
+      const current = activeCrossesBySku.get(sku) || [];
+      current.push(cross);
+      activeCrossesBySku.set(sku, current);
+    });
+
+  const withoutCross: InventoryResultPdfRow[] = [];
+  const crossGroups = new Map<string, InventoryResultPdfRow & { component_skus: string[] }>();
+
+  items.forEach((item) => {
+    const sku = normalizeSku(item.sku);
+    const itemCrosses = activeCrossesBySku.get(sku) || [];
+    const stockDifference = getStockDifference(item);
+
+    if (itemCrosses.length === 0) {
+      withoutCross.push({
+        result_type: stockDifference >= 0 ? 'surplus_without_cross' : 'shortage_without_cross',
+        sku,
+        item_description: item.item_description,
+        cross_name: null,
+        manual_comment: null,
+        is_manual_adjusted: false,
+        final_result: stockDifference,
+        component_skus: [sku],
+        physical_stock: item.physical_stock,
+        system_stock: item.system_stock,
+      });
+      return;
+    }
+
+    itemCrosses.forEach((cross) => {
+      if (isExpenseCross(cross.cross_name)) return;
+
+      if (isCostCross(cross.cross_name)) {
+        withoutCross.push({
+          result_type: stockDifference >= 0 ? 'surplus_without_cross' : 'shortage_without_cross',
+          sku,
+          item_description: item.item_description,
+          cross_name: null,
+          manual_comment: null,
+          is_manual_adjusted: false,
+          final_result: stockDifference,
+          component_skus: [sku],
+          physical_stock: item.physical_stock,
+          system_stock: item.system_stock,
+        });
+        return;
+      }
+
+      const conversionFactor = toNumber(cross.conversion_factor);
+      const calculated = getConvertedDifference(item, conversionFactor);
+      const originalDifference = conversionFactor === 1 ? toNumber(item.difference) : stockDifference;
+      const current = crossGroups.get(cross.cross_name);
+      const component = {
+        sku,
+        item_description: item.item_description,
+        physical_stock: item.physical_stock,
+        system_stock: item.system_stock,
+        difference: originalDifference,
+        converted_difference: calculated,
+      };
+
+      if (current) {
+        current.final_result = toNumber(current.final_result) + calculated;
+        current.component_skus = Array.from(new Set([...current.component_skus, sku]));
+        current.component_items = [...(current.component_items || []), component];
+      } else {
+        crossGroups.set(cross.cross_name, {
+          result_type: calculated >= 0 ? 'surplus_cross' : 'shortage_cross',
+          sku,
+          item_description: item.item_description,
+          cross_name: cross.cross_name,
+          manual_comment: null,
+          is_manual_adjusted: false,
+          final_result: calculated,
+          component_skus: [sku],
+          physical_stock: item.physical_stock,
+          system_stock: item.system_stock,
+          component_items: [component],
+        });
+      }
+    });
+  });
+
+  return [...withoutCross, ...Array.from(crossGroups.values())].map((result) => ({
+    ...result,
+    result_type: classifyResult(result),
+  }));
+}
+
+function mergeSavedResultsWithCalculatedDetails(savedResults: InventoryResultPdfRow[], calculatedResults: InventoryResultPdfRow[]) {
+  return savedResults.map((savedResult) => {
+    const recalculatedType = classifyResult(savedResult);
+    const normalizedSavedSku = normalizeSku(savedResult.sku);
+
+    if (!savedResult.cross_name || isDisplayAsIndependent(savedResult)) {
+      const calculatedDetail = calculatedResults.find((calculatedResult) =>
+        normalizeSku(calculatedResult.sku) === normalizedSavedSku
+        || calculatedResult.component_skus?.some((sku) => normalizeSku(sku) === normalizedSavedSku)
+      );
+
+      return {
+        ...savedResult,
+        result_type: recalculatedType,
+        component_skus: calculatedDetail?.component_skus || savedResult.component_skus,
+        component_items: calculatedDetail?.component_items || savedResult.component_items,
+        physical_stock: calculatedDetail?.physical_stock ?? savedResult.physical_stock,
+        system_stock: calculatedDetail?.system_stock ?? savedResult.system_stock,
+      };
+    }
+
+    const calculatedDetail = calculatedResults.find((calculatedResult) =>
+      calculatedResult.cross_name === savedResult.cross_name
+      && !isDisplayAsIndependent(calculatedResult)
+    );
+
+    return {
+      ...savedResult,
+      result_type: recalculatedType,
+      component_skus: calculatedDetail?.component_skus || savedResult.component_skus,
+      component_items: calculatedDetail?.component_items || savedResult.component_items,
+      physical_stock: calculatedDetail?.physical_stock ?? savedResult.physical_stock,
+      system_stock: calculatedDetail?.system_stock ?? savedResult.system_stock,
+    };
+  });
 }
 
 async function evidenceToSignedUrl(evidence: EvidencePdfRow) {
@@ -156,7 +360,16 @@ function signedImageHtml(evidence: EvidencePdfRow, signedUrl: string | null) {
 }
 
 function evidenceImageGroupsHtml(groups: Record<string, string[]>) {
-  const categoryBlocks = Object.entries(groups)
+  const sortedEntries = Object.entries(groups).sort(([left], [right]) => {
+    const leftIndex = evidenceCategoryOrder.indexOf(left);
+    const rightIndex = evidenceCategoryOrder.indexOf(right);
+    const safeLeftIndex = leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex;
+    const safeRightIndex = rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex;
+    if (safeLeftIndex !== safeRightIndex) return safeLeftIndex - safeRightIndex;
+    return evidenceCategoryLabel(left).localeCompare(evidenceCategoryLabel(right), 'es');
+  });
+
+  const categoryBlocks = sortedEntries
     .filter(([, images]) => images.length > 0)
     .map(([category, images]) => `
       <div class="evidence-category-block">
@@ -192,30 +405,141 @@ function table(headers: string[], rows: string[][]) {
   `;
 }
 
-function resultRows(rows: InventoryResultPdfRow[], itemsBySku: Map<string, InventoryItemPdfRow>) {
-  return rows.map((row) => {
-    const item = row.sku ? itemsBySku.get(String(row.sku).trim()) : null;
-    const value = toNumber(row.final_result);
-    const valueClass = value < 0 ? 'negative' : value > 0 ? 'positive' : 'neutral';
-    const label = row.cross_name
-      ? `TOTAL DE CRUCE ${escapeHtml(row.cross_name)}`
-      : `${escapeHtml(row.sku || '-')} - ${escapeHtml(row.item_description || '-')}`;
-
-    return [
-      label,
-      formatNumber(item?.physical_stock),
-      formatNumber(item?.system_stock),
-      `<span class="${valueClass}">${formatNumber(value)}</span>`,
-    ];
-  });
-}
-
 function section(title: string, content: string) {
   return `
     <section>
       <h2>${escapeHtml(title)}</h2>
       ${content}
     </section>
+  `;
+}
+
+function statusTable(rows: string[][]) {
+  return table(['Detalle de validaciones', 'Estado'], rows.map(([detail, status]) => [
+    escapeHtml(detail),
+    `<strong>${escapeHtml(status)}</strong>`,
+  ]));
+}
+
+function noNoveltiesTable(title: string) {
+  return table([title, 'Estado'], [[
+    'No se registran novedades.',
+    '<strong>OK</strong>',
+  ]]);
+}
+
+function recountSummaryRows(recounts: RecountPdfRow[]) {
+  const ok = recounts.filter((row) => row.status === 'Recuento OK').length;
+  const modified = recounts.filter((row) => row.status === 'Recuento Modificado').length;
+  return [
+    ['Recuento OK', String(ok)],
+    ['Recuento Modificado', String(modified)],
+    ['Total de recuentos', String(recounts.length)],
+  ];
+}
+
+function resultValue(value: unknown) {
+  const number = toNumber(value);
+  const valueClass = number < 0 ? 'negative' : number > 0 ? 'positive' : 'neutral';
+  return `<span class="${valueClass}">${formatNumber(number)}</span>`;
+}
+
+function independentDisplayData(result: InventoryResultPdfRow) {
+  const movedFromCross = isDisplayAsIndependent(result);
+  const firstComponent = result.component_items?.[0];
+
+  return {
+    sku: movedFromCross ? firstComponent?.sku || result.component_skus?.[0] || result.sku : result.sku,
+    description: movedFromCross ? firstComponent?.item_description || result.item_description : result.item_description,
+    physicalStock: movedFromCross ? firstComponent?.physical_stock ?? result.physical_stock : result.physical_stock,
+    systemStock: movedFromCross ? firstComponent?.system_stock ?? result.system_stock : result.system_stock,
+    difference: movedFromCross ? firstComponent?.converted_difference ?? result.final_result : result.final_result,
+    note: movedFromCross ? `<div class="row-note">Cruce original: ${escapeHtml(result.cross_name || '-')}</div>` : '',
+  };
+}
+
+function resultTableRows(results: InventoryResultPdfRow[]) {
+  const independentResults = results
+    .filter((result) => !result.cross_name || isDisplayAsIndependent(result))
+    .sort((left, right) => Math.abs(toNumber(independentDisplayData(right).difference)) - Math.abs(toNumber(independentDisplayData(left).difference)));
+  const crossResults = results
+    .filter((result) => result.cross_name && !isDisplayAsIndependent(result))
+    .sort((left, right) => Math.abs(toNumber(right.final_result)) - Math.abs(toNumber(left.final_result)));
+  const rows: string[] = [];
+
+  independentResults.forEach((result) => {
+    const display = independentDisplayData(result);
+    rows.push(`
+      <tr>
+        <td class="article-cell"><strong>${escapeHtml(display.sku || 'sin SKU')} · ${escapeHtml(display.description || 'Sin descripción')}</strong>${display.note}</td>
+        <td class="number-cell">${formatNumber(display.physicalStock)}</td>
+        <td class="number-cell">${formatNumber(display.systemStock)}</td>
+        <td class="number-cell">${resultValue(display.difference)}</td>
+      </tr>
+    `);
+  });
+
+  if (independentResults.length > 0 && crossResults.length > 0) {
+    rows.push('<tr class="spacer-row"><td colspan="4"></td></tr>');
+  }
+
+  crossResults.forEach((result) => {
+    const components = result.component_items || [];
+
+    if (components.length > 0) {
+      components.forEach((item) => {
+        rows.push(`
+          <tr>
+            <td class="article-cell"><strong>${escapeHtml(item.sku)} · ${escapeHtml(item.item_description || 'Sin descripción')}</strong></td>
+            <td class="number-cell">${formatNumber(item.physical_stock)}</td>
+            <td class="number-cell">${formatNumber(item.system_stock)}</td>
+            <td class="number-cell">${resultValue(item.converted_difference)}</td>
+          </tr>
+        `);
+      });
+    } else {
+      rows.push(`
+        <tr>
+          <td class="article-cell"><strong>SKUs: ${escapeHtml((result.component_skus || []).join(', ') || 'sin detalle guardado')}</strong></td>
+          <td class="number-cell">-</td>
+          <td class="number-cell">-</td>
+          <td class="number-cell">${resultValue(result.final_result)}</td>
+        </tr>
+      `);
+    }
+
+    const totalClass = toNumber(result.final_result) < 0 ? 'total-shortage-row' : 'total-surplus-row';
+    rows.push(`
+      <tr class="${totalClass}">
+        <td></td>
+        <td class="number-cell">-</td>
+        <td><strong>TOTAL DE CRUCE ${escapeHtml(result.cross_name || '-')}</strong></td>
+        <td class="number-cell"><strong>${resultValue(result.final_result)}</strong></td>
+      </tr>
+      <tr class="spacer-row"><td colspan="4"></td></tr>
+    `);
+  });
+
+  if (rows.length === 0) {
+    rows.push('<tr><td colspan="4" class="muted">Sin registros para este bloque.</td></tr>');
+  }
+
+  return rows.join('');
+}
+
+function resultsTable(results: InventoryResultPdfRow[]) {
+  return `
+    <table class="results-table">
+      <thead>
+        <tr>
+          <th>Artículo</th>
+          <th class="number-cell">Stock físico</th>
+          <th class="number-cell">Stock actual</th>
+          <th class="number-cell">Diferencia</th>
+        </tr>
+      </thead>
+      <tbody>${resultTableRows(results)}</tbody>
+    </table>
   `;
 }
 
@@ -232,7 +556,6 @@ function buildPrintableHtml(params: {
   imageHtml: string;
 }) {
   const { report, items, results, invoice, recounts, finishedProducts, cashClosures, observation, evidences, imageHtml } = params;
-  const itemsBySku = new Map(items.map((item) => [String(item.sku).trim(), item]));
   const grouped = groupResults(results);
 
   return `
@@ -246,13 +569,20 @@ function buildPrintableHtml(params: {
           * { box-sizing: border-box; }
           body { margin: 0; color: #111827; font-family: Arial, Helvetica, sans-serif; font-size: 11px; background: #fff; }
           .page { max-width: 980px; margin: 0 auto; padding: 14px; }
-          header { border-bottom: 4px solid #165034; padding-bottom: 10px; margin-bottom: 14px; }
-          .brand { font-size: 18px; font-weight: 900; color: #165034; }
+          header { background: #165034; color: #fff; border-radius: 10px; padding: 16px 18px; margin-bottom: 14px; }
+          .brand { font-size: 18px; font-weight: 900; color: #fff; }
           h1 { margin: 8px 0 4px; font-size: 18px; text-transform: uppercase; }
+          .header-subtitle { color: #f7f1e7; }
           h2 { margin: 18px 0 0; padding: 7px 9px; background: #165034; color: #fff; font-size: 12px; text-transform: uppercase; }
           table { width: 100%; border-collapse: collapse; page-break-inside: auto; }
           th { background: #165034; color: #fff; font-size: 10px; text-align: left; padding: 5px; border: 1px solid #9ca3af; }
           td { padding: 5px; border: 1px solid #9ca3af; vertical-align: top; }
+          .article-cell { width: 48%; }
+          .number-cell { text-align: right; white-space: nowrap; }
+          .row-note { color: #6b7280; font-size: 9px; margin-top: 2px; }
+          .spacer-row td { border-left: 0; border-right: 0; height: 8px; padding: 0; }
+          .total-shortage-row td { background: #f6d8d5; }
+          .total-surplus-row td { background: #dff2e8; }
           .meta th { width: 32%; background: #e7f1ec; color: #165034; }
           .positive { color: #165034; font-weight: 900; }
           .negative { color: #b91c1c; font-weight: 900; }
@@ -282,7 +612,7 @@ function buildPrintableHtml(params: {
           <header>
             <div class="brand">Sweet & Coffee</div>
             <h1>Informe de Visita por Inventario General</h1>
-            <div>${escapeHtml(report.local_name_snapshot || '-')} (${escapeHtml(report.local_codigo || '-')})</div>
+            <div class="header-subtitle">${escapeHtml(report.local_name_snapshot || '-')} (${escapeHtml(report.local_codigo || '-')})</div>
           </header>
 
           ${section('Datos principales', table(['Campo', 'Detalle'], [
@@ -297,57 +627,58 @@ function buildPrintableHtml(params: {
             ['Responsable / líder', escapeHtml(report.responsible_name_snapshot || '-')],
           ]))}
 
-          ${section('4.1 Faltantes', table(['Artículo', 'Stock físico', 'Stock actual', 'Diferencia'], [
-            ...resultRows(grouped.shortageWithoutCross, itemsBySku),
-            ...resultRows(grouped.shortageCross, itemsBySku),
+          ${section('4.1 Faltantes', resultsTable(grouped.shortage))}
+
+          ${section('4.2 Sobrantes', resultsTable(grouped.surplus))}
+
+          ${section('4.3 Recuento de ítems', `
+            ${table(['Detalle', 'Cantidad'], recountSummaryRows(recounts))}
+            ${table(['SKU', 'Descripción', 'Conteo inicial', 'Nuevo reconteo', 'Diferencia', 'Estado'], recounts.map((row) => [
+              escapeHtml(row.sku || '-'),
+              escapeHtml(row.item_description || '-'),
+              formatNumber(row.initial_count),
+              formatNumber(row.final_recount),
+              formatNumber(row.difference),
+              escapeHtml(row.status || '-'),
+            ]))}
+          `)}
+
+          ${section('4.4 Producto terminado', finishedProducts.length > 0
+            ? table(['Producto terminado', 'Sistema', 'Físico', 'Diferencia'], finishedProducts.map((row) => [
+                escapeHtml(row.item_description || '-'),
+                formatNumber(row.system_stock),
+                formatNumber(row.physical_stock),
+                formatNumber(row.difference),
+              ]))
+            : noNoveltiesTable('Producto terminado'))}
+
+          ${section('5. Validaciones', statusTable([
+            ['Resultado de inventario general revisado', 'OK'],
+            ['Reconteos ingresados y revisados', 'OK'],
+            ['Producto terminado revisado', finishedProducts.length > 0 ? 'CON NOVEDAD' : 'OK'],
+            ['Cierres de caja revisados', cashClosures.length > 0 ? 'OK' : 'SIN REGISTROS'],
+            ['Facturas manuales revisadas', invoice ? 'OK' : 'SIN REGISTROS'],
           ]))}
 
-          ${section('4.2 Sobrantes', table(['Artículo', 'Stock físico', 'Stock actual', 'Diferencia'], [
-            ...resultRows(grouped.surplusWithoutCross, itemsBySku),
-            ...resultRows(grouped.surplusCross, itemsBySku),
-          ]))}
-
-          ${section('4.3 Facturas manuales', table(['Última sistema', 'Última block', 'Caducidad block', 'Diferencia'], invoice ? [[
-            String(invoice.last_system_invoice ?? '-'),
-            String(invoice.last_physical_block_invoice ?? '-'),
-            formatDate(invoice.block_expiration_date),
-            String(invoice.calculated_difference ?? '-'),
-          ]] : []))}
-
-          ${section('4.4 Reconteo de ítems', table(['SKU', 'Descripción', 'Inicial', 'Reconteo', 'Diferencia', 'Estado'], recounts.map((row) => [
-            escapeHtml(row.sku || '-'),
-            escapeHtml(row.item_description || '-'),
-            formatNumber(row.initial_count),
-            formatNumber(row.final_recount),
-            formatNumber(row.difference),
-            escapeHtml(row.status || '-'),
-          ])))}
-
-          ${section('4.5 Producto terminado', table(['Producto terminado', 'Sistema', 'Físico', 'Diferencia'], finishedProducts.map((row) => [
-            escapeHtml(row.item_description || '-'),
-            formatNumber(row.system_stock),
-            formatNumber(row.physical_stock),
-            formatNumber(row.difference),
-          ])))}
-
-          ${section('4.6 Cierres de caja', table(['Caja', 'Número', 'Cajero', 'Físico', 'Sistema', 'Diferencia'], cashClosures.map((row) => [
+          ${section('6. Cierres de caja', cashClosures.length > 0 ? table(['Caja', 'Número', 'Cajero', 'Físico', 'Sistema', 'Diferencia'], cashClosures.map((row) => [
             escapeHtml(row.cash_register || '-'),
             escapeHtml(row.cash_register_number || '-'),
             escapeHtml(row.cashier_name || '-'),
             formatNumber(row.cash_value),
             formatNumber(row.system_value),
             formatNumber(row.cash_difference),
-          ])))}
+          ])) : noNoveltiesTable('Cierres de caja'))}
 
-          ${section('9. Observaciones', `<div class="note">${observation ? escapeHtml(observation) : 'Sin observaciones adicionales registradas.'}</div>`)}
+          ${section('7. Facturas manuales', invoice ? table(['Detalle', 'Número / fecha'], [
+            ['Última factura registrada en sistema', String(invoice.last_system_invoice ?? '-')],
+            ['Última factura en block físico', String(invoice.last_physical_block_invoice ?? '-')],
+            ['Fecha de caducidad del block', formatDate(invoice.block_expiration_date)],
+            ['Diferencia calculada', String(invoice.calculated_difference ?? '-')],
+          ]) : noNoveltiesTable('Facturas manuales'))}
 
-          ${section('10. Evidencias', `
-            ${table(['Categoría', 'Archivo', 'Referencia'], evidences.map((evidence) => [
-              escapeHtml(evidenceCategoryLabel(evidence.category)),
-              escapeHtml(evidence.file_name),
-              escapeHtml(evidence.file_path),
-            ]))}
-            <h3 style="margin:14px 0 8px;color:#165034;font-size:12px;text-transform:uppercase;">Evidencias fotográficas</h3>
+          ${section('8. Observaciones', `<div class="note">${observation ? escapeHtml(observation) : 'Sin observaciones adicionales registradas.'}</div>`)}
+
+          ${section('9. Evidencias', `
             ${imageHtml}
           `)}
 
@@ -448,11 +779,11 @@ export async function downloadInventoryReportPdf(inventoryReportId: string) {
       .single<InventoryReportPdfSummary>(),
     supabase
       .from('inventory_report_items')
-      .select('sku, item_description, physical_stock, system_stock')
+      .select('sku, item_description, physical_stock, system_stock, difference')
       .eq('inventory_report_id', inventoryReportId),
     supabase
       .from('inventory_report_results')
-      .select('result_type, sku, item_description, cross_name, final_result')
+      .select('result_type, sku, item_description, cross_name, manual_comment, is_manual_adjusted, final_result')
       .eq('inventory_report_id', inventoryReportId)
       .order('created_at', { ascending: true }),
     supabase
@@ -510,6 +841,26 @@ export async function downloadInventoryReportPdf(inventoryReportId: string) {
     throw new Error(`No se pudo cargar toda la información del informe: ${blockingError.message}`);
   }
 
+  const items = (itemsResult.data || []) as InventoryItemPdfRow[];
+  const skus = Array.from(new Set(items.map((item) => normalizeSku(item.sku)).filter(Boolean)));
+  const crossesResult = skus.length > 0
+    ? await supabase
+        .from('inventory_crosses')
+        .select('sku, cross_name, conversion_factor, is_active')
+        .in('sku', skus)
+        .eq('is_active', true)
+    : { data: [], error: null };
+
+  if (crossesResult.error) {
+    printWindow.close();
+    throw new Error(`No se pudieron cargar los cruces del informe: ${crossesResult.error.message}`);
+  }
+
+  const calculatedResults = calculatePdfResultDetails(items, (crossesResult.data || []) as InventoryCrossPdfRow[]);
+  const savedResults = (resultsResult.data || []) as InventoryResultPdfRow[];
+  const mergedResults = savedResults.length > 0
+    ? mergeSavedResultsWithCalculatedDetails(savedResults, calculatedResults)
+    : calculatedResults;
   const evidences = (evidencesResult.data || []) as EvidencePdfRow[];
   const imageGroups: Record<string, string[]> = {};
   await Promise.all(
@@ -525,8 +876,8 @@ export async function downloadInventoryReportPdf(inventoryReportId: string) {
 
   const html = buildPrintableHtml({
     report: reportResult.data,
-    items: (itemsResult.data || []) as InventoryItemPdfRow[],
-    results: (resultsResult.data || []) as InventoryResultPdfRow[],
+    items,
+    results: mergedResults,
     invoice: ((invoiceResult.data || []) as ManualInvoicePdfRow[])[0] || null,
     recounts: (recountsResult.data || []) as RecountPdfRow[],
     finishedProducts: (finishedResult.data || []) as FinishedProductPdfRow[],

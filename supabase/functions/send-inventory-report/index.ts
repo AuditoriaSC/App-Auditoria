@@ -7,11 +7,19 @@ const FROM_EMAIL = Deno.env.get('INVENTORY_REPORT_FROM_EMAIL') || Deno.env.get('
 const INVENTORY_TO_EMAILS = Deno.env.get('INVENTORY_REPORT_TO_EMAILS') || Deno.env.get('REPORT_TO_EMAILS') || Deno.env.get('RESEND_TEST_TO') || ''
 const INVENTORY_CC_EMAILS = Deno.env.get('INVENTORY_REPORT_CC_EMAILS') || Deno.env.get('REPORT_CC_EMAILS') || ''
 const INVENTORY_BCC_EMAILS = Deno.env.get('INVENTORY_REPORT_BCC_EMAILS') || Deno.env.get('REPORT_BCC_EMAILS') || ''
-const WEB_APP_URL = (Deno.env.get('WEB_APP_URL') || '').replace(/\/$/, '')
 const REPORT_HORIZONTAL_LOGO_URL = Deno.env.get('REPORT_HORIZONTAL_LOGO_URL') || ''
 const REPORT_LOGO_URL = Deno.env.get('REPORT_LOGO_URL') || Deno.env.get('COMPANY_LOGO_URL') || ''
 const SUPPORT_EMAIL = Deno.env.get('SUPPORT_EMAIL') || ''
 const EVIDENCE_BUCKET = 'inventory-report-evidences'
+const EVIDENCE_CATEGORY_ORDER = [
+  'tirillas-de-cierre-de-caja',
+  'facturas-manuales',
+  'traspasos-pendientes',
+  'albaranes-de-compra-pendientes',
+  'imagen-del-extracto-de-movimientos',
+  'imagen-de-regularizacion-de-bodega-de-diferencias',
+  'otro',
+]
 
 const colors = {
   greenDark: '#165034',
@@ -58,18 +66,68 @@ type ResultRow = {
   sku: string | null
   item_description: string | null
   cross_name: string | null
+  manual_comment: string | null
+  is_manual_adjusted: boolean | null
   final_result: number | string | null
+  component_skus?: string[]
+  component_items?: ResultComponentRow[]
+  physical_stock?: number | string | null
+  system_stock?: number | string | null
+}
+
+type InventoryItemRow = {
+  sku: string
+  item_description: string | null
+  physical_stock: number | string | null
+  system_stock: number | string | null
+  difference: number | string | null
+}
+
+type InventoryCrossRow = {
+  sku: string
+  cross_name: string
+  conversion_factor: number | string | null
+  is_active: boolean | null
+}
+
+type ResultComponentRow = {
+  sku: string
+  item_description: string | null
+  physical_stock: number | string | null
+  system_stock: number | string | null
+  difference: number | string | null
+  converted_difference: number | string | null
 }
 
 type InvoiceRow = {
+  last_system_invoice: number | null
+  last_physical_block_invoice: number | null
+  block_expiration_date?: string | null
   calculated_difference: number | null
 }
 
 type RecountRow = {
+  sku: string | null
+  item_description: string | null
+  initial_count: number | string | null
+  final_recount: number | string | null
+  difference: number | string | null
   status: string | null
 }
 
+type FinishedProductRow = {
+  item_description: string | null
+  system_stock: number | string | null
+  physical_stock: number | string | null
+  difference: number | string | null
+}
+
 type CashClosureRow = {
+  cash_register: string | null
+  cash_register_number?: string | null
+  cashier_name: string | null
+  cash_value: number | string | null
+  system_value?: number | string | null
   cash_difference: number | string | null
 }
 
@@ -152,6 +210,181 @@ function isPositive(value: unknown) {
   return Number(value) >= 0
 }
 
+const DISPLAY_AS_INDEPENDENT_MARKER = '[display_as_independent]'
+
+function normalizeSku(value: string | null | undefined) {
+  return String(value || '').trim()
+}
+
+function normalizeCrossName(value: string | null | undefined) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+}
+
+function isCostCross(value: string | null | undefined) {
+  return normalizeCrossName(value) === 'COSTO'
+}
+
+function isExpenseCross(value: string | null | undefined) {
+  return normalizeCrossName(value) === 'GASTO'
+}
+
+function isDisplayAsIndependent(result: ResultRow) {
+  return Boolean(result.cross_name && result.manual_comment?.includes(DISPLAY_AS_INDEPENDENT_MARKER))
+}
+
+function classifyResult(result: Pick<ResultRow, 'cross_name' | 'final_result'>) {
+  if (Number(result.final_result || 0) >= 0) {
+    return result.cross_name ? 'surplus_cross' : 'surplus_without_cross'
+  }
+
+  return result.cross_name ? 'shortage_cross' : 'shortage_without_cross'
+}
+
+function getStockDifference(item: InventoryItemRow) {
+  return Number(item.physical_stock || 0) - Number(item.system_stock || 0)
+}
+
+function getConvertedDifference(item: InventoryItemRow, conversionFactor: number) {
+  if (conversionFactor === 1) return Number(item.difference || 0)
+  return getStockDifference(item) * conversionFactor
+}
+
+function calculateResultDetails(items: InventoryItemRow[], crosses: InventoryCrossRow[]) {
+  const activeCrossesBySku = new Map<string, InventoryCrossRow[]>()
+  crosses
+    .filter((cross) => cross.is_active)
+    .forEach((cross) => {
+      const sku = normalizeSku(cross.sku)
+      const current = activeCrossesBySku.get(sku) || []
+      current.push(cross)
+      activeCrossesBySku.set(sku, current)
+    })
+
+  const withoutCross: ResultRow[] = []
+  const crossGroups = new Map<string, ResultRow & { component_skus: string[] }>()
+
+  items.forEach((item) => {
+    const sku = normalizeSku(item.sku)
+    const itemCrosses = activeCrossesBySku.get(sku) || []
+    const stockDifference = getStockDifference(item)
+
+    if (itemCrosses.length === 0) {
+      withoutCross.push({
+        result_type: stockDifference >= 0 ? 'surplus_without_cross' : 'shortage_without_cross',
+        sku,
+        item_description: item.item_description,
+        cross_name: null,
+        manual_comment: null,
+        is_manual_adjusted: false,
+        final_result: stockDifference,
+        component_skus: [sku],
+        physical_stock: item.physical_stock,
+        system_stock: item.system_stock,
+      })
+      return
+    }
+
+    itemCrosses.forEach((cross) => {
+      if (isExpenseCross(cross.cross_name)) return
+
+      if (isCostCross(cross.cross_name)) {
+        withoutCross.push({
+          result_type: stockDifference >= 0 ? 'surplus_without_cross' : 'shortage_without_cross',
+          sku,
+          item_description: item.item_description,
+          cross_name: null,
+          manual_comment: null,
+          is_manual_adjusted: false,
+          final_result: stockDifference,
+          component_skus: [sku],
+          physical_stock: item.physical_stock,
+          system_stock: item.system_stock,
+        })
+        return
+      }
+
+      const conversionFactor = Number(cross.conversion_factor || 0)
+      const calculated = getConvertedDifference(item, conversionFactor)
+      const originalDifference = conversionFactor === 1 ? Number(item.difference || 0) : stockDifference
+      const component = {
+        sku,
+        item_description: item.item_description,
+        physical_stock: item.physical_stock,
+        system_stock: item.system_stock,
+        difference: originalDifference,
+        converted_difference: calculated,
+      }
+      const current = crossGroups.get(cross.cross_name)
+
+      if (current) {
+        current.final_result = Number(current.final_result || 0) + calculated
+        current.component_skus = Array.from(new Set([...current.component_skus, sku]))
+        current.component_items = [...(current.component_items || []), component]
+      } else {
+        crossGroups.set(cross.cross_name, {
+          result_type: calculated >= 0 ? 'surplus_cross' : 'shortage_cross',
+          sku,
+          item_description: item.item_description,
+          cross_name: cross.cross_name,
+          manual_comment: null,
+          is_manual_adjusted: false,
+          final_result: calculated,
+          component_skus: [sku],
+          physical_stock: item.physical_stock,
+          system_stock: item.system_stock,
+          component_items: [component],
+        })
+      }
+    })
+  })
+
+  return [...withoutCross, ...Array.from(crossGroups.values())].map((result) => ({
+    ...result,
+    result_type: classifyResult(result),
+  }))
+}
+
+function mergeSavedResultsWithCalculatedDetails(savedResults: ResultRow[], calculatedResults: ResultRow[]) {
+  return savedResults.map((savedResult) => {
+    const recalculatedType = classifyResult(savedResult)
+    const normalizedSavedSku = normalizeSku(savedResult.sku)
+
+    if (!savedResult.cross_name || isDisplayAsIndependent(savedResult)) {
+      const calculatedDetail = calculatedResults.find((calculatedResult) =>
+        normalizeSku(calculatedResult.sku) === normalizedSavedSku
+        || calculatedResult.component_skus?.some((sku) => normalizeSku(sku) === normalizedSavedSku)
+      )
+
+      return {
+        ...savedResult,
+        result_type: recalculatedType,
+        component_skus: calculatedDetail?.component_skus || savedResult.component_skus,
+        component_items: calculatedDetail?.component_items || savedResult.component_items,
+        physical_stock: calculatedDetail?.physical_stock ?? savedResult.physical_stock,
+        system_stock: calculatedDetail?.system_stock ?? savedResult.system_stock,
+      }
+    }
+
+    const calculatedDetail = calculatedResults.find((calculatedResult) =>
+      calculatedResult.cross_name === savedResult.cross_name
+      && !isDisplayAsIndependent(calculatedResult)
+    )
+
+    return {
+      ...savedResult,
+      result_type: recalculatedType,
+      component_skus: calculatedDetail?.component_skus || savedResult.component_skus,
+      component_items: calculatedDetail?.component_items || savedResult.component_items,
+      physical_stock: calculatedDetail?.physical_stock ?? savedResult.physical_stock,
+      system_stock: calculatedDetail?.system_stock ?? savedResult.system_stock,
+    }
+  })
+}
+
 function isImageEvidence(evidence: EvidenceRow) {
   const mime = String(evidence.mime_type || '').toLowerCase()
   const name = evidence.file_name.toLowerCase()
@@ -164,12 +397,31 @@ function isDocumentEvidence(evidence: EvidenceRow) {
 
 function shouldAttachEvidence(evidence: EvidenceRow) {
   if (evidence.deleted_after_send) return false
-  if (isImageEvidence(evidence)) return true
-  return isDocumentEvidence(evidence) && evidence.delete_after_send === true
+  return isDocumentEvidence(evidence)
 }
 
 function shouldCleanupEvidence(evidence: EvidenceRow) {
-  return isDocumentEvidence(evidence) && evidence.delete_after_send === true && !evidence.deleted_after_send
+  return isDocumentEvidence(evidence) && !evidence.deleted_after_send
+}
+
+function evidenceCategoryOrderIndex(category: string) {
+  const index = EVIDENCE_CATEGORY_ORDER.indexOf(String(category || '').trim().toLowerCase())
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index
+}
+
+function sortEvidencesByReportOrder(left: EvidenceRow, right: EvidenceRow) {
+  const leftIndex = evidenceCategoryOrderIndex(left.category)
+  const rightIndex = evidenceCategoryOrderIndex(right.category)
+  if (leftIndex !== rightIndex) return leftIndex - rightIndex
+  return left.file_name.localeCompare(right.file_name, 'es')
+}
+
+function evidenceCategoryLabel(category: string) {
+  return String(category || 'otro')
+    .replace(/-/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^\w|\s\w/g, (letter) => letter.toUpperCase())
 }
 
 function renderLogo() {
@@ -178,33 +430,21 @@ function renderLogo() {
   return `<img src="${escapeHtml(logoUrl)}" alt="Sweet & Coffee" style="display:block; width:220px; max-width:100%; height:auto;" />`
 }
 
-function metric(label: string, value: string, tone: 'normal' | 'good' | 'bad' = 'normal') {
-  const color = tone === 'bad' ? colors.danger : tone === 'good' ? colors.greenDark : colors.textPrimary
-  return `
-    <td style="width:33.33%; padding:8px;">
-      <div style="border:1px solid ${colors.border}; border-radius:10px; background:${colors.creamSoft}; padding:14px;">
-        <div style="font-size:12px; color:${colors.textSecondary}; font-weight:700;">${escapeHtml(label)}</div>
-        <div style="font-size:22px; color:${color}; font-weight:900; margin-top:6px;">${escapeHtml(value)}</div>
-      </div>
-    </td>
-  `
-}
-
 function table(title: string, headers: string[], rows: string[][]) {
   const bodyRows = rows.length > 0
     ? rows.map((row) => `
       <tr>
-        ${row.map((cell) => `<td style="padding:8px; border-bottom:1px solid ${colors.border}; font-size:12px;">${cell}</td>`).join('')}
+        ${row.map((cell) => `<td style="padding:7px 8px; border:1px solid ${colors.border}; font-size:12px; vertical-align:top;">${cell}</td>`).join('')}
       </tr>
     `).join('')
-    : `<tr><td colspan="${headers.length}" style="padding:10px; color:${colors.textSecondary}; font-size:12px;">Sin registros.</td></tr>`
+    : `<tr><td colspan="${headers.length}" style="padding:10px; border:1px solid ${colors.border}; color:${colors.textSecondary}; font-size:12px;">Sin registros.</td></tr>`
 
   return `
-    <h3 style="color:${colors.greenDark}; margin:22px 0 8px 0; font-size:16px;">${escapeHtml(title)}</h3>
-    <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; border:1px solid ${colors.border}; border-radius:10px; overflow:hidden;">
+    <h3 style="background:${colors.greenDark}; color:${colors.white}; margin:22px 0 0 0; padding:8px 10px; font-size:13px; line-height:1.2; text-transform:uppercase;">${escapeHtml(title)}</h3>
+    <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; border:1px solid ${colors.border}; border-top:0;">
       <thead>
-        <tr style="background:${colors.greenSoft};">
-          ${headers.map((header) => `<th align="left" style="padding:8px; font-size:12px; color:${colors.greenDark}; border-bottom:1px solid ${colors.border};">${escapeHtml(header)}</th>`).join('')}
+        <tr style="background:${colors.greenDark};">
+          ${headers.map((header) => `<th align="left" style="padding:7px 8px; font-size:11px; color:${colors.white}; border:1px solid ${colors.border};">${escapeHtml(header)}</th>`).join('')}
         </tr>
       </thead>
       <tbody>${bodyRows}</tbody>
@@ -212,22 +452,173 @@ function table(title: string, headers: string[], rows: string[][]) {
   `
 }
 
-function resultRows(results: ResultRow[], positive: boolean) {
-  return results
-    .filter((row) => positive ? Number(row.final_result || 0) >= 0 : Number(row.final_result || 0) < 0)
-    .sort((a, b) => Math.abs(Number(b.final_result || 0)) - Math.abs(Number(a.final_result || 0)))
-    .slice(0, 20)
-    .map((row) => {
-      const label = row.cross_name
-        ? `TOTAL DE CRUCE ${escapeHtml(row.cross_name)}`
-        : `${escapeHtml(row.sku || '-')} - ${escapeHtml(row.item_description || '-')}`
-      const color = isPositive(row.final_result) ? colors.greenDark : colors.danger
-      return [label, `<strong style="color:${color};">${formatNumber(row.final_result)}</strong>`]
-    })
-}
-
 function buildSubject(report: InventoryReportRow) {
   return `INFORME DE INVENTARIO GENERAL LOCAL ${report.local_name_snapshot || 'LOCAL'} (${report.local_codigo || '-'}) - CORTE ${report.inventory_cutoff_label || 'SIN CORTE ASIGNADO'}`
+}
+
+function resultValue(value: unknown) {
+  const color = isPositive(value) ? colors.greenDark : colors.danger
+  return `<strong style="color:${color};">${formatNumber(value)}</strong>`
+}
+
+function independentDisplayData(result: ResultRow) {
+  const movedFromCross = isDisplayAsIndependent(result)
+  const firstComponent = result.component_items?.[0]
+
+  return {
+    sku: movedFromCross ? firstComponent?.sku || result.component_skus?.[0] || result.sku : result.sku,
+    description: movedFromCross ? firstComponent?.item_description || result.item_description : result.item_description,
+    physicalStock: movedFromCross ? firstComponent?.physical_stock ?? result.physical_stock : result.physical_stock,
+    systemStock: movedFromCross ? firstComponent?.system_stock ?? result.system_stock : result.system_stock,
+    difference: movedFromCross ? firstComponent?.converted_difference ?? result.final_result : result.final_result,
+    note: movedFromCross ? `<div style="font-size:11px; color:${colors.textSecondary}; margin-top:2px;">Cruce original: ${escapeHtml(result.cross_name || '-')}</div>` : '',
+  }
+}
+
+function resultTableRows(results: ResultRow[]) {
+  const independentResults = results
+    .filter((result) => !result.cross_name || isDisplayAsIndependent(result))
+    .sort((left, right) => Math.abs(Number(independentDisplayData(right).difference || 0)) - Math.abs(Number(independentDisplayData(left).difference || 0)))
+  const crossResults = results
+    .filter((result) => result.cross_name && !isDisplayAsIndependent(result))
+    .sort((left, right) => Math.abs(Number(right.final_result || 0)) - Math.abs(Number(left.final_result || 0)))
+  const rows: string[] = []
+
+  independentResults.forEach((result) => {
+    const display = independentDisplayData(result)
+    rows.push(`
+      <tr>
+        <td style="padding:7px 8px; border:1px solid ${colors.border}; font-size:12px; vertical-align:top;"><strong>${escapeHtml(display.sku || 'sin SKU')} · ${escapeHtml(display.description || 'Sin descripción')}</strong>${display.note}</td>
+        <td align="right" style="padding:7px 8px; border:1px solid ${colors.border}; font-size:12px; white-space:nowrap;">${formatNumber(display.physicalStock)}</td>
+        <td align="right" style="padding:7px 8px; border:1px solid ${colors.border}; font-size:12px; white-space:nowrap;">${formatNumber(display.systemStock)}</td>
+        <td align="right" style="padding:7px 8px; border:1px solid ${colors.border}; font-size:12px; white-space:nowrap;">${resultValue(display.difference)}</td>
+      </tr>
+    `)
+  })
+
+  if (independentResults.length > 0 && crossResults.length > 0) {
+    rows.push(`<tr><td colspan="4" style="height:8px; padding:0; border:0;"></td></tr>`)
+  }
+
+  crossResults.forEach((result) => {
+    const components = result.component_items || []
+
+    if (components.length > 0) {
+      components.forEach((item) => {
+        rows.push(`
+          <tr>
+            <td style="padding:7px 8px; border:1px solid ${colors.border}; font-size:12px; vertical-align:top;"><strong>${escapeHtml(item.sku)} · ${escapeHtml(item.item_description || 'Sin descripción')}</strong></td>
+            <td align="right" style="padding:7px 8px; border:1px solid ${colors.border}; font-size:12px; white-space:nowrap;">${formatNumber(item.physical_stock)}</td>
+            <td align="right" style="padding:7px 8px; border:1px solid ${colors.border}; font-size:12px; white-space:nowrap;">${formatNumber(item.system_stock)}</td>
+            <td align="right" style="padding:7px 8px; border:1px solid ${colors.border}; font-size:12px; white-space:nowrap;">${resultValue(item.converted_difference)}</td>
+          </tr>
+        `)
+      })
+    } else {
+      rows.push(`
+        <tr>
+          <td style="padding:7px 8px; border:1px solid ${colors.border}; font-size:12px;"><strong>SKUs: ${escapeHtml((result.component_skus || []).join(', ') || 'sin detalle guardado')}</strong></td>
+          <td align="right" style="padding:7px 8px; border:1px solid ${colors.border}; font-size:12px;">-</td>
+          <td align="right" style="padding:7px 8px; border:1px solid ${colors.border}; font-size:12px;">-</td>
+          <td align="right" style="padding:7px 8px; border:1px solid ${colors.border}; font-size:12px;">${resultValue(result.final_result)}</td>
+        </tr>
+      `)
+    }
+
+    const totalBackground = Number(result.final_result || 0) < 0 ? '#F6D8D5' : '#DFF2E8'
+    rows.push(`
+      <tr style="background:${totalBackground};">
+        <td style="padding:8px; border:1px solid ${colors.border};"></td>
+        <td align="right" style="padding:8px; border:1px solid ${colors.border};">-</td>
+        <td style="padding:8px; border:1px solid ${colors.border}; font-size:12px;"><strong>TOTAL DE CRUCE ${escapeHtml(result.cross_name || '-')}</strong></td>
+        <td align="right" style="padding:8px; border:1px solid ${colors.border}; font-size:12px; white-space:nowrap;">${resultValue(result.final_result)}</td>
+      </tr>
+      <tr><td colspan="4" style="height:8px; padding:0; border:0;"></td></tr>
+    `)
+  })
+
+  if (rows.length === 0) {
+    rows.push(`<tr><td colspan="4" style="padding:10px; color:${colors.textSecondary}; font-size:12px;">Sin registros para este bloque.</td></tr>`)
+  }
+
+  return rows.join('')
+}
+
+function resultsTable(title: string, results: ResultRow[]) {
+  return `
+    <h3 style="background:${colors.greenDark}; color:${colors.white}; margin:22px 0 0 0; padding:8px 10px; font-size:13px; line-height:1.2; text-transform:uppercase;">${escapeHtml(title)}</h3>
+    <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; border:1px solid ${colors.border}; border-top:0;">
+      <thead>
+        <tr style="background:${colors.greenDark};">
+          <th align="left" style="padding:7px 8px; font-size:11px; color:${colors.white}; border:1px solid ${colors.border};">Articulo</th>
+          <th align="right" style="padding:7px 8px; font-size:11px; color:${colors.white}; border:1px solid ${colors.border};">Stock fisico</th>
+          <th align="right" style="padding:7px 8px; font-size:11px; color:${colors.white}; border:1px solid ${colors.border};">Stock actual</th>
+          <th align="right" style="padding:7px 8px; font-size:11px; color:${colors.white}; border:1px solid ${colors.border};">Diferencia</th>
+        </tr>
+      </thead>
+      <tbody>${resultTableRows(results)}</tbody>
+    </table>
+  `
+}
+
+function evidenceImagesHtml(groups: Record<string, string[]>) {
+  const orderedGroups = Object.entries(groups).sort(([left], [right]) => {
+    const leftIndex = evidenceCategoryOrderIndex(left)
+    const rightIndex = evidenceCategoryOrderIndex(right)
+    if (leftIndex !== rightIndex) return leftIndex - rightIndex
+    return evidenceCategoryLabel(left).localeCompare(evidenceCategoryLabel(right), 'es')
+  })
+
+  if (orderedGroups.length === 0) {
+    return table('9. Evidencias', ['Categoria', 'Detalle'], [['Evidencias fotograficas', 'Sin imagenes adjuntas para mostrar.']])
+  }
+
+  return `
+    <h3 style="background:${colors.greenDark}; color:${colors.white}; margin:22px 0 0 0; padding:8px 10px; font-size:13px; line-height:1.2; text-transform:uppercase;">9. Evidencias</h3>
+    ${orderedGroups.map(([category, images]) => `
+      <div style="border:1px solid ${colors.border}; border-top:0; padding:10px; margin:0 0 10px 0;">
+        <div style="font-size:12px; font-weight:900; color:${colors.greenDark}; text-transform:uppercase; margin-bottom:8px;">${escapeHtml(evidenceCategoryLabel(category))}</div>
+        <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse;">
+          <tbody>
+            ${images.reduce((rows, image, index) => {
+              if (index % 2 === 0) rows.push([])
+              rows[rows.length - 1].push(image)
+              return rows
+            }, [] as string[][]).map((row) => `
+              <tr>
+                <td style="width:50%; padding:6px; vertical-align:top;">${row[0] || ''}</td>
+                <td style="width:50%; padding:6px; vertical-align:top;">${row[1] || ''}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `).join('')}
+  `
+}
+
+function statusTable(title: string, rows: string[][]) {
+  return table(title, ['Detalle de validaciones', 'Estado'], rows.map(([detail, status]) => [
+    escapeHtml(detail),
+    `<strong>${escapeHtml(status)}</strong>`,
+  ]))
+}
+
+function noNoveltiesTable(title: string) {
+  return table(title, [title, 'Estado'], [[
+    'No se registran novedades.',
+    '<strong>OK</strong>',
+  ]])
+}
+
+function recountSummaryRows(recounts: RecountRow[]) {
+  const ok = recounts.filter((row) => row.status === 'Recuento OK').length
+  const modified = recounts.filter((row) => row.status === 'Recuento Modificado').length
+  return [
+    ['Recuento OK', String(ok)],
+    ['Recuento Modificado', String(modified)],
+    ['Total de recuentos', String(recounts.length)],
+  ]
 }
 
 function buildHtml(params: {
@@ -235,18 +626,16 @@ function buildHtml(params: {
   results: ResultRow[]
   invoice: InvoiceRow | null
   recounts: RecountRow[]
+  finishedProducts: FinishedProductRow[]
   cashClosures: CashClosureRow[]
   observations: ObservationRow[]
-  appUrl: string
+  evidenceImages: string
 }) {
-  const { report, results, invoice, recounts, cashClosures, observations, appUrl } = params
-  const surplusTotal = results.reduce((total, row) => total + Math.max(Number(row.final_result || 0), 0), 0)
-  const shortageTotal = results.reduce((total, row) => total + Math.min(Number(row.final_result || 0), 0), 0)
-  const recountsOk = recounts.filter((row) => row.status === 'Recuento OK').length
-  const recountsModified = recounts.filter((row) => row.status === 'Recuento Modificado').length
-  const cashDifference = cashClosures.reduce((total, row) => total + Number(row.cash_difference || 0), 0)
+  const { report, results, invoice, recounts, finishedProducts, cashClosures, observations, evidenceImages } = params
+  const visibleResults = results.filter((row) => !isExpenseCross(row.cross_name))
+  const surplusResults = visibleResults.filter((row) => row.result_type === 'surplus_without_cross' || row.result_type === 'surplus_cross')
+  const shortageResults = visibleResults.filter((row) => row.result_type === 'shortage_without_cross' || row.result_type === 'shortage_cross')
   const observationText = observations.map((row) => row.observation).filter(Boolean).join(' ')
-  const reportUrl = appUrl ? `${appUrl}/modulos/inventarios/evidencias?inventory_report_id=${encodeURIComponent(report.id)}` : ''
 
   return `
     <!DOCTYPE html>
@@ -258,57 +647,81 @@ function buildHtml(params: {
       <title>${escapeHtml(buildSubject(report))}</title>
     </head>
     <body style="margin:0; padding:0; background:${colors.cream}; color:${colors.textPrimary}; font-family:Arial, Helvetica, sans-serif;">
-      <div style="padding:28px 14px;">
-        <div style="max-width:860px; margin:0 auto; background:${colors.white}; border:1px solid ${colors.border}; border-radius:14px; overflow:hidden;">
-          <div style="background:${colors.greenDark}; color:${colors.white}; padding:24px 28px;">
+      <div style="padding:24px 10px;">
+        <div style="max-width:980px; margin:0 auto; background:${colors.white}; border:1px solid ${colors.border}; overflow:hidden;">
+          <div style="background:${colors.greenDark}; color:${colors.white}; padding:18px 22px;">
             <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;">
               <tr>
                 <td>${renderLogo()}</td>
                 <td align="right" style="font-size:13px; color:${colors.creamSoft};">GERENCIA DE AUDITORIA</td>
               </tr>
             </table>
-            <h1 style="margin:20px 0 0 0; font-size:23px; line-height:1.25;">Informe de Visita por Inventario General</h1>
+            <h1 style="margin:16px 0 0 0; font-size:22px; line-height:1.25; text-transform:uppercase;">Informe de Visita por Inventario General</h1>
             <p style="margin:8px 0 0 0; color:${colors.creamSoft};">${escapeHtml(report.local_name_snapshot || '-')} (${escapeHtml(report.local_codigo || '-')})</p>
           </div>
 
-          <div style="padding:26px 28px;">
-            <h2 style="color:${colors.greenDark}; margin:0 0 12px 0; font-size:18px;">Datos principales</h2>
-            <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%; border:1px solid ${colors.border}; border-radius:10px; border-collapse:separate; overflow:hidden;">
-              <tr><td style="padding:10px; background:${colors.greenSoft}; font-weight:700;">Local</td><td style="padding:10px;">${escapeHtml(report.local_name_snapshot || '-')}</td></tr>
-              <tr><td style="padding:10px; background:${colors.greenSoft}; font-weight:700;">Codigo de almacen</td><td style="padding:10px;">${escapeHtml(report.local_codigo || '-')}</td></tr>
-              <tr><td style="padding:10px; background:${colors.greenSoft}; font-weight:700;">Corte de Inventario</td><td style="padding:10px;">${escapeHtml(report.inventory_cutoff_label || 'Sin corte asignado')}</td></tr>
-              <tr><td style="padding:10px; background:${colors.greenSoft}; font-weight:700;">Fecha de inventario</td><td style="padding:10px;">${formatDate(report.inventory_date)}</td></tr>
-              <tr><td style="padding:10px; background:${colors.greenSoft}; font-weight:700;">Fecha de regularizacion</td><td style="padding:10px;">${formatDate(report.front_regularization_date)}</td></tr>
-              <tr><td style="padding:10px; background:${colors.greenSoft}; font-weight:700;">Horario</td><td style="padding:10px;">${formatTime(report.start_time)} - ${formatTime(report.end_time)}${report.has_second_time_range ? ` / ${formatTime(report.second_start_time)} - ${formatTime(report.second_end_time)}` : ''}</td></tr>
-              <tr><td style="padding:10px; background:${colors.greenSoft}; font-weight:700;">Auditor</td><td style="padding:10px;">${escapeHtml(report.assigned_auditor_name_snapshot || '-')}</td></tr>
-            </table>
+          <div style="padding:20px 22px;">
+            ${table('Datos principales', ['Campo', 'Detalle'], [
+              ['Local', `${escapeHtml(report.local_codigo || '-')} - ${escapeHtml(report.local_name_snapshot || '-')}`],
+              ['Codigo local / almacen', escapeHtml(report.local_codigo || '-')],
+              ['Corte de Inventario', escapeHtml(report.inventory_cutoff_label || 'Sin corte asignado')],
+              ['Fecha inventario', formatDate(report.inventory_date)],
+              ['Fecha regularizacion', formatDate(report.front_regularization_date)],
+              ['Horario principal', `${formatTime(report.start_time)} - ${formatTime(report.end_time)}`],
+              ['Segundo horario', report.has_second_time_range ? `${formatTime(report.second_start_time)} - ${formatTime(report.second_end_time)}` : 'No aplica'],
+              ['Auditor encargado', escapeHtml(report.assigned_auditor_name_snapshot || '-')],
+              ['Responsable / lider', escapeHtml(report.responsible_name_snapshot || '-')],
+            ])}
 
-            <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%; margin-top:14px;">
-              <tr>
-                ${metric('Detalle de sobrantes', formatNumber(surplusTotal), 'good')}
-                ${metric('Detalle de faltantes', formatNumber(shortageTotal), 'bad')}
-                ${metric('Diferencia de caja', formatNumber(cashDifference), cashDifference < 0 ? 'bad' : cashDifference > 0 ? 'good' : 'normal')}
-              </tr>
-              <tr>
-                ${metric('Reconteos OK', String(recountsOk), 'good')}
-                ${metric('Reconteos modificados', String(recountsModified), recountsModified > 0 ? 'bad' : 'normal')}
-                ${metric('Diferencia facturas', String(invoice?.calculated_difference ?? 0), Number(invoice?.calculated_difference || 0) === 0 ? 'normal' : 'bad')}
-              </tr>
-            </table>
+            ${resultsTable('4.1 Faltantes', shortageResults)}
+            ${resultsTable('4.2 Sobrantes', surplusResults)}
+            ${table('4.3 Recuento de items - Resumen', ['Detalle', 'Cantidad'], recountSummaryRows(recounts))}
+            ${table('4.3 Recuento de items - Detalle', ['SKU', 'Descripcion', 'Conteo inicial', 'Nuevo reconteo', 'Diferencia', 'Estado'], recounts.map((row) => [
+              escapeHtml(row.sku || '-'),
+              escapeHtml(row.item_description || '-'),
+              formatNumber(row.initial_count),
+              formatNumber(row.final_recount),
+              formatNumber(row.difference),
+              escapeHtml(row.status || '-'),
+            ]))}
+            ${finishedProducts.length > 0
+              ? table('4.4 Producto terminado', ['Producto terminado', 'Sistema', 'Fisico', 'Diferencia'], finishedProducts.map((row) => [
+                  escapeHtml(row.item_description || '-'),
+                  formatNumber(row.system_stock),
+                  formatNumber(row.physical_stock),
+                  formatNumber(row.difference),
+                ]))
+              : noNoveltiesTable('4.4 Producto terminado')}
+            ${statusTable('5. Validaciones', [
+              ['Resultado de inventario general revisado', 'OK'],
+              ['Reconteos ingresados y revisados', 'OK'],
+              ['Producto terminado revisado', finishedProducts.length > 0 ? 'CON NOVEDAD' : 'OK'],
+              ['Cierres de caja revisados', cashClosures.length > 0 ? 'OK' : 'SIN REGISTROS'],
+              ['Facturas manuales revisadas', invoice ? 'OK' : 'SIN REGISTROS'],
+            ])}
+            ${cashClosures.length > 0
+              ? table('6. Cierres de caja', ['Caja', 'Numero', 'Cajero', 'Fisico', 'Sistema', 'Diferencia'], cashClosures.map((row) => [
+                  escapeHtml(row.cash_register || '-'),
+                  escapeHtml(row.cash_register_number || '-'),
+                  escapeHtml(row.cashier_name || '-'),
+                  formatNumber(row.cash_value),
+                  formatNumber(row.system_value),
+                  formatNumber(row.cash_difference),
+                ]))
+              : noNoveltiesTable('6. Cierres de caja')}
+            ${invoice ? table('7. Facturas manuales', ['Detalle', 'Numero / fecha'], [
+              ['Ultima factura registrada en sistema', String(invoice.last_system_invoice ?? '-')],
+              ['Ultima factura en block fisico', String(invoice.last_physical_block_invoice ?? '-')],
+              ['Fecha de caducidad del block', formatDate(invoice.block_expiration_date)],
+              ['Diferencia calculada', String(invoice.calculated_difference ?? '-')],
+            ]) : noNoveltiesTable('7. Facturas manuales')}
 
-            ${table('4. Resultados preliminares - Sobrantes', ['Articulo / Cruce', 'Diferencia'], resultRows(results, true))}
-            ${table('4. Resultados preliminares - Faltantes', ['Articulo / Cruce', 'Diferencia'], resultRows(results, false))}
-            ${table('Reconteos', ['Estado', 'Cantidad'], [['Recuento OK', String(recountsOk)], ['Recuento Modificado', String(recountsModified)]])}
-
-            <h3 style="color:${colors.greenDark}; margin:22px 0 8px 0; font-size:16px;">Observaciones adicionales</h3>
+            <h3 style="color:${colors.greenDark}; margin:22px 0 8px 0; font-size:16px;">8. Observaciones adicionales</h3>
             <div style="border:1px solid ${colors.border}; border-radius:10px; padding:14px; background:${colors.creamSoft}; font-size:13px; line-height:1.5;">
               ${observationText ? escapeHtml(observationText) : 'Sin observaciones adicionales registradas.'}
             </div>
 
-            <p style="margin:22px 0 0 0; color:${colors.textSecondary}; font-size:13px;">
-              El detalle completo se encuentra en el informe adjunto o descargable desde la app, segun configuracion.
-            </p>
-            ${reportUrl ? `<p style="margin:10px 0 0 0;"><a href="${escapeHtml(reportUrl)}" style="display:inline-block; padding:12px 16px; background:${colors.greenDark}; color:${colors.white}; text-decoration:none; border-radius:8px; font-weight:700;">Abrir informe en la app</a></p>` : ''}
+            ${evidenceImages}
 
             <div style="margin-top:24px; padding-top:14px; border-top:1px solid ${colors.border}; color:${colors.textSecondary}; font-size:12px;">
               Este correo fue generado automaticamente por el Modulo de Informes de Inventario Sweet & Coffee.
@@ -332,11 +745,39 @@ function bytesToBase64(bytes: Uint8Array) {
   return btoa(binary)
 }
 
+async function buildInlineEvidenceImages(supabase: ReturnType<typeof createClient>, evidences: EvidenceRow[]) {
+  const groups: Record<string, string[]> = {}
+
+  for (const evidence of evidences.filter((item) => isImageEvidence(item) && !item.deleted_after_send).sort(sortEvidencesByReportOrder)) {
+    const { data, error } = await supabase.storage.from(EVIDENCE_BUCKET).createSignedUrl(evidence.file_path, 60 * 60 * 24 * 180)
+    if (error || !data?.signedUrl) {
+      const key = evidence.category || 'otro'
+      groups[key] = [
+        ...(groups[key] || []),
+        `<div style="border:1px dashed ${colors.border}; padding:10px; color:${colors.textSecondary}; font-size:12px;">No se pudo cargar una imagen de esta categoría.</div>`,
+      ]
+      continue
+    }
+
+    const key = evidence.category || 'otro'
+    groups[key] = [
+      ...(groups[key] || []),
+      `
+        <div style="border:1px solid ${colors.border}; padding:6px; background:${colors.white}; text-align:center;">
+          <img src="${escapeHtml(data.signedUrl)}" alt="${escapeHtml(evidence.file_name)}" style="display:block; width:100%; max-height:360px; object-fit:contain; margin:0 auto;" />
+        </div>
+      `,
+    ]
+  }
+
+  return evidenceImagesHtml(groups)
+}
+
 async function buildEmailAttachments(supabase: ReturnType<typeof createClient>, evidences: EvidenceRow[]) {
   const attachments: ResendAttachment[] = []
   const attachedEvidenceIds: string[] = []
 
-  for (const evidence of evidences.filter(shouldAttachEvidence)) {
+  for (const evidence of evidences.filter(shouldAttachEvidence).sort(sortEvidencesByReportOrder)) {
     const { data, error } = await supabase.storage.from(EVIDENCE_BUCKET).download(evidence.file_path)
     if (error || !data) continue
     const bytes = new Uint8Array(await data.arrayBuffer())
@@ -512,35 +953,61 @@ Deno.serve(async (req) => {
       .eq('id', report.id)
 
     const [
+      itemsResult,
       resultsResult,
       invoiceResult,
       recountsResult,
+      finishedResult,
       cashResult,
       observationsResult,
       evidencesResult,
     ] = await Promise.all([
-      supabase.from('inventory_report_results').select('result_type, sku, item_description, cross_name, final_result').eq('inventory_report_id', report.id),
-      supabase.from('inventory_manual_invoice_checks').select('calculated_difference').eq('inventory_report_id', report.id).order('created_at', { ascending: false }).limit(1),
-      supabase.from('inventory_recounts').select('status').eq('inventory_report_id', report.id),
-      supabase.from('inventory_cash_closures').select('cash_difference').eq('inventory_report_id', report.id),
+      supabase.from('inventory_report_items').select('sku, item_description, physical_stock, system_stock, difference').eq('inventory_report_id', report.id),
+      supabase.from('inventory_report_results').select('result_type, sku, item_description, cross_name, manual_comment, is_manual_adjusted, final_result').eq('inventory_report_id', report.id),
+      supabase.from('inventory_manual_invoice_checks').select('last_system_invoice, last_physical_block_invoice, block_expiration_date, calculated_difference').eq('inventory_report_id', report.id).order('created_at', { ascending: false }).limit(1),
+      supabase.from('inventory_recounts').select('sku, item_description, initial_count, final_recount, difference, status').eq('inventory_report_id', report.id).order('created_at', { ascending: true }),
+      supabase.from('inventory_finished_product_differences').select('item_description, system_stock, physical_stock, difference').eq('inventory_report_id', report.id).order('created_at', { ascending: true }),
+      supabase.from('inventory_cash_closures').select('cash_register, cash_register_number, cashier_name, cash_value, system_value, cash_difference').eq('inventory_report_id', report.id).order('created_at', { ascending: true }),
       supabase.from('inventory_additional_observations').select('observation').eq('inventory_report_id', report.id).order('updated_at', { ascending: false }).limit(1),
       supabase.from('inventory_report_evidences').select('id, category, file_name, file_path, mime_type, size_bytes, delete_after_send, attached_to_email, deleted_after_send, cleanup_error').eq('inventory_report_id', report.id).order('uploaded_at', { ascending: true }),
     ])
 
-    const dataError = [resultsResult.error, invoiceResult.error, recountsResult.error, cashResult.error, observationsResult.error, evidencesResult.error].find(Boolean)
+    const dataError = [itemsResult.error, resultsResult.error, invoiceResult.error, recountsResult.error, finishedResult.error, cashResult.error, observationsResult.error, evidencesResult.error].find(Boolean)
     if (dataError) throw new Error(dataError.message)
 
+    const items = (itemsResult.data || []) as InventoryItemRow[]
+    const skus = Array.from(new Set(items.map((item) => normalizeSku(item.sku)).filter(Boolean)))
+    const crossesResult = skus.length > 0
+      ? await supabase
+          .from('inventory_crosses')
+          .select('sku, cross_name, conversion_factor, is_active')
+          .in('sku', skus)
+          .eq('is_active', true)
+      : { data: [], error: null }
+
+    if (crossesResult.error) throw new Error(crossesResult.error.message)
+
+    const calculatedResults = calculateResultDetails(items, (crossesResult.data || []) as InventoryCrossRow[])
+    const savedResults = (resultsResult.data || []) as ResultRow[]
+    const mergedResults = savedResults.length > 0
+      ? mergeSavedResultsWithCalculatedDetails(savedResults, calculatedResults)
+      : calculatedResults
     const evidences = (evidencesResult.data || []) as EvidenceRow[]
-    const { attachments, attachedEvidenceIds } = await buildEmailAttachments(supabase, evidences)
+    const [evidenceImages, attachmentResult] = await Promise.all([
+      buildInlineEvidenceImages(supabase, evidences),
+      buildEmailAttachments(supabase, evidences),
+    ])
+    const { attachments, attachedEvidenceIds } = attachmentResult
     const subject = buildSubject(report)
     const html = buildHtml({
       report,
-      results: (resultsResult.data || []) as ResultRow[],
+      results: mergedResults,
       invoice: ((invoiceResult.data || []) as InvoiceRow[])[0] || null,
       recounts: (recountsResult.data || []) as RecountRow[],
+      finishedProducts: (finishedResult.data || []) as FinishedProductRow[],
       cashClosures: (cashResult.data || []) as CashClosureRow[],
       observations: (observationsResult.data || []) as ObservationRow[],
-      appUrl: WEB_APP_URL,
+      evidenceImages,
     })
 
     const resendResponse = await fetch('https://api.resend.com/emails', {
