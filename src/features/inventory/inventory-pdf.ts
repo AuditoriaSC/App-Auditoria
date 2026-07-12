@@ -1,33 +1,10 @@
-import type { PDFDocument, PDFFont, PDFPage } from 'pdf-lib';
 import { supabase } from '../../supabaseClient';
-
-type PdfLibModule = typeof import('pdf-lib');
-
-let pdfLibPromise: Promise<PdfLibModule> | null = null;
-
-function loadPdfLib() {
-  if (!pdfLibPromise) {
-    pdfLibPromise = import('pdf-lib');
-  }
-  return pdfLibPromise;
-}
-
-function createPdfColors(rgb: PdfLibModule['rgb']) {
-  return {
-    greenDark: rgb(0, 0.294, 0.184),
-    greenSoft: rgb(0.874, 0.953, 0.91),
-    cream: rgb(0.969, 0.957, 0.929),
-    border: rgb(0.82, 0.76, 0.67),
-    text: rgb(0.08, 0.2, 0.18),
-    muted: rgb(0.37, 0.44, 0.41),
-    white: rgb(1, 1, 1),
-  };
-}
 
 type InventoryReportPdfSummary = {
   id: string;
   local_codigo: string | null;
   local_name_snapshot: string | null;
+  inventory_cutoff_label: string | null;
   inventory_date: string | null;
   front_regularization_date: string | null;
   start_time: string | null;
@@ -37,7 +14,6 @@ type InventoryReportPdfSummary = {
   second_end_time: string | null;
   assigned_auditor_name_snapshot: string | null;
   responsible_name_snapshot: string | null;
-  inventory_cutoff_label: string | null;
   status: string | null;
 };
 
@@ -97,9 +73,6 @@ type EvidencePdfRow = {
 };
 
 const bucketName = 'inventory-report-evidences';
-const pageWidth = 595.28;
-const pageHeight = 841.89;
-const margin = 36;
 
 function toNumber(value: unknown) {
   const parsed = Number(value);
@@ -124,20 +97,19 @@ function formatTime(value?: string | null) {
   return value.slice(0, 5);
 }
 
-function safeFilePart(value: string) {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9._-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .toLowerCase();
+function escapeHtml(value: unknown) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
 function isImageEvidence(evidence: EvidencePdfRow) {
   const mime = String(evidence.mime_type || '').toLowerCase();
   const name = evidence.file_name.toLowerCase();
-  return mime.startsWith('image/') || /\.(jpg|jpeg|png)$/i.test(name);
+  return mime.startsWith('image/') || /\.(jpg|jpeg|png|webp)$/i.test(name);
 }
 
 function sortByImpact(left: InventoryResultPdfRow, right: InventoryResultPdfRow) {
@@ -153,214 +125,260 @@ function groupResults(results: InventoryResultPdfRow[]) {
   };
 }
 
-async function evidenceToBytes(evidence: EvidencePdfRow) {
+async function evidenceToSignedUrl(evidence: EvidencePdfRow) {
   const { data, error } = await supabase.storage
     .from(bucketName)
-    .createSignedUrl(evidence.file_path, 60 * 5);
+    .createSignedUrl(evidence.file_path, 60 * 10);
 
   if (error || !data?.signedUrl) return null;
-
-  try {
-    const response = await fetch(data.signedUrl);
-    if (!response.ok) return null;
-    return new Uint8Array(await response.arrayBuffer());
-  } catch {
-    return null;
-  }
+  return data.signedUrl;
 }
 
-class InventoryPdfBuilder {
-  private doc!: PDFDocument;
-  private page!: PDFPage;
-  private regular!: PDFFont;
-  private bold!: PDFFont;
-  private colors!: ReturnType<typeof createPdfColors>;
-  private y = pageHeight - margin;
-
-  async init(pdfLib: PdfLibModule) {
-    this.colors = createPdfColors(pdfLib.rgb);
-    this.doc = await pdfLib.PDFDocument.create();
-    this.regular = await this.doc.embedFont(pdfLib.StandardFonts.Helvetica);
-    this.bold = await this.doc.embedFont(pdfLib.StandardFonts.HelveticaBold);
-    this.addPage(true);
+function signedImageHtml(evidence: EvidencePdfRow, signedUrl: string | null) {
+  if (!signedUrl) {
+    return `<div class="evidence-missing">Imagen no disponible: ${escapeHtml(evidence.file_name)}</div>`;
   }
 
-  async save(fileName: string) {
-    this.addFooters();
-    const bytes = await this.doc.save();
-    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-    const blob = new Blob([buffer], { type: 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  return `
+    <figure class="evidence-image">
+      <figcaption>${escapeHtml(evidence.category)} - ${escapeHtml(evidence.file_name)}</figcaption>
+      <img src="${escapeHtml(signedUrl)}" alt="${escapeHtml(evidence.file_name)}" />
+    </figure>
+  `;
+}
+
+function table(headers: string[], rows: string[][]) {
+  const body = rows.length > 0
+    ? rows.map((row) => `
+      <tr>${row.map((cell) => `<td>${cell}</td>`).join('')}</tr>
+    `).join('')
+    : `<tr><td colspan="${headers.length}" class="muted">Sin registros.</td></tr>`;
+
+  return `
+    <table>
+      <thead>
+        <tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join('')}</tr>
+      </thead>
+      <tbody>${body}</tbody>
+    </table>
+  `;
+}
+
+function resultRows(rows: InventoryResultPdfRow[], itemsBySku: Map<string, InventoryItemPdfRow>) {
+  return rows.map((row) => {
+    const item = row.sku ? itemsBySku.get(String(row.sku).trim()) : null;
+    const value = toNumber(row.final_result);
+    const valueClass = value < 0 ? 'negative' : value > 0 ? 'positive' : 'neutral';
+    const label = row.cross_name
+      ? `TOTAL DE CRUCE ${escapeHtml(row.cross_name)}`
+      : `${escapeHtml(row.sku || '-')} - ${escapeHtml(row.item_description || '-')}`;
+
+    return [
+      label,
+      formatNumber(item?.physical_stock),
+      formatNumber(item?.system_stock),
+      `<span class="${valueClass}">${formatNumber(value)}</span>`,
+    ];
+  });
+}
+
+function section(title: string, content: string) {
+  return `
+    <section>
+      <h2>${escapeHtml(title)}</h2>
+      ${content}
+    </section>
+  `;
+}
+
+function buildPrintableHtml(params: {
+  report: InventoryReportPdfSummary;
+  items: InventoryItemPdfRow[];
+  results: InventoryResultPdfRow[];
+  invoice: ManualInvoicePdfRow | null;
+  recounts: RecountPdfRow[];
+  finishedProducts: FinishedProductPdfRow[];
+  cashClosures: CashClosurePdfRow[];
+  observation: string | null;
+  evidences: EvidencePdfRow[];
+  imageHtml: string;
+}) {
+  const { report, items, results, invoice, recounts, finishedProducts, cashClosures, observation, evidences, imageHtml } = params;
+  const itemsBySku = new Map(items.map((item) => [String(item.sku).trim(), item]));
+  const grouped = groupResults(results);
+
+  return `
+    <!DOCTYPE html>
+    <html lang="es">
+      <head>
+        <meta charset="UTF-8" />
+        <title>Informe de Inventario ${escapeHtml(report.local_codigo || '')}</title>
+        <style>
+          @page { size: A4; margin: 12mm; }
+          * { box-sizing: border-box; }
+          body { margin: 0; color: #111827; font-family: Arial, Helvetica, sans-serif; font-size: 11px; background: #fff; }
+          .page { max-width: 980px; margin: 0 auto; padding: 14px; }
+          header { border-bottom: 4px solid #165034; padding-bottom: 10px; margin-bottom: 14px; }
+          .brand { font-size: 18px; font-weight: 900; color: #165034; }
+          h1 { margin: 8px 0 4px; font-size: 18px; text-transform: uppercase; }
+          h2 { margin: 18px 0 0; padding: 7px 9px; background: #165034; color: #fff; font-size: 12px; text-transform: uppercase; }
+          table { width: 100%; border-collapse: collapse; page-break-inside: auto; }
+          th { background: #165034; color: #fff; font-size: 10px; text-align: left; padding: 5px; border: 1px solid #9ca3af; }
+          td { padding: 5px; border: 1px solid #9ca3af; vertical-align: top; }
+          .meta th { width: 32%; background: #e7f1ec; color: #165034; }
+          .positive { color: #165034; font-weight: 900; }
+          .negative { color: #b91c1c; font-weight: 900; }
+          .neutral { color: #374151; font-weight: 900; }
+          .muted { color: #6b7280; }
+          .note { border: 1px solid #9ca3af; min-height: 42px; padding: 8px; }
+          .evidence-image { margin: 12px 0; page-break-inside: avoid; }
+          .evidence-image figcaption { font-weight: 900; margin-bottom: 5px; color: #165034; }
+          .evidence-image img { max-width: 100%; max-height: 520px; object-fit: contain; border: 1px solid #9ca3af; }
+          .evidence-missing { border: 1px dashed #9ca3af; padding: 8px; color: #6b7280; margin: 8px 0; }
+          .actions { margin: 12px 0; }
+          .print-button { background: #165034; color: white; border: 0; padding: 10px 14px; border-radius: 6px; font-weight: 900; cursor: pointer; }
+          @media print {
+            .actions { display: none; }
+            .page { padding: 0; max-width: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="page">
+          <div class="actions">
+            <button class="print-button" onclick="window.print()">Guardar / imprimir PDF</button>
+          </div>
+          <header>
+            <div class="brand">Sweet & Coffee</div>
+            <h1>Informe de Visita por Inventario General</h1>
+            <div>${escapeHtml(report.local_name_snapshot || '-')} (${escapeHtml(report.local_codigo || '-')})</div>
+          </header>
+
+          ${section('Datos principales', table(['Campo', 'Detalle'], [
+            ['Local', `${escapeHtml(report.local_codigo || '-')} - ${escapeHtml(report.local_name_snapshot || '-')}`],
+            ['Código local / almacén', escapeHtml(report.local_codigo || '-')],
+            ['Corte de Inventario', escapeHtml(report.inventory_cutoff_label || 'Sin corte asignado')],
+            ['Fecha inventario', formatDate(report.inventory_date)],
+            ['Fecha regularización', formatDate(report.front_regularization_date)],
+            ['Horario principal', `${formatTime(report.start_time)} - ${formatTime(report.end_time)}`],
+            ['Segundo horario', report.has_second_time_range ? `${formatTime(report.second_start_time)} - ${formatTime(report.second_end_time)}` : 'No aplica'],
+            ['Auditor encargado', escapeHtml(report.assigned_auditor_name_snapshot || '-')],
+            ['Responsable / líder', escapeHtml(report.responsible_name_snapshot || '-')],
+          ]))}
+
+          ${section('4.1 Faltantes', table(['Artículo', 'Stock físico', 'Stock actual', 'Diferencia'], [
+            ...resultRows(grouped.shortageWithoutCross, itemsBySku),
+            ...resultRows(grouped.shortageCross, itemsBySku),
+          ]))}
+
+          ${section('4.2 Sobrantes', table(['Artículo', 'Stock físico', 'Stock actual', 'Diferencia'], [
+            ...resultRows(grouped.surplusWithoutCross, itemsBySku),
+            ...resultRows(grouped.surplusCross, itemsBySku),
+          ]))}
+
+          ${section('4.3 Facturas manuales', table(['Última sistema', 'Última block', 'Caducidad block', 'Diferencia'], invoice ? [[
+            String(invoice.last_system_invoice ?? '-'),
+            String(invoice.last_physical_block_invoice ?? '-'),
+            formatDate(invoice.block_expiration_date),
+            String(invoice.calculated_difference ?? '-'),
+          ]] : []))}
+
+          ${section('4.4 Reconteo de ítems', table(['SKU', 'Descripción', 'Inicial', 'Reconteo', 'Diferencia', 'Estado'], recounts.map((row) => [
+            escapeHtml(row.sku || '-'),
+            escapeHtml(row.item_description || '-'),
+            formatNumber(row.initial_count),
+            formatNumber(row.final_recount),
+            formatNumber(row.difference),
+            escapeHtml(row.status || '-'),
+          ])))}
+
+          ${section('4.5 Producto terminado', table(['Producto terminado', 'Sistema', 'Físico', 'Diferencia'], finishedProducts.map((row) => [
+            escapeHtml(row.item_description || '-'),
+            formatNumber(row.system_stock),
+            formatNumber(row.physical_stock),
+            formatNumber(row.difference),
+          ])))}
+
+          ${section('4.6 Cierres de caja', table(['Caja', 'Número', 'Cajero', 'Físico', 'Sistema', 'Diferencia'], cashClosures.map((row) => [
+            escapeHtml(row.cash_register || '-'),
+            escapeHtml(row.cash_register_number || '-'),
+            escapeHtml(row.cashier_name || '-'),
+            formatNumber(row.cash_value),
+            formatNumber(row.system_value),
+            formatNumber(row.cash_difference),
+          ])))}
+
+          ${section('9. Observaciones', `<div class="note">${observation ? escapeHtml(observation) : 'Sin observaciones adicionales registradas.'}</div>`)}
+
+          ${section('10. Evidencias', `
+            ${table(['Categoría', 'Archivo', 'Referencia'], evidences.map((evidence) => [
+              escapeHtml(evidence.category),
+              escapeHtml(evidence.file_name),
+              escapeHtml(evidence.file_path),
+            ]))}
+            ${imageHtml}
+          `)}
+
+          ${section('Resumen final', table(['Campo', 'Detalle'], [
+            ['Estado del informe', escapeHtml(report.status || '-')],
+            ['Fecha de generación', new Date().toLocaleString('es-EC')],
+          ]))}
+        </div>
+        <script>
+          window.addEventListener('load', function () {
+            setTimeout(function () { window.print(); }, 500);
+          });
+        </script>
+      </body>
+    </html>
+  `;
+}
+
+function createPrintablePdfWindow() {
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    throw new Error('Permite ventanas emergentes para generar el PDF.');
   }
 
-  section(title: string) {
-    this.ensureSpace(34);
-    this.page.drawRectangle({
-      x: margin,
-      y: this.y - 20,
-      width: pageWidth - margin * 2,
-      height: 24,
-      color: this.colors.greenDark,
-    });
-    this.page.drawText(title, { x: margin + 8, y: this.y - 12, size: 10, font: this.bold, color: this.colors.white });
-    this.y -= 36;
-  }
+  printWindow.document.open();
+  printWindow.document.write(`
+    <!doctype html>
+    <html lang="es">
+      <head>
+        <meta charset="utf-8" />
+        <title>Generando informe de inventario</title>
+        <style>
+          body {
+            align-items: center;
+            color: #00402a;
+            display: flex;
+            font-family: Arial, sans-serif;
+            height: 100vh;
+            justify-content: center;
+            margin: 0;
+          }
+        </style>
+      </head>
+      <body>Generando informe de inventario…</body>
+    </html>
+  `);
+  printWindow.document.close();
 
-  textLine(label: string, value: string) {
-    this.ensureSpace(16);
-    this.page.drawText(`${label}:`, { x: margin, y: this.y, size: 9, font: this.bold, color: this.colors.text });
-    this.page.drawText(this.truncate(value, 86), { x: margin + 130, y: this.y, size: 9, font: this.regular, color: this.colors.text });
-    this.y -= 15;
-  }
+  return printWindow;
+}
 
-  note(value: string) {
-    this.ensureSpace(15);
-    this.page.drawText(this.truncate(value, 112), { x: margin, y: this.y, size: 8, font: this.regular, color: this.colors.muted });
-    this.y -= 14;
-  }
-
-  table(headers: string[], rows: string[][], widths: number[]) {
-    this.ensureSpace(28);
-    this.row(headers, widths, 18, true);
-    this.y -= 18;
-
-    if (rows.length === 0) {
-      this.ensureSpace(18);
-      this.page.drawText('Sin registros.', { x: margin + 6, y: this.y - 12, size: 8, font: this.regular, color: this.colors.muted });
-      this.y -= 20;
-      return;
-    }
-
-    rows.forEach((row) => {
-      const height = Math.max(18, ...row.map((cell, index) => this.wrap(cell, widths[index] - 8, 7.2).length * 8 + 8));
-      this.ensureSpace(height + 2);
-      this.row(row, widths, height, false);
-      this.y -= height;
-    });
-    this.y -= 8;
-  }
-
-  async imageEvidence(evidence: EvidencePdfRow) {
-    const bytes = await evidenceToBytes(evidence);
-    if (!bytes) return;
-
-    try {
-      const image = evidence.file_name.toLowerCase().endsWith('.png')
-        ? await this.doc.embedPng(bytes)
-        : await this.doc.embedJpg(bytes);
-      const maxWidth = pageWidth - margin * 2;
-      const maxHeight = 190;
-      const scale = Math.min(maxWidth / image.width, maxHeight / image.height);
-      const width = image.width * scale;
-      const height = image.height * scale;
-      this.ensureSpace(height + 34);
-      this.note(`${evidence.category} - ${evidence.file_name}`);
-      this.page.drawImage(image, { x: margin, y: this.y - height, width, height });
-      this.y -= height + 14;
-    } catch {
-      this.note(`No se pudo insertar imagen: ${evidence.file_name}`);
-    }
-  }
-
-  private row(cells: string[], widths: number[], height: number, header: boolean) {
-    let x = margin;
-    cells.forEach((cell, index) => {
-      const width = widths[index];
-      this.page.drawRectangle({
-        x,
-        y: this.y - height,
-        width,
-        height,
-        color: header ? this.colors.greenSoft : this.colors.white,
-        borderColor: this.colors.border,
-        borderWidth: 0.5,
-      });
-      const font = header ? this.bold : this.regular;
-      const color = header ? this.colors.greenDark : this.colors.text;
-      const lines = this.wrap(cell, width - 8, 7.2).slice(0, 4);
-      lines.forEach((line, lineIndex) => {
-        this.page.drawText(line, {
-          x: x + 4,
-          y: this.y - 11 - lineIndex * 8,
-          size: 7.2,
-          font,
-          color,
-        });
-      });
-      x += width;
-    });
-  }
-
-  private addPage(withHeader = false) {
-    this.page = this.doc.addPage([pageWidth, pageHeight]);
-    this.y = pageHeight - margin;
-    if (withHeader) this.drawHeader();
-  }
-
-  private drawHeader() {
-    this.page.drawRectangle({ x: 0, y: pageHeight - 84, width: pageWidth, height: 84, color: this.colors.greenDark });
-    this.page.drawText('Sweet & Coffee', { x: margin, y: pageHeight - 34, size: 18, font: this.bold, color: this.colors.white });
-    this.page.drawText('Informe de Inventario', { x: margin, y: pageHeight - 58, size: 14, font: this.bold, color: this.colors.cream });
-    this.y = pageHeight - 112;
-  }
-
-  private ensureSpace(required: number) {
-    if (this.y - required >= margin + 18) return;
-    this.addPage();
-  }
-
-  private addFooters() {
-    const pages = this.doc.getPages();
-    pages.forEach((page, index) => {
-      page.drawLine({
-        start: { x: margin, y: 30 },
-        end: { x: pageWidth - margin, y: 30 },
-        thickness: 0.5,
-        color: this.colors.border,
-      });
-      page.drawText(`Página ${index + 1} de ${pages.length}`, {
-        x: pageWidth - margin - 70,
-        y: 15,
-        size: 8,
-        font: this.regular,
-        color: this.colors.muted,
-      });
-    });
-  }
-
-  private wrap(value: string, maxWidth: number, size: number) {
-    const words = String(value || '-').split(/\s+/);
-    const lines: string[] = [];
-    let current = '';
-    words.forEach((word) => {
-      const next = current ? `${current} ${word}` : word;
-      if (this.regular.widthOfTextAtSize(next, size) <= maxWidth) {
-        current = next;
-      } else {
-        if (current) lines.push(current);
-        current = word;
-      }
-    });
-    if (current) lines.push(current);
-    return lines.length > 0 ? lines : ['-'];
-  }
-
-  private truncate(value: string, maxLength: number) {
-    return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
-  }
+function writePrintablePdfWindow(printWindow: Window, html: string) {
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
 }
 
 export async function downloadInventoryReportPdf(inventoryReportId: string) {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     throw new Error('La descarga de PDF está disponible solo en Web.');
   }
+
+  const printWindow = createPrintablePdfWindow();
 
   const [
     reportResult,
@@ -422,6 +440,7 @@ export async function downloadInventoryReportPdf(inventoryReportId: string) {
   ]);
 
   if (reportResult.error || !reportResult.data) {
+    printWindow.close();
     throw new Error('No se pudo cargar el encabezado del informe.');
   }
 
@@ -437,129 +456,29 @@ export async function downloadInventoryReportPdf(inventoryReportId: string) {
   ].find(Boolean);
 
   if (blockingError) {
+    printWindow.close();
     throw new Error(`No se pudo cargar toda la información del informe: ${blockingError.message}`);
   }
 
-  const report = reportResult.data;
-  const items = (itemsResult.data || []) as InventoryItemPdfRow[];
-  const results = (resultsResult.data || []) as InventoryResultPdfRow[];
   const evidences = (evidencesResult.data || []) as EvidencePdfRow[];
-  const itemsBySku = new Map(items.map((item) => [String(item.sku).trim(), item]));
-  const groupedResults = groupResults(results);
-  const pdfLib = await loadPdfLib();
-  const pdf = new InventoryPdfBuilder();
-  await pdf.init(pdfLib);
+  const imageHtml = (await Promise.all(
+    evidences
+      .filter(isImageEvidence)
+      .map(async (evidence) => signedImageHtml(evidence, await evidenceToSignedUrl(evidence))),
+  )).join('');
 
-  pdf.section('1. Encabezado');
-  pdf.textLine('Local', `${report.local_codigo || '-'} - ${report.local_name_snapshot || '-'}`);
-  pdf.textLine('Código local / almacén', report.local_codigo || '-');
-  pdf.textLine('Corte de Inventario', report.inventory_cutoff_label || 'Sin corte asignado');
-  pdf.textLine('Fecha inventario', formatDate(report.inventory_date));
-  pdf.textLine('Fecha regularización', formatDate(report.front_regularization_date));
-  pdf.textLine('Hora inicio', formatTime(report.start_time));
-  pdf.textLine('Hora finalización', formatTime(report.end_time));
-  if (report.has_second_time_range) {
-    pdf.textLine('Segundo tramo', `${formatTime(report.second_start_time)} - ${formatTime(report.second_end_time)}`);
-  }
-  pdf.textLine('Auditor encargado', report.assigned_auditor_name_snapshot || '-');
-  pdf.textLine('Responsable / líder', report.responsible_name_snapshot || '-');
+  const html = buildPrintableHtml({
+    report: reportResult.data,
+    items: (itemsResult.data || []) as InventoryItemPdfRow[],
+    results: (resultsResult.data || []) as InventoryResultPdfRow[],
+    invoice: ((invoiceResult.data || []) as ManualInvoicePdfRow[])[0] || null,
+    recounts: (recountsResult.data || []) as RecountPdfRow[],
+    finishedProducts: (finishedResult.data || []) as FinishedProductPdfRow[],
+    cashClosures: (cashResult.data || []) as CashClosurePdfRow[],
+    observation: (observationResult.data?.[0] as { observation?: string | null } | undefined)?.observation || null,
+    evidences,
+    imageHtml,
+  });
 
-  pdf.section('2. Resultados de inventario');
-  drawResultsTable(pdf, 'Sobrantes sin cruce', groupedResults.surplusWithoutCross, itemsBySku);
-  drawResultsTable(pdf, 'Cruces con resultado >= 0', groupedResults.surplusCross, itemsBySku);
-  drawResultsTable(pdf, 'Faltantes sin cruce', groupedResults.shortageWithoutCross, itemsBySku);
-  drawResultsTable(pdf, 'Cruces con resultado < 0', groupedResults.shortageCross, itemsBySku);
-
-  pdf.section('3. Validaciones manuales');
-  const invoice = ((invoiceResult.data || []) as ManualInvoicePdfRow[])[0];
-  pdf.note('Facturas manuales');
-  pdf.table(
-    ['Última sistema', 'Última block', 'Caducidad block', 'Diferencia'],
-    invoice ? [[
-      String(invoice.last_system_invoice ?? '-'),
-      String(invoice.last_physical_block_invoice ?? '-'),
-      formatDate(invoice.block_expiration_date),
-      String(invoice.calculated_difference ?? '-'),
-    ]] : [],
-    [110, 110, 130, 110],
-  );
-  pdf.note('Reconteos realizados');
-  pdf.table(
-    ['SKU', 'Descripción', 'Inicial', 'Reconteo', 'Dif.', 'Estado'],
-    ((recountsResult.data || []) as RecountPdfRow[]).map((row) => [
-      row.sku || '-',
-      row.item_description || '-',
-      formatNumber(row.initial_count),
-      formatNumber(row.final_recount),
-      formatNumber(row.difference),
-      row.status || '-',
-    ]),
-    [70, 180, 70, 70, 55, 105],
-  );
-  pdf.note('Producto terminado');
-  pdf.table(
-    ['Producto terminado', 'Sistema', 'Físico', 'Diferencia'],
-    ((finishedResult.data || []) as FinishedProductPdfRow[]).map((row) => [
-      row.item_description || '-',
-      formatNumber(row.system_stock),
-      formatNumber(row.physical_stock),
-      formatNumber(row.difference),
-    ]),
-    [250, 90, 90, 90],
-  );
-  pdf.note('Cierres de caja');
-  pdf.table(
-    ['Caja', 'Número', 'Cajero', 'Físico', 'Sistema', 'Diferencia'],
-    ((cashResult.data || []) as CashClosurePdfRow[]).map((row) => [
-      row.cash_register || '-',
-      row.cash_register_number || '-',
-      row.cashier_name || '-',
-      formatNumber(row.cash_value),
-      formatNumber(row.system_value),
-      formatNumber(row.cash_difference),
-    ]),
-    [70, 70, 150, 80, 80, 80],
-  );
-  const observation = (observationResult.data?.[0] as { observation?: string | null } | undefined)?.observation;
-  if (observation) pdf.textLine('Observación adicional', observation);
-
-  pdf.section('4. Evidencias');
-  pdf.table(
-    ['Categoría', 'Archivo', 'Referencia'],
-    evidences.map((evidence) => [evidence.category, evidence.file_name, evidence.file_path]),
-    [155, 180, 195],
-  );
-  for (const evidence of evidences.filter(isImageEvidence)) {
-    await pdf.imageEvidence(evidence);
-  }
-
-  pdf.section('5. Resumen final');
-  pdf.textLine('Estado del informe', report.status || '-');
-  pdf.textLine('Fecha de generación', new Date().toLocaleString('es-EC'));
-  pdf.note('Este PDF fue generado desde el módulo web de Informes de Inventario. No fue enviado por correo.');
-
-  const fileName = `informe-inventario-${safeFilePart(report.local_codigo || 'local')}-${formatDate(report.inventory_date).replace(/\//g, '-')}.pdf`;
-  await pdf.save(fileName);
-}
-
-function drawResultsTable(
-  pdf: InventoryPdfBuilder,
-  title: string,
-  rows: InventoryResultPdfRow[],
-  itemsBySku: Map<string, InventoryItemPdfRow>,
-) {
-  pdf.note(title);
-  pdf.table(
-    ['Artículo / Cruce', 'Stock físico', 'Stock actual', 'Diferencia'],
-    rows.map((row) => {
-      const item = row.sku ? itemsBySku.get(String(row.sku).trim()) : null;
-      return [
-        row.cross_name ? `TOTAL DE CRUCE ${row.cross_name}` : `${row.sku || '-'} - ${row.item_description || '-'}`,
-        formatNumber(item?.physical_stock),
-        formatNumber(item?.system_stock),
-        formatNumber(row.final_result),
-      ];
-    }),
-    [260, 90, 90, 90],
-  );
+  writePrintablePdfWindow(printWindow, html);
 }
