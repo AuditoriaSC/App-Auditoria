@@ -364,7 +364,7 @@ export default function CreateInventoryReportScreen() {
       <View style={styles.form}>
         {message ? <Text style={styles.errorText}>{message}</Text> : null}
 
-        <View style={styles.twoColumnRow}>
+        <View style={[styles.twoColumnRow, styles.dropdownHost]}>
           <View style={styles.twoColumnItem}>
             <Text style={styles.label}>Local *</Text>
             <TouchableOpacity style={styles.searchSelectorButton} onPress={() => setLocalSearchOpen(true)} activeOpacity={0.85}>
@@ -394,7 +394,7 @@ export default function CreateInventoryReportScreen() {
           </View>
         </View>
 
-        <View style={styles.twoColumnRow}>
+        <View style={[styles.twoColumnRow, styles.formBehindDropdown]}>
           <View style={styles.twoColumnItem}>
             <DateTimeField
               label="Fecha de inventario *"
