@@ -62,37 +62,37 @@ const resources = [
   {
     title: 'Preguntas',
     description: 'Editar textos, puntajes, posicion y estado del checklist.',
-    route: '/preguntas',
+    route: '/modulos/administracion/preguntas',
   },
   {
     title: 'Locales',
     description: 'Crear y mantener locales por region sin tocar Supabase directo.',
-    route: '/locales',
+    route: '/modulos/administracion/locales',
   },
   {
     title: 'Responsables',
     description: 'Importar lideres por CSV y activar o desactivar el catalogo vivo.',
-    route: '/responsables',
+    route: '/modulos/administracion/responsables',
   },
   {
     title: 'Cruces de Inventario',
     description: 'Cargar y mantener la base maestra de cruces por SKU para informes de inventario.',
-    route: '/modulos/inventarios/cruces-base',
+    route: '/modulos/administracion/cruces-inventario',
   },
   {
     title: 'Invitaciones',
     description: 'Crear, cancelar y revisar invitaciones de nuevos usuarios.',
-    route: '/invitaciones',
+    route: '/modulos/administracion/invitaciones',
   },
   {
     title: 'Usuarios',
     description: 'Administrar roles, regiones y estado de usuarios existentes.',
-    route: '/usuarios',
+    route: '/modulos/administracion/usuarios',
   },
   {
     title: 'Autorizaciones',
     description: 'Aprobar recalificaciones de visitas y solicitudes especiales de inventarios.',
-    route: '/solicitudes-edicion',
+    route: '/modulos/administracion/autorizaciones',
   },
 ];
 
@@ -135,12 +135,12 @@ export default function AdministradorRecursosPage() {
 
   const isAdmin = profile?.role === 'admin' || profile?.role === 'super_admin';
   const visibleResources = resources.filter((resource) => (
-    resource.route !== '/modulos/inventarios/cruces-base'
+    resource.route !== '/modulos/administracion/cruces-inventario'
       || canAccessInventoryModule(profile?.role, profile?.email)
   ));
 
   const goToDashboard = () => {
-    router.replace('/dashboard');
+    router.replace('/modulos/evaluaciones');
   };
 
   const exportHistoryCsv = async () => {
@@ -293,28 +293,27 @@ export default function AdministradorRecursosPage() {
         {visibleResources.map((resource) => (
           <TouchableOpacity
             key={resource.route}
-            style={[styles.card, Platform.OS !== 'web' && resource.route === '/invitaciones' && styles.disabledCard]}
+            style={[styles.card, Platform.OS !== 'web' && resource.route === '/modulos/administracion/invitaciones' && styles.disabledCard]}
             onPress={() => {
-              if (Platform.OS !== 'web' && resource.route === '/invitaciones') return;
+              if (Platform.OS !== 'web' && resource.route === '/modulos/administracion/invitaciones') return;
               router.push(resource.route);
             }}
             activeOpacity={0.84}
           >
             <Text style={styles.cardTitle}>{resource.title}</Text>
             <Text style={styles.cardDescription}>{resource.description}</Text>
-            <Text style={styles.cardAction}>{Platform.OS !== 'web' && resource.route === '/invitaciones' ? 'Disponible en web' : 'Abrir'}</Text>
+            <Text style={styles.cardAction}>{Platform.OS !== 'web' && resource.route === '/modulos/administracion/invitaciones' ? 'Disponible en web' : 'Abrir'}</Text>
           </TouchableOpacity>
         ))}
-      </View>
-
-      <View style={styles.exportCard}>
-        <Text style={styles.cardTitle}>Exportar historico CSV</Text>
+        <View style={styles.card}>
+        <Text style={styles.cardTitle}>Exportación de Histórico</Text>
         <Text style={styles.cardDescription}>
-          Descarga una fila por visita con preguntas, respuestas, observaciones y estado de envio.
+          Descarga una fila por visita con preguntas, respuestas, observaciones y estado de envío.
         </Text>
         <TouchableOpacity style={[styles.primaryButton, exporting && styles.disabledButton]} onPress={exportHistoryCsv} disabled={exporting}>
           <Text style={styles.primaryButtonText}>{exporting ? 'Generando...' : 'Descargar CSV'}</Text>
         </TouchableOpacity>
+      </View>
       </View>
     </ScrollView>
   );
@@ -490,7 +489,7 @@ function downloadCsv(csv: string, filename: string) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: brandColors.greenDark },
+  screen: { flex: 1, backgroundColor: brandColors.background },
   container: { padding: 16, paddingBottom: 32, backgroundColor: brandColors.background, width: '100%', maxWidth: 980, alignSelf: 'center' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.background },
   loadingText: { marginTop: 8, color: brandColors.textSecondary },

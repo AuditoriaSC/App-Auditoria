@@ -42,6 +42,12 @@ function dateToTime(date: Date) {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function formatPublicDate(value: string) {
+  const [year, month, day] = value.split('-');
+  if (!year || !month || !day) return value;
+  return `${day}/${month}/${year.slice(2)}`;
+}
+
 function normalize(value: string) {
   return value
     .toLowerCase()
@@ -52,7 +58,7 @@ function normalize(value: string) {
 export default function NuevaAuditoriaPage() {
   const router = useRouter();
   useDashboardBackHandler();
-  const goToDashboard = () => router.replace('/dashboard');
+  const goToDashboard = () => router.replace('/modulos/evaluaciones');
 
   const now = useMemo(() => new Date(), []);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
@@ -307,7 +313,7 @@ export default function NuevaAuditoriaPage() {
     }
 
     router.replace({
-      pathname: `/checklist/${report.id}`,
+      pathname: `/modulos/evaluaciones/checklist/${report.id}`,
       params: {
         region: regionVisita,
         local_id: localSeleccionado?.codigo_interno || '',
@@ -330,11 +336,11 @@ export default function NuevaAuditoriaPage() {
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <View style={styles.headerText}>
-            <Text style={styles.title}>Creacion de visita</Text>
+            <Text style={styles.title}>Creación de visita</Text>
             <Text style={styles.subtitle}>Configura la visita antes de abrir el checklist correspondiente.</Text>
           </View>
           <TouchableOpacity style={styles.backButton} onPress={goToDashboard} accessibilityLabel="Volver al Dashboard">
-            <Text style={styles.backButtonText}>⌂</Text>
+            <Text style={styles.backButtonText}>←</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -366,7 +372,7 @@ export default function NuevaAuditoriaPage() {
         <View style={styles.dateTimeGrid}>
           <ReadOnlyDateTimeField
             label="Fecha de inicio"
-            value={fechaInicio}
+            value={formatPublicDate(fechaInicio)}
           />
 
           <ReadOnlyDateTimeField
@@ -395,47 +401,16 @@ export default function NuevaAuditoriaPage() {
           selected={Boolean(responsableSeleccionado)}
         />
 
-        <View style={styles.twoColumns}>
-          <TextInput
-            style={styles.input}
-            placeholder="Codigo"
-            placeholderTextColor={brandColors.inputPlaceholder}
-            editable={false}
-            value={responsableSeleccionado?.codigo || parseResponsibleDraft(responsableQuery).codigo}
-            onChangeText={(value) => {
-              const parsed = parseResponsibleDraft(responsableQuery);
-              const next = { id: '', codigo: value.toUpperCase(), nombre: parsed.nombre, cargo: null, region: null };
-              setResponsableSeleccionado(next.codigo || next.nombre ? next : null);
-              setResponsableQuery(`${next.codigo}${next.nombre ? ` · ${next.nombre}` : ''}`);
-              setResponsableSearchOpen(false);
-            }}
-            autoCapitalize="characters"
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Nombre"
-            placeholderTextColor={brandColors.inputPlaceholder}
-            editable={false}
-            value={responsableSeleccionado?.nombre || parseResponsibleDraft(responsableQuery).nombre}
-            onChangeText={(value) => {
-              const parsed = parseResponsibleDraft(responsableQuery);
-              const next = { id: '', codigo: parsed.codigo, nombre: value, cargo: null, region: null };
-              setResponsableSeleccionado(next.codigo || next.nombre ? next : null);
-              setResponsableQuery(`${next.codigo}${next.nombre ? ` · ${next.nombre}` : ''}`);
-              setResponsableSearchOpen(false);
-            }}
-          />
-        </View>
       </FormSection>
 
-      <FormSection step="4" title="Confirmacion">
+      <FormSection step="4" title="Confirmación">
         <View style={styles.confirmCard}>
           <InfoRow label="Tipo de visita" value={tipoVisita || 'Pendiente'} />
           <InfoRow label="Local" value={localSeleccionado?.nombre_local || 'Pendiente'} />
-          <InfoRow label="Codigo local" value={localSeleccionado?.codigo_interno || 'Pendiente'} />
-          <InfoRow label="Region" value={regionVisita || 'Pendiente'} />
+          <InfoRow label="Código local" value={localSeleccionado?.codigo_interno || 'Pendiente'} />
+          <InfoRow label="Región" value={regionVisita || 'Pendiente'} />
           <InfoRow label="Responsable" value={responsableSeleccionado?.nombre || 'Pendiente'} />
-          <InfoRow label="Codigo responsable" value={responsableSeleccionado?.codigo || 'Pendiente'} />
+          <InfoRow label="Código responsable" value={responsableSeleccionado?.codigo || 'Pendiente'} />
           <InfoRow label="Auditor" value={profile?.full_name || 'Sin auditor'} />
           <InfoRow label="Fecha" value={fechaInicio || 'Pendiente'} />
           <InfoRow label="Hora" value={horaInicio || 'Pendiente'} />
@@ -463,7 +438,7 @@ export default function NuevaAuditoriaPage() {
         {filteredLocales.map((local) => (
           <TouchableOpacity key={local.codigo_interno} style={styles.optionCard} onPress={() => selectLocal(local)}>
             <Text style={styles.optionTitle}>{local.codigo_interno} · {local.nombre_local}</Text>
-            <Text style={styles.optionMeta}>Region {local.region}</Text>
+            <Text style={styles.optionMeta}>Región {local.region}</Text>
           </TouchableOpacity>
         ))}
         {canCreateLocal && localQuery.trim().length > 0 && filteredLocales.length === 0 && (
@@ -510,7 +485,6 @@ function ReadOnlyDateTimeField({ label, value }: { label: string; value: string 
       <Text style={styles.label}>{label}</Text>
       <View style={styles.clockButton}>
         <Text style={styles.clockValue}>{value}</Text>
-        <Text style={styles.clockHint}>Se registrará automáticamente al iniciar</Text>
       </View>
     </View>
   );
@@ -581,7 +555,7 @@ function NewLocalModal({
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.label}>Codigo del local</Text>
+          <Text style={styles.label}>Código del local</Text>
           <TextInput
             style={styles.modalSearchInput}
             value={draft.codigo_interno}
@@ -600,7 +574,7 @@ function NewLocalModal({
             placeholderTextColor={brandColors.inputPlaceholder}
           />
 
-          <Text style={styles.label}>Region</Text>
+          <Text style={styles.label}>Región</Text>
           {canChooseRegion ? (
             <View style={styles.modalSegment}>
               {['Costa', 'Sierra'].map((region) => {
@@ -770,8 +744,8 @@ const styles = StyleSheet.create({
   visitTypeTextActive: { color: brandColors.white },
   dateTimeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 2, alignItems: 'stretch' },
   dateTimeItem: { flex: 1, flexBasis: 240, minWidth: 0 },
-  clockButton: { minHeight: 52, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, backgroundColor: brandColors.creamSoft, paddingHorizontal: 12, justifyContent: 'center' },
-  clockValue: { fontSize: 19, fontWeight: '900', color: brandColors.textPrimary },
+  clockButton: { minHeight: 52, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, backgroundColor: brandColors.creamSoft, paddingHorizontal: 12, justifyContent: 'center', alignItems: 'center' },
+  clockValue: { fontSize: 18, fontWeight: '900', color: brandColors.textPrimary, letterSpacing: 0.2 },
   clockHint: { fontSize: 11, fontWeight: '700', color: brandColors.greenDark, marginTop: 2 },
   searchInput: { minHeight: 52, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontSize: 15, marginBottom: 8, justifyContent: 'center' },
   searchInputSelected: { borderColor: brandColors.greenDark, backgroundColor: brandColors.greenSoft },
@@ -808,3 +782,4 @@ const styles = StyleSheet.create({
   modalSegmentTextActive: { color: brandColors.white },
   modalOptions: { maxHeight: 360 },
 });
+

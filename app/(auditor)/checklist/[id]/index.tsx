@@ -296,7 +296,7 @@ export default function ChecklistDinamicoPage() {
   const router = useRouter();
   const { id: reportId, region, visit_type_id, local_id } = useLocalSearchParams();
   useDashboardBackHandler();
-  const goToDashboard = () => router.replace('/dashboard');
+  const goToDashboard = () => router.replace('/modulos/evaluaciones');
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [answers, setAnswers] = useState<Record<string, AnswerState>>({});
@@ -666,7 +666,7 @@ export default function ChecklistDinamicoPage() {
 
     if (!hasChanges) {
       if (wantsInitialSend) await sendFinalizedReport();
-      router.replace('/dashboard');
+      router.replace('/modulos/evaluaciones');
       return;
     }
 
@@ -679,7 +679,7 @@ export default function ChecklistDinamicoPage() {
       alert(wantsInitialSend
         ? 'Este cambio modifica la calificacion. El informe se enviara despues de que un administrador lo apruebe.'
         : 'Este cambio modifica la calificacion y requiere autorizacion de un administrador antes de aplicarse.');
-      router.replace('/dashboard');
+      router.replace('/modulos/evaluaciones');
       return;
     }
 
@@ -700,7 +700,7 @@ export default function ChecklistDinamicoPage() {
 
     if (wantsInitialSend) await sendFinalizedReport();
 
-    router.replace('/dashboard');
+    router.replace('/modulos/evaluaciones');
   };
 
   const handleSubmit = async () => {
@@ -709,7 +709,7 @@ export default function ChecklistDinamicoPage() {
 
     if (!isOnline) {
       alert('Auditoria guardada localmente como borrador. Se sincronizara al recuperar red.');
-      router.replace('/nueva-auditoria');
+      router.replace('/modulos/evaluaciones/nueva-auditoria');
       setIsSubmitting(false);
       return;
     }
@@ -751,7 +751,7 @@ export default function ChecklistDinamicoPage() {
 
     await offlineStorage.clearDraft(String(reportId));
     router.replace({
-      pathname: `/conclusiones/${reportId}`,
+      pathname: `/modulos/evaluaciones/conclusiones/${reportId}`,
       params: { region },
     });
     setIsSubmitting(false);

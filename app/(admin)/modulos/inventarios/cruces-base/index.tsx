@@ -457,6 +457,8 @@ export default function InventoryCrossesBaseScreen() {
     <InventoryShell
       title="Cruces de Inventario"
       subtitle="Base maestra reutilizable por SKU exacto. Esta tabla alimenta los resultados de sobrantes y faltantes."
+      backLabel="← Volver a Administración"
+      backRoute="/modulos/administracion"
     >
       <View style={styles.form}>
         {message ? <Text style={missingColumns.length > 0 ? styles.errorText : styles.hint}>{message}</Text> : null}

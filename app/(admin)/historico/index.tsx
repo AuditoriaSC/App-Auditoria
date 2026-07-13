@@ -138,7 +138,7 @@ export default function HistoricoAuditoriasPage() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: brandColors.greenDark },
+  screen: { flex: 1, backgroundColor: brandColors.background },
   container: { padding: 20, maxWidth: 650, alignSelf: 'center', width: '100%', backgroundColor: brandColors.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.background },
   loadingText: { marginTop: 8, color: brandColors.textSecondary },

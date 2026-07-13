@@ -195,7 +195,7 @@ export default function AuthorizationsPage() {
           <Text style={styles.title}>Autorizaciones</Text>
           <Text style={styles.subtitle}>Revisa solicitudes administrativas antes de aplicar cambios sensibles.</Text>
         </View>
-        <TouchableOpacity style={styles.secondary} onPress={() => router.replace('/administrador-recursos')}>
+        <TouchableOpacity style={styles.secondary} onPress={() => router.replace('/modulos/administracion')}>
           <Text style={styles.secondaryText}>Volver</Text>
         </TouchableOpacity>
       </View>

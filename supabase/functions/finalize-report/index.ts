@@ -613,7 +613,7 @@ Deno.serve(async (req) => {
           ${buildHeaderTable(report)}
           ${renderEditTracking(report, Boolean(isResend))}
 
-          <h3 style="margin:18px 0 10px 0; color:${emailColors.greenDark};">Detalle de preguntas</h3>
+          <h3 style="margin:18px 0 10px 0; color:${emailColors.greenDark};">Detalle de la evaluación y novedades</h3>
           ${questionDetails || '<p>Sin respuestas registradas.</p>'}
 
           <h3 style="margin:18px 0 10px 0; color:${emailColors.greenDark};">Otras novedades</h3>

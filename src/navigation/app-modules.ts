@@ -19,7 +19,7 @@ export const appModules: AppModule[] = [
     key: 'evaluations',
     label: 'Evaluaciones',
     description: 'Visitas Sabatinas y Nocturnas',
-    route: '/dashboard',
+    route: '/modulos/evaluaciones',
     icon: '✓',
     roles: ['auditor', 'admin', 'super_admin'],
     platforms: ['web', 'mobile'],
@@ -37,7 +37,7 @@ export const appModules: AppModule[] = [
     key: 'admin',
     label: 'Administración',
     description: 'Recursos, usuarios y configuración',
-    route: '/administrador-recursos',
+    route: '/modulos/administracion',
     icon: '⚙',
     roles: ['admin', 'super_admin'],
     platforms: ['web'],
@@ -61,6 +61,8 @@ export function getVisibleAppModules(role?: string | null) {
 }
 
 export function getActiveModuleKey(segments: string[]): AppModuleKey {
+  if (segments.includes('administracion') || segments.includes('cruces-base')) return 'admin';
+  if (segments.includes('evaluaciones')) return 'evaluations';
   if (segments.includes('inventarios')) return 'inventory';
 
   const adminRoutes = new Set([

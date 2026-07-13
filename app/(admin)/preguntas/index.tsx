@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
 import { brandColors } from '../../../constants/theme';
 import { supabase } from '../../../src/supabaseClient';
+import { FloatingSelect, FloatingSelectOption } from '../../../src/components/FloatingSelect';
 
 type ProfileRow = {
   full_name: string;
@@ -45,7 +45,7 @@ type QuestionDraft = {
 };
 
 const allOption = 'TODOS';
-const regions = ['TODAS', 'Costa', 'Sierra', 'Global'];
+const regions = ['TODOS', 'Costa', 'Sierra', 'Global'];
 const visitTypes = ['TODOS', 'Sabatina', 'Nocturna'];
 const questionTypes = ['TODOS', 'compliance', 'cash_count', 'pending_deposit', 'inventory', 'cup_count', 'raw_material_count', 'follow_up', 'additional_novelty'];
 
@@ -88,7 +88,7 @@ export default function GestionPreguntasPage() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace('/dashboard');
+      router.replace('/modulos/administracion');
     }
   };
 
@@ -368,7 +368,7 @@ export default function GestionPreguntasPage() {
         />
         <View style={styles.filterRow}>
           <SelectField label="Tipo de visita" value={visitFilter} onChange={setVisitFilter} options={visitTypes} />
-          {isSuperAdmin && <SelectField label="Region" value={regionFilter} onChange={setRegionFilter} options={regions} />}
+          {isSuperAdmin && <SelectField label="Región" value={regionFilter} onChange={setRegionFilter} options={regions} />}
           <SelectField label="Tipo pregunta" value={typeFilter} onChange={setTypeFilter} options={questionTypes} />
         </View>
       </View>
@@ -508,7 +508,7 @@ function QuestionForm({
           }))}
         />
         <CompactPicker label="Tipo de visita" value={draft.visit_type_id} options={visitTypes.filter((item) => item !== allOption)} onChange={(value) => setDraft((current) => ({ ...current, visit_type_id: value }))} />
-        <CompactPicker label="Region" value={draft.region} options={regions.filter((item) => item !== 'TODAS')} onChange={(value) => setDraft((current) => ({ ...current, region: value }))} disabled={!canChooseRegion} />
+        <CompactPicker label="Región" value={draft.region} options={regions.filter((item) => item !== 'TODOS')} onChange={(value) => setDraft((current) => ({ ...current, region: value }))} disabled={!canChooseRegion} />
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Puntaje asignado</Text>
           <TextInput style={styles.editInput} value={draft.score_points} onChangeText={(value) => setDraft((current) => ({ ...current, score_points: value }))} editable={scoreEditable && scored} keyboardType="numeric" placeholder="Ej: 1.00" placeholderTextColor={brandColors.inputPlaceholder} />
@@ -555,31 +555,13 @@ function QuestionForm({
 }
 
 function CompactPicker({ label, value, options, onChange, disabled = false }: { label: string; value: string; options: string[]; onChange: (value: string) => void; disabled?: boolean }) {
-  return (
-    <View style={styles.fieldGroup}>
-      <Text style={styles.label}>{label}</Text>
-      <View style={[styles.editPickerShell, disabled && styles.disabledPicker]}>
-        <Picker enabled={!disabled} selectedValue={value} onValueChange={(item) => onChange(String(item))} style={styles.editPicker} dropdownIconColor={brandColors.greenDark}>
-          {options.map((option) => <Picker.Item key={option} label={formatOption(option)} value={option} />)}
-        </Picker>
-      </View>
-    </View>
-  );
+  const selectOptions: FloatingSelectOption[] = options.map((option) => ({ value: option, label: formatOption(option) }));
+  return <FloatingSelect label={label} value={value} onChange={onChange} options={selectOptions} minWidth={170} disabled={disabled} />;
 }
 
 function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: string[] }) {
-  return (
-    <View style={styles.filterItem}>
-      <Text style={styles.label}>{label}</Text>
-      <View style={styles.pickerShell}>
-        <Picker selectedValue={value} onValueChange={onChange} style={styles.picker} dropdownIconColor={brandColors.greenDark}>
-          {options.map((option) => (
-            <Picker.Item key={option} label={formatOption(option)} value={option} />
-          ))}
-        </Picker>
-      </View>
-    </View>
-  );
+  const selectOptions: FloatingSelectOption[] = options.map((option) => ({ value: option, label: formatOption(option) }));
+  return <FloatingSelect label={label} value={value} onChange={onChange} options={selectOptions} minWidth={170} />;
 }
 
 function normalize(value: string) {
@@ -606,7 +588,7 @@ function formatQuestionType(value: string) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: brandColors.greenDark },
+  screen: { flex: 1, backgroundColor: brandColors.background },
   container: { padding: 18, paddingBottom: 36, backgroundColor: brandColors.background, width: '100%', maxWidth: 980, alignSelf: 'center' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.background },
   loadingText: { marginTop: 8, color: brandColors.textSecondary },
@@ -616,13 +598,11 @@ const styles = StyleSheet.create({
   title: { fontSize: 25, fontWeight: '900', color: brandColors.textPrimary },
   subtitle: { marginTop: 4, color: brandColors.textSecondary, fontWeight: '600', lineHeight: 18 },
   message: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, padding: 12, marginBottom: 14, color: brandColors.coffeeDark, fontWeight: '800' },
-  filterBand: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, marginBottom: 14, gap: 10 },
-  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' },
+  filterBand: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 8, marginBottom: 14, gap: 8, position: 'relative', zIndex: 1000, elevation: 20 },
+  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end', position: 'relative', zIndex: 1000 },
   filterItem: { flexGrow: 1, flexShrink: 0, flexBasis: 170, minWidth: 170 },
   label: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 6 },
-  searchInput: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700' },
-  pickerShell: { height: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.creamSoft, justifyContent: 'center', overflow: 'hidden' },
-  picker: { height: 48, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
+  searchInput: { height: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700' },
   card: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 10 },
   createCard: { borderColor: brandColors.green, borderWidth: 2 },
   formTitle: { color: brandColors.greenDark, fontSize: 18, fontWeight: '900', marginBottom: 12 },
@@ -639,9 +619,6 @@ const styles = StyleSheet.create({
   fieldGroup: { flexGrow: 1, flexShrink: 1, flexBasis: 126, minWidth: 118 },
   input: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700', flex: 1, minWidth: 0 },
   editInput: { height: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700', minWidth: 0 },
-  editPickerShell: { height: 46, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.white, justifyContent: 'center' },
-  editPicker: { height: 46, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.white },
-  disabledPicker: { opacity: 0.65, backgroundColor: brandColors.creamSoft },
   questionEditInput: { minHeight: 48, maxHeight: 96, paddingTop: 10, paddingBottom: 10, textAlignVertical: 'top' },
   activeField: { flexGrow: 1, flexShrink: 1, flexBasis: 126, minWidth: 118 },
   activeRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 10, backgroundColor: brandColors.white },

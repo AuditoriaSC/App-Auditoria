@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
 import { brandColors } from '../../../constants/theme';
 import { supabase } from '../../../src/supabaseClient';
+import { FloatingSelect, FloatingSelectOption } from '../../../src/components/FloatingSelect';
 
 type UserRole = 'auditor' | 'admin' | 'super_admin';
 
@@ -24,7 +24,7 @@ const allOption = 'TODOS';
 const roles = ['TODOS', 'auditor', 'admin', 'super_admin'];
 const adminRoles: UserRole[] = ['auditor', 'admin'];
 const superAdminRoles: UserRole[] = ['auditor', 'admin', 'super_admin'];
-const regions = ['TODAS', 'Costa', 'Sierra', 'Global'];
+const regions = ['TODOS', 'Costa', 'Sierra', 'Global'];
 
 export default function UsuariosAdminPage() {
   const router = useRouter();
@@ -65,7 +65,7 @@ export default function UsuariosAdminPage() {
 
   const goToDashboard = () => {
     if (router.canGoBack()) router.back();
-    else router.replace('/dashboard');
+    else router.replace('/modulos/administracion');
   };
 
   const loadData = async () => {
@@ -311,30 +311,23 @@ export default function UsuariosAdminPage() {
                   />
                 </View>
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.label}>Rol</Text>
-                  <View style={styles.pickerShell}>
-                    <Picker selectedValue={draft.role} onValueChange={(value) => setDraft((current) => ({ ...current, role: value }))} style={styles.picker} dropdownIconColor={brandColors.greenDark}>
-                      {availableRoles.map((option) => (
-                        <Picker.Item key={option} label={formatRole(option)} value={option} />
-                      ))}
-                    </Picker>
-                  </View>
+                  <FloatingSelect
+                    label="Rol"
+                    value={draft.role}
+                    onChange={(value) => setDraft((current) => ({ ...current, role: value as UserRole }))}
+                    options={availableRoles.map((option) => ({ value: option, label: formatRole(option) }))}
+                    minWidth={170}
+                  />
                 </View>
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.label}>Region</Text>
-                  <View style={styles.pickerShell}>
-                    <Picker
-                      selectedValue={draft.region}
-                      onValueChange={(value) => setDraft((current) => ({ ...current, region: String(value) }))}
-                      enabled={hasGlobalScope}
-                      style={styles.picker}
-                      dropdownIconColor={brandColors.greenDark}
-                    >
-                      {(hasGlobalScope ? regions.filter((item) => item !== 'TODAS') : [currentProfile?.region || 'Costa']).map((option) => (
-                        <Picker.Item key={option} label={option} value={option} />
-                      ))}
-                    </Picker>
-                  </View>
+                  <FloatingSelect
+                    label="Región"
+                    value={draft.region}
+                    onChange={(value) => setDraft((current) => ({ ...current, region: value }))}
+                    options={(hasGlobalScope ? regions.filter((item) => item !== 'TODOS') : [currentProfile?.region || 'Costa']).map((option) => ({ value: option, label: option }))}
+                    minWidth={170}
+                    disabled={!hasGlobalScope}
+                  />
                 </View>
               </View>
             )}
@@ -368,18 +361,8 @@ export default function UsuariosAdminPage() {
 }
 
 function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: string[] }) {
-  return (
-    <View style={styles.filterItem}>
-      <Text style={styles.label}>{label}</Text>
-      <View style={styles.pickerShell}>
-        <Picker selectedValue={value} onValueChange={onChange} style={styles.picker} dropdownIconColor={brandColors.greenDark}>
-          {options.map((option) => (
-            <Picker.Item key={option} label={formatOption(option)} value={option} />
-          ))}
-        </Picker>
-      </View>
-    </View>
-  );
+  const selectOptions: FloatingSelectOption[] = options.map((option) => ({ value: option, label: formatOption(option) }));
+  return <FloatingSelect label={label} value={value} onChange={onChange} options={selectOptions} minWidth={170} />;
 }
 
 function normalize(value: string) {
@@ -395,6 +378,7 @@ function formatOption(value: string) {
   if (value === 'TODAS') return 'Todas';
   if (value === 'ACTIVO') return 'Activo';
   if (value === 'INACTIVO') return 'Inactivo';
+  if (['Costa', 'Sierra', 'Global'].includes(value)) return value;
   return formatRole(value);
 }
 
@@ -412,7 +396,7 @@ function formatDate(value: string | null) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: brandColors.greenDark },
+  screen: { flex: 1, backgroundColor: brandColors.background },
   container: { padding: 18, paddingBottom: 36, backgroundColor: brandColors.background, width: '100%', maxWidth: 980, alignSelf: 'center' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.background },
   loadingText: { marginTop: 8, color: brandColors.textSecondary },
@@ -422,13 +406,11 @@ const styles = StyleSheet.create({
   title: { fontSize: 25, fontWeight: '900', color: brandColors.textPrimary },
   subtitle: { marginTop: 4, color: brandColors.textSecondary, fontWeight: '600', lineHeight: 18 },
   message: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, padding: 12, marginBottom: 14, color: brandColors.coffeeDark, fontWeight: '800' },
-  filterBand: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, marginBottom: 14, gap: 10 },
-  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' },
+  filterBand: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 8, marginBottom: 14, gap: 8, position: 'relative', zIndex: 1000, elevation: 20 },
+  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end', position: 'relative', zIndex: 1000 },
   filterItem: { minWidth: 170, flexGrow: 1, flexShrink: 0, flexBasis: 170 },
   label: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 6 },
-  searchInput: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700' },
-  pickerShell: { height: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.creamSoft, justifyContent: 'center', overflow: 'hidden' },
-  picker: { height: 48, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
+  searchInput: { height: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700' },
   card: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 10 },
   disabledCard: { opacity: 0.62, backgroundColor: brandColors.creamSoft },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },

@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
 import { brandColors } from '../../../constants/theme';
 import { supabase } from '../../../src/supabaseClient';
+import { FloatingSelect } from '../../../src/components/FloatingSelect';
 
 type ProfileRow = {
   full_name: string;
@@ -63,7 +63,7 @@ export default function ResponsablesAdminPage() {
 
   const goToDashboard = () => {
     if (router.canGoBack()) router.back();
-    else router.replace('/dashboard');
+    else router.replace('/modulos/administracion');
   };
 
   const filteredResponsibles = useMemo(() => {
@@ -317,16 +317,13 @@ export default function ResponsablesAdminPage() {
           placeholderTextColor="#94a3b8"
         />
         {isSuperAdmin && (
-          <View style={styles.filterItem}>
-            <Text style={styles.label}>Region</Text>
-            <View style={styles.pickerShell}>
-              <Picker selectedValue={regionFilter} onValueChange={setRegionFilter} style={styles.picker} dropdownIconColor={brandColors.greenDark}>
-                {regions.map((region) => (
-                  <Picker.Item key={region} label={region === 'TODAS' ? 'Todas' : region} value={region} />
-                ))}
-              </Picker>
-            </View>
-          </View>
+          <FloatingSelect
+            label="Región"
+            value={regionFilter}
+            onChange={setRegionFilter}
+            options={regions.map((region) => ({ value: region, label: region === 'TODAS' ? 'Todas' : region }))}
+            minWidth={170}
+          />
         )}
       </View>
 
@@ -353,18 +350,25 @@ function CsvFileInput({ onText, disabled }: { onText: (text: string) => void; di
     );
   }
 
-  return React.createElement('input', {
-    type: 'file',
-    accept: '.csv,text/csv',
-    disabled,
-    onChange: async (event: React.ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-      onText(await file.text());
-      event.target.value = '';
-    },
-    style: webFileInputStyle,
-  });
+  const inputId = 'responsables-csv-input';
+  return React.createElement(
+    'label',
+    { htmlFor: inputId, style: webFileLabelStyle },
+    disabled ? 'Importando...' : 'Seleccionar archivo',
+    React.createElement('input', {
+      id: inputId,
+      type: 'file',
+      accept: '.csv,text/csv',
+      disabled,
+      onChange: async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        onText(await file.text());
+        event.target.value = '';
+      },
+      style: webHiddenFileInputStyle,
+    }),
+  );
 }
 
 function parseResponsibleCsv(text: string, profile: ProfileRow, isSuperAdmin: boolean) {
@@ -477,17 +481,26 @@ function downloadTemplate() {
   URL.revokeObjectURL(url);
 }
 
-const webFileInputStyle = {
-  minHeight: 43,
-  border: '1px solid #cbd5e1',
+const webFileLabelStyle = {
+  minHeight: 44,
+  height: 44,
   borderRadius: 8,
-  padding: 9,
-  backgroundColor: brandColors.white,
-  fontWeight: 700,
+  padding: '0 16px',
+  backgroundColor: brandColors.greenDark,
+  color: brandColors.white,
+  fontWeight: 900,
+  cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+};
+
+const webHiddenFileInputStyle = {
+  display: 'none',
 };
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: brandColors.greenDark },
+  screen: { flex: 1, backgroundColor: brandColors.background },
   container: { padding: 18, paddingBottom: 36, backgroundColor: brandColors.background, width: '100%', maxWidth: 980, alignSelf: 'center' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.background },
   loadingText: { marginTop: 8, color: brandColors.textSecondary },
@@ -496,16 +509,14 @@ const styles = StyleSheet.create({
   title: { fontSize: 25, fontWeight: '900', color: brandColors.textPrimary },
   subtitle: { marginTop: 4, color: brandColors.textSecondary, fontWeight: '600', lineHeight: 18 },
   message: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, padding: 12, marginBottom: 14, color: brandColors.coffeeDark, fontWeight: '800' },
-  formCard: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 14 },
+  formCard: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, marginBottom: 14 },
   formTitle: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 16, marginBottom: 6 },
   helperText: { color: brandColors.textSecondary, fontWeight: '700', lineHeight: 18 },
-  actionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12, alignItems: 'center' },
-  filterBand: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, marginBottom: 14, gap: 10 },
+  actionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 10, alignItems: 'center' },
+  filterBand: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 8, marginBottom: 14, gap: 8, position: 'relative', zIndex: 1000, elevation: 20 },
   filterItem: { minWidth: 170, flexGrow: 1, flexShrink: 0, flexBasis: 170 },
   label: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 6 },
-  searchInput: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700' },
-  pickerShell: { height: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.creamSoft, justifyContent: 'center', overflow: 'hidden' },
-  picker: { height: 48, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
+  searchInput: { height: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700' },
   summaryCard: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 14 },
   summaryTitle: { color: brandColors.textPrimary, fontWeight: '900', marginBottom: 4 },
   summaryText: { color: brandColors.textSecondary, fontWeight: '800' },
@@ -517,7 +528,7 @@ const styles = StyleSheet.create({
   meta: { marginTop: 5, color: brandColors.textSecondary, fontSize: 12, fontWeight: '700' },
   statusColumn: { alignItems: 'center' },
   statusText: { color: brandColors.textSecondary, fontWeight: '900', fontSize: 11 },
-  secondaryButton: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingVertical: 11, paddingHorizontal: 16, alignItems: 'center' },
+  secondaryButton: { minHeight: 44, backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
   secondaryButtonText: { color: brandColors.textSecondary, fontWeight: '900' },
 });
 
