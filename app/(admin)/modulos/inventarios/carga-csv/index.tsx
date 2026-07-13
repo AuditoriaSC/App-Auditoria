@@ -120,8 +120,10 @@ function formatTime(value: string | null | undefined) {
 
 function detectDelimiter(text: string) {
   const firstLine = text.split(/\r?\n/).find((line) => line.trim().length > 0) || '';
+  const tabCount = (firstLine.match(/\t/g) || []).length;
   const commaCount = (firstLine.match(/,/g) || []).length;
   const semicolonCount = (firstLine.match(/;/g) || []).length;
+  if (tabCount > semicolonCount && tabCount > commaCount) return '\t';
   if (semicolonCount > 0) return ';';
   return commaCount > 0 ? ',' : ';';
 }
@@ -130,8 +132,8 @@ function unwrapQuotedDelimitedRows(text: string) {
   return text
     .split(/\r?\n/)
     .map((line) => {
-      const trimmed = line.trim();
-      if (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.includes(';')) {
+      const trimmed = line.trim().replace(/^\uFEFF/, '');
+      if (trimmed.startsWith('"') && trimmed.endsWith('"') && /[;\t,]/.test(trimmed)) {
         return trimmed.slice(1, -1).replace(/""/g, '"');
       }
       return line;
@@ -139,8 +141,16 @@ function unwrapQuotedDelimitedRows(text: string) {
     .join('\n');
 }
 
+function stripCsvMetadataLines(text: string) {
+  return text
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .filter((line, index) => !(index === 0 && /^sep\s*=\s*[;,\t]/i.test(line.trim().replace(/^\uFEFF/, ''))))
+    .join('\n');
+}
+
 function parseCsv(text: string) {
-  const normalizedText = unwrapQuotedDelimitedRows(text);
+  const normalizedText = unwrapQuotedDelimitedRows(stripCsvMetadataLines(text));
   const delimiter = detectDelimiter(normalizedText);
   const rows: string[][] = [];
   let current = '';
@@ -185,7 +195,24 @@ function parseCsv(text: string) {
     rows.push(row);
   }
 
-  return rows.filter((csvRow) => csvRow.some((cell) => cell.trim() !== ''));
+  const filteredRows = rows.filter((csvRow) => csvRow.some((cell) => cell.trim() !== ''));
+  return expandSingleCellDelimitedRows(filteredRows);
+}
+
+function expandSingleCellDelimitedRows(rows: string[][]) {
+  if (rows.length === 0) return rows;
+  const header = rows[0];
+  if (header.length !== 1) return rows;
+
+  const headerText = String(header[0] || '').replace(/^\uFEFF/, '');
+  const candidateDelimiters = [';', '\t', ','];
+  const fallbackDelimiter = candidateDelimiters.find((delimiter) => headerText.includes(delimiter));
+  if (!fallbackDelimiter) return rows;
+
+  return rows.map((row) => {
+    if (row.length !== 1) return row;
+    return String(row[0] || '').split(fallbackDelimiter).map((cell) => cell.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+  });
 }
 
 async function readCsvFile(file: File) {
