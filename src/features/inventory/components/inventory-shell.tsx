@@ -66,7 +66,7 @@ export function InventoryShell({
       <View style={styles.center}>
         <Text style={styles.restrictedTitle}>Disponible solo en Web</Text>
         <Text style={styles.restrictedText}>Informes de Inventario no forma parte de la aplicación móvil.</Text>
-        <TouchableOpacity style={styles.primaryButton} onPress={() => router.replace('/dashboard')}>
+        <TouchableOpacity style={styles.primaryButton} onPress={() => router.replace('/modulos/evaluaciones')}>
           <Text style={styles.primaryButtonText}>Volver al dashboard</Text>
         </TouchableOpacity>
       </View>
@@ -87,7 +87,7 @@ export function InventoryShell({
       <View style={styles.center}>
         <Text style={styles.restrictedTitle}>Módulo no disponible</Text>
         <Text style={styles.restrictedText}>Esta funcionalidad permanece oculta fuera del entorno local/desarrollo.</Text>
-        <TouchableOpacity style={styles.primaryButton} onPress={() => router.replace('/dashboard')}>
+        <TouchableOpacity style={styles.primaryButton} onPress={() => router.replace('/modulos/evaluaciones')}>
           <Text style={styles.primaryButtonText}>Volver al dashboard</Text>
         </TouchableOpacity>
       </View>

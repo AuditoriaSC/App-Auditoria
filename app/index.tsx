@@ -50,7 +50,7 @@ export default function IndexPage() {
           return;
         }
 
-        router.replace('/dashboard');
+        router.replace('/modulos/evaluaciones');
         return;
       }
 
@@ -75,7 +75,7 @@ export default function IndexPage() {
         return;
       }
 
-      router.replace('/dashboard');
+      router.replace('/modulos/evaluaciones');
     }
 
     checkUserSession();

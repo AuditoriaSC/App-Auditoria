@@ -242,7 +242,7 @@ function DrawerContent({ loadingProfile, profile, userEmail, activeModuleKey, vi
         <TouchableOpacity style={styles.signOutButton} onPress={onSignOut}>
           <Text style={styles.signOutText}>Cerrar sesión</Text>
         </TouchableOpacity>
-        <Text style={styles.footerText}>Desarrollado por Auditoría S&C</Text>
+        <Text style={styles.footerText}>Desarrollado por el Dep. de Auditoría</Text>
         <Text style={styles.footerText}>© 2026 Sweet & Coffee</Text>
       </View>
     </View>
@@ -507,3 +507,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 });
+

@@ -66,7 +66,7 @@ export default function FinalizarReportePage() {
   const router = useRouter();
   const { id: reportId, region } = useLocalSearchParams();
   useDashboardBackHandler();
-  const goToDashboard = () => router.replace('/dashboard');
+  const goToDashboard = () => router.replace('/modulos/evaluaciones');
 
   const [loading, setLoading] = useState(true);
   const [rawAnswers, setRawAnswers] = useState<AnswerRecord[]>([]);
@@ -263,7 +263,7 @@ export default function FinalizarReportePage() {
 
       await supabase.from('audit_answers_draft').delete().eq('report_id', reportId);
 
-      router.replace('/dashboard');
+      router.replace('/modulos/evaluaciones');
     } catch (err: any) {
       alert('Error en consolidacion del reporte: ' + err.message);
     } finally {

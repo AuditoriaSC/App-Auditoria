@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
 import { brandColors } from '../../../constants/theme';
 import { supabase } from '../../../src/supabaseClient';
 import { downloadReportPdf } from '../../../src/report-document';
+import { AppNoticeModal } from '../../../src/components/AppNoticeModal';
+import { FloatingSelect, FloatingSelectOption } from '../../../src/components/FloatingSelect';
 
 type ProfileRow = {
   id: string;
@@ -93,6 +94,8 @@ export default function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ title: string; message: string; variant?: 'info' | 'success' | 'warning' | 'danger' } | null>(null);
+  const [deleteCandidate, setDeleteCandidate] = useState<VisitRow | null>(null);
 
   useEffect(() => {
     loadDashboard();
@@ -210,41 +213,33 @@ export default function AdminDashboard() {
     : 0;
   const totalIncidents = visibleVisits.reduce((total, visit) => total + (incidentCountByReport[visit.id] || 0), 0);
 
-  const byVisitType = useMemo(
-    () => buildSummary(visibleVisits, incidentCountByReport, (visit) => visit.visit_type_id),
-    [incidentCountByReport, visibleVisits],
-  );
-
   const canDeleteVisits = profile?.role === 'admin' || profile?.role === 'super_admin';
 
   const handleDeleteVisit = async (visit: VisitRow) => {
     const visibleStatus = getVisibleStatus(visit);
     if (!canDeleteVisits || visibleStatus === 'ENVIADA') return;
 
-    const local = getLocalName(visit);
-    const confirmed = typeof window === 'undefined'
-      ? true
-      : window.confirm(`Eliminar la visita de ${local}? Esta accion no se puede deshacer.`);
+    setDeleteCandidate(visit);
+  };
 
-    if (!confirmed) return;
+  const confirmDeleteVisit = async () => {
+    if (!deleteCandidate) return;
 
     const { error: deleteError } = await supabase
       .from('audit_reports')
       .delete()
-      .eq('id', visit.id);
+      .eq('id', deleteCandidate.id);
 
     if (deleteError) {
-      alert('No se pudo borrar la visita: ' + deleteError.message);
+      setNotice({ title: 'No se pudo borrar', message: `No se pudo borrar la visita: ${deleteError.message}`, variant: 'danger' });
+      setDeleteCandidate(null);
       return;
     }
 
-    setVisits((current) => current.filter((item) => item.id !== visit.id));
-    setAnswers((current) => current.filter((answer) => answer.report_id !== visit.id));
-  };
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    router.replace('/login');
+    setVisits((current) => current.filter((item) => item.id !== deleteCandidate.id));
+    setAnswers((current) => current.filter((answer) => answer.report_id !== deleteCandidate.id));
+    setDeleteCandidate(null);
+    setNotice({ title: 'Visita eliminada', message: 'La visita fue eliminada correctamente.', variant: 'success' });
   };
 
   if (loading) {
@@ -273,31 +268,42 @@ export default function AdminDashboard() {
     <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.hero}>
         <View style={styles.heroText}>
-          <Text style={styles.welcome}>Bienvenido, {profile?.full_name || 'Usuario'}</Text>
-          <Text style={styles.scope}>{formatRole(profile?.role)} · {getRegionScope(profile)}</Text>
+          <Text style={styles.welcome}>Evaluaciones</Text>
+          <Text style={styles.scope}>Visitas Sabatinas y Nocturnas</Text>
         </View>
         <View style={styles.heroActions}>
-          <TouchableOpacity style={styles.secondaryButton} onPress={handleSignOut}>
-            <Text style={styles.secondaryButtonText}>Cerrar sesion</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.newVisitButton} onPress={() => router.push('/nueva-auditoria')}>
-            <Text style={styles.newVisitButtonText}>Nueva visita</Text>
+          <TouchableOpacity style={styles.newVisitButton} onPress={() => router.push('/modulos/evaluaciones/nueva-auditoria')}>
+            <Text style={styles.newVisitButtonText}>Nueva Visita</Text>
           </TouchableOpacity>
         </View>
       </View>
 
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Resumen por tipo</Text>
+      </View>
       <View style={styles.summaryGrid}>
-        <SummaryCard label="Visitas visibles" value={String(visibleVisits.length)} />
+        {buildVisitTypeCards(visibleVisits, incidentCountByReport).map((row) => (
+          <SummaryCard
+            key={row.key}
+            label={row.label}
+            value={String(row.reports)}
+            meta={`Promedio ${row.average.toFixed(2)} · ${row.incidents} novedades`}
+          />
+        ))}
+      </View>
+
+      <View style={styles.summaryGrid}>
+        <SummaryCard label="Visitas Realizadas" value={String(visibleVisits.length)} />
         <SummaryCard label="Finalizadas" value={String(finalizedVisits.length)} />
         <SummaryCard label="Promedio" value={average.toFixed(2)} />
-        <SummaryCard label="Incidencias" value={String(totalIncidents)} />
+        <SummaryCard label="Novedades" value={String(totalIncidents)} />
       </View>
 
       <View style={styles.filterBand}>
         <View style={styles.filterRow}>
           <FilterSelect label="Tipo de visita" value={visitTypeFilter} onChange={setVisitTypeFilter} options={visitTypes} />
           {isSuperAdmin && <FilterSelect label="Estado" value={statusFilter} onChange={setStatusFilter} options={statusOptions} />}
-          {isSuperAdmin && <FilterSelect label="Region" value={regionFilter} onChange={setRegionFilter} options={regions} />}
+          {isSuperAdmin && <FilterSelect label="Región" value={regionFilter} onChange={setRegionFilter} options={regions} />}
           <FilterSelect label="Mes" value={monthFilter} onChange={setMonthFilter} options={monthOptions} />
           <FilterSelect label="Año" value={yearFilter} onChange={setYearFilter} options={yearOptions} />
         </View>
@@ -307,7 +313,7 @@ export default function AdminDashboard() {
             style={styles.searchInput}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Local, codigo, auditor o responsable"
+            placeholder="Local, código, auditor o responsable"
             placeholderTextColor="#94a3b8"
           />
         </View>
@@ -332,10 +338,11 @@ export default function AdminDashboard() {
             visit={visit}
             canDelete={canDeleteVisits && getVisibleStatus(visit) !== 'ENVIADA'}
             onDelete={() => handleDeleteVisit(visit)}
+            onPdfError={(message) => setNotice({ title: 'No se pudo descargar el PDF', message, variant: 'danger' })}
             onPress={() => {
               if (canOpenVisit(visit, profile)) {
                 router.push({
-                  pathname: `/checklist/${visit.id}`,
+                  pathname: `/modulos/evaluaciones/checklist/${visit.id}`,
                   params: {
                     region: visit.region,
                     local_id: getLocalCode(visit),
@@ -348,52 +355,44 @@ export default function AdminDashboard() {
         ))
       )}
 
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Resumen por tipo</Text>
-      </View>
-      <View style={styles.summaryList}>
-        {byVisitType.map((row) => (
-          <View key={row.key} style={styles.summaryRow}>
-            <View>
-              <Text style={styles.summaryLabel}>{row.label}</Text>
-              <Text style={styles.summaryMeta}>{row.reports} visitas</Text>
-            </View>
-            <View style={styles.summaryNumbers}>
-              <Text style={styles.summaryAverage}>{row.average.toFixed(2)}</Text>
-              <Text style={styles.summaryIncident}>{row.incidents} inc.</Text>
-            </View>
-          </View>
-        ))}
-      </View>
+      <AppNoticeModal
+        visible={Boolean(deleteCandidate)}
+        title="Eliminar visita"
+        message={`¿Eliminar la visita de ${deleteCandidate ? getLocalName(deleteCandidate) : ''}? Esta acción no se puede deshacer.`}
+        variant="danger"
+        confirmLabel="Eliminar"
+        cancelLabel="Cancelar"
+        onConfirm={confirmDeleteVisit}
+        onCancel={() => setDeleteCandidate(null)}
+      />
+
+      <AppNoticeModal
+        visible={Boolean(notice)}
+        title={notice?.title || ''}
+        message={notice?.message || ''}
+        variant={notice?.variant || 'info'}
+        onConfirm={() => setNotice(null)}
+      />
     </ScrollView>
   );
 }
 
-function SummaryCard({ label, value }: { label: string; value: string }) {
+function SummaryCard({ label, value, meta }: { label: string; value: string; meta?: string }) {
   return (
     <View style={styles.summaryCard}>
       <Text style={styles.summaryCardLabel}>{label}</Text>
       <Text style={styles.summaryCardValue}>{value}</Text>
+      {meta ? <Text style={styles.summaryCardMeta}>{meta}</Text> : null}
     </View>
   );
 }
 
 function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: string[] }) {
-  return (
-    <View style={styles.filterItem}>
-      <Text style={styles.label}>{label}</Text>
-      <View style={styles.pickerShell}>
-        <Picker selectedValue={value} onValueChange={onChange} style={styles.picker} dropdownIconColor={brandColors.greenDark}>
-          {options.map((option) => (
-            <Picker.Item key={option} label={formatFilterLabel(option)} value={option} />
-          ))}
-        </Picker>
-      </View>
-    </View>
-  );
+  const selectOptions: FloatingSelectOption[] = options.map((option) => ({ value: option, label: formatFilterLabel(option) }));
+  return <FloatingSelect label={label} value={value} onChange={onChange} options={selectOptions} />;
 }
 
-function VisitCard({ visit, canDelete, onDelete, onPress }: { visit: VisitRow; canDelete: boolean; onDelete: () => void; onPress: () => void }) {
+function VisitCard({ visit, canDelete, onDelete, onPress, onPdfError }: { visit: VisitRow; canDelete: boolean; onDelete: () => void; onPress: () => void; onPdfError: (message: string) => void }) {
   const visibleStatus = getVisibleStatus(visit);
   const hasGrade = visibleStatus !== 'EN_PROCESO' && visit.final_grade !== null && visit.final_grade !== undefined;
 
@@ -403,10 +402,10 @@ function VisitCard({ visit, canDelete, onDelete, onPress }: { visit: VisitRow; c
         <View style={styles.cardTitleGroup}>
           <Text style={styles.visitDate}>{formatVisitDateTime(visit)}</Text>
           <Text style={styles.visitTitle}>{getLocalName(visit)}</Text>
-          <Text style={styles.visitSubtitle}>{getLocalCode(visit) || 'Sin codigo'} · {visit.visit_type_id}</Text>
+          <Text style={styles.visitSubtitle}>{getLocalCode(visit) || 'Sin código'} · {visit.visit_type_id}</Text>
           {(visit.edited_after_send || Number(visit.resent_count || 0) > 0) && (
             <Text style={styles.auditTrailText}>
-              {visit.edited_after_send ? 'Editada posterior al envio' : ''}
+              {visit.edited_after_send ? 'Editada posterior al envío' : ''}
               {visit.edited_after_send && Number(visit.resent_count || 0) > 0 ? ' · ' : ''}
               {Number(visit.resent_count || 0) > 0 ? `Reenviada ${formatResendCount(Number(visit.resent_count))}` : ''}
             </Text>
@@ -420,7 +419,7 @@ function VisitCard({ visit, canDelete, onDelete, onPress }: { visit: VisitRow; c
         <View style={styles.footerActions}>
           <Text style={styles.footerGrade}>{hasGrade ? `Calificacion ${Number(visit.final_grade || 0).toFixed(2)} / 10` : 'Sin calificacion'}</Text>
           {visibleStatus !== 'EN_PROCESO' && (
-            <TouchableOpacity style={styles.pdfButton} onPress={async (event) => { event.stopPropagation(); try { await downloadReportPdf(visit.id); } catch (error) { alert(error instanceof Error ? error.message : 'No se pudo generar el PDF.'); } }}>
+            <TouchableOpacity style={styles.pdfButton} onPress={async (event) => { event.stopPropagation(); try { await downloadReportPdf(visit.id); } catch (error) { onPdfError(error instanceof Error ? error.message : 'No se pudo generar el PDF.'); } }}>
               <Text style={styles.pdfButtonText}>⇩ PDF</Text>
             </TouchableOpacity>
           )}
@@ -477,6 +476,16 @@ function buildSummary(
     average: item.finalized > 0 ? round(item.total / item.finalized) : 0,
     incidents: item.incidents,
   }));
+}
+
+function buildVisitTypeCards(visits: VisitRow[], incidents: Record<string, number>): SummaryRow[] {
+  const rows = buildSummary(visits, incidents, (visit) => visit.visit_type_id);
+  const byKey = new Map(rows.map((row) => [normalize(row.label), row]));
+
+  return ['Sabatina', 'Nocturna'].map((label) => {
+    const found = byKey.get(normalize(label));
+    return found || { key: label, label, reports: 0, average: 0, incidents: 0 };
+  });
 }
 
 function getRelationName<T extends string>(value: Record<T, string | null> | Record<T, string | null>[] | null | undefined, key: T) {
@@ -609,13 +618,12 @@ const styles = StyleSheet.create({
   summaryCard: { flexGrow: 1, flexBasis: 135, minWidth: 0, backgroundColor: brandColors.surface, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12 },
   summaryCardLabel: { fontSize: 12, color: brandColors.textSecondary, fontWeight: '700' },
   summaryCardValue: { fontSize: 22, color: brandColors.textPrimary, fontWeight: '900', marginTop: 6 },
-  filterBand: { backgroundColor: brandColors.surface, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, marginBottom: 14, gap: 10 },
-  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' },
+  summaryCardMeta: { color: brandColors.textSecondary, fontSize: 11, fontWeight: '800', marginTop: 5 },
+  filterBand: { backgroundColor: brandColors.surface, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, marginBottom: 14, gap: 10, position: 'relative', zIndex: 1000, elevation: 20 },
+  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end', position: 'relative', zIndex: 1000 },
   filterItem: { minWidth: 152, flexGrow: 1, flexShrink: 0, flexBasis: 152 },
   searchItem: { width: '100%' },
   label: { fontSize: 12, fontWeight: '800', color: brandColors.textSecondary, marginBottom: 6 },
-  pickerShell: { height: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.white, justifyContent: 'center', overflow: 'hidden' },
-  picker: { height: 48, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.white },
   searchInput: { minHeight: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.textPrimary, fontWeight: '700' },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, marginBottom: 10 },
   sectionTitle: { fontSize: 17, color: brandColors.textPrimary, fontWeight: '900' },
@@ -654,3 +662,5 @@ const styles = StyleSheet.create({
   summaryAverage: { color: '#0f172a', fontWeight: '900' },
   summaryIncident: { color: '#b91c1c', fontWeight: '800', fontSize: 12, marginTop: 2 },
 });
+
+

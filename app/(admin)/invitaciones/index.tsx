@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
 import { brandColors } from '../../../constants/theme';
 import { supabase } from '../../../src/supabaseClient';
+import { FloatingSelect } from '../../../src/components/FloatingSelect';
 
 type ProfileRow = {
   full_name: string;
@@ -56,7 +56,7 @@ export default function GestionInvitacionesPage() {
 
   const goToDashboard = () => {
     if (router.canGoBack()) router.back();
-    else router.replace('/dashboard');
+    else router.replace('/modulos/administracion');
   };
 
   const filteredInvitations = useMemo(() => {
@@ -308,26 +308,21 @@ export default function GestionInvitacionesPage() {
             autoCapitalize="none"
             keyboardType="email-address"
           />
-          <View style={styles.pickerShell}>
-            <Picker selectedValue={role} onValueChange={(value) => setRole(value)} style={styles.picker} dropdownIconColor={brandColors.greenDark}>
-              {allowedRoles.map((option) => (
-                <Picker.Item key={option} label={formatRole(option)} value={option} />
-              ))}
-            </Picker>
-          </View>
-          <View style={styles.pickerShell}>
-            <Picker
-              selectedValue={region}
-              onValueChange={(value) => setRegion(String(value))}
-              enabled={hasGlobalScope}
-              style={styles.picker}
-              dropdownIconColor={brandColors.greenDark}
-            >
-              {(hasGlobalScope ? regions : [profile?.region || 'Costa']).map((option) => (
-                <Picker.Item key={option} label={option} value={option} />
-              ))}
-            </Picker>
-          </View>
+          <FloatingSelect
+            label=""
+            value={role}
+            onChange={(value) => setRole(value as 'auditor' | 'admin' | 'super_admin')}
+            options={allowedRoles.map((option) => ({ value: option, label: formatRole(option) }))}
+            minWidth={170}
+          />
+          <FloatingSelect
+            label=""
+            value={region}
+            onChange={setRegion}
+            options={(hasGlobalScope ? regions : [profile?.region || 'Costa']).map((option) => ({ value: option, label: option }))}
+            minWidth={170}
+            disabled={!hasGlobalScope}
+          />
         </View>
         <View style={styles.formActions}>
           <TouchableOpacity style={styles.primaryButton} onPress={createInvitation} disabled={saving}>
@@ -344,16 +339,13 @@ export default function GestionInvitacionesPage() {
           placeholder="Buscar por correo"
           placeholderTextColor="#94a3b8"
         />
-        <View style={styles.filterItem}>
-          <Text style={styles.label}>Estado</Text>
-          <View style={styles.pickerShell}>
-            <Picker selectedValue={statusFilter} onValueChange={setStatusFilter} style={styles.picker} dropdownIconColor={brandColors.greenDark}>
-              {statuses.map((option) => (
-                <Picker.Item key={option} label={formatStatus(option)} value={option} />
-              ))}
-            </Picker>
-          </View>
-        </View>
+        <FloatingSelect
+          label="Estado"
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={statuses.map((option) => ({ value: option, label: formatStatus(option) }))}
+          minWidth={170}
+        />
       </View>
 
       {filteredInvitations.map((invitation) => {
@@ -473,7 +465,7 @@ function formatDate(value: string | null) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: brandColors.greenDark },
+  screen: { flex: 1, backgroundColor: brandColors.background },
   container: { padding: 18, paddingBottom: 36, backgroundColor: brandColors.background, width: '100%', maxWidth: 980, alignSelf: 'center' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.background },
   loadingText: { marginTop: 8, color: brandColors.textSecondary },
@@ -482,18 +474,16 @@ const styles = StyleSheet.create({
   title: { fontSize: 25, fontWeight: '900', color: brandColors.textPrimary },
   subtitle: { marginTop: 4, color: brandColors.textSecondary, fontWeight: '600', lineHeight: 18 },
   message: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, padding: 12, marginBottom: 14, color: brandColors.coffeeDark, fontWeight: '800' },
-  formCard: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 14 },
-  formTitle: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 16, marginBottom: 10 },
-  formGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  formActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 },
-  filterBand: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, marginBottom: 14, gap: 10 },
+  formCard: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 10, marginBottom: 14, position: 'relative', zIndex: 2000, elevation: 25 },
+  formTitle: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 16, marginBottom: 8 },
+  formGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end', position: 'relative', zIndex: 1000 },
+  formActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10 },
+  filterBand: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 8, marginBottom: 14, gap: 8, position: 'relative', zIndex: 1500, elevation: 22 },
   filterItem: { minWidth: 170, flexGrow: 1, flexShrink: 0, flexBasis: 170 },
   label: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 6 },
   helperText: { color: brandColors.textSecondary, fontWeight: '700', lineHeight: 18, marginBottom: 14, textAlign: 'center' },
-  input: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700', flex: 1, minWidth: 220 },
-  searchInput: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700' },
-  pickerShell: { height: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.creamSoft, justifyContent: 'center', overflow: 'hidden', flexGrow: 1, flexShrink: 1, flexBasis: 170, minWidth: 170 },
-  picker: { height: 48, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
+  input: { height: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700', flex: 1, minWidth: 220 },
+  searchInput: { height: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700' },
   card: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', gap: 10, alignItems: 'center' },
   cardText: { flex: 1 },
   cardTitle: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 15 },

@@ -11,7 +11,7 @@ export function useDashboardBackHandler() {
   useFocusEffect(
     useCallback(() => {
       const goToDashboard = () => {
-        router.replace('/dashboard');
+        router.replace('/modulos/evaluaciones');
         return true;
       };
 
@@ -22,7 +22,7 @@ export function useDashboardBackHandler() {
       const navigationBack = navigation.addListener('beforeRemove', (event) => {
         if (!backActionsToDashboard.has(event.data.action.type)) return;
         event.preventDefault();
-        router.replace('/dashboard');
+        router.replace('/modulos/evaluaciones');
       });
 
       return () => {

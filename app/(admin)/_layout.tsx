@@ -18,7 +18,7 @@ export default function AdminLayout() {
   const isInventoryRoute = segments.includes('inventarios');
 
   if (Platform.OS !== 'web' && (webOnlyResourceRoutes.has(currentRoute) || isInventoryRoute)) {
-    return <Redirect href="/administrador-recursos" />;
+    return <Redirect href="/modulos/administracion" />;
   }
 
   return (

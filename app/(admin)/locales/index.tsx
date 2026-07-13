@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
 import { brandColors } from '../../../constants/theme';
 import { supabase } from '../../../src/supabaseClient';
+import { FloatingSelect } from '../../../src/components/FloatingSelect';
 
 type ProfileRow = {
   full_name: string;
@@ -45,7 +45,7 @@ export default function GestionLocalesPage() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace('/dashboard');
+      router.replace('/modulos/administracion');
     }
   };
 
@@ -263,19 +263,14 @@ export default function GestionLocalesPage() {
             placeholder="Nombre del local"
             placeholderTextColor={brandColors.inputPlaceholder}
           />
-          <View style={styles.formPickerShell}>
-            <Picker
-              selectedValue={draft.region}
-              onValueChange={(value) => setDraft((current) => ({ ...current, region: String(value) }))}
-              enabled={isSuperAdmin}
-              style={styles.formPicker}
-              dropdownIconColor={brandColors.greenDark}
-            >
-              {regions.map((region) => (
-                <Picker.Item key={region} label={region} value={region} />
-              ))}
-            </Picker>
-          </View>
+          <FloatingSelect
+            label=""
+            value={draft.region}
+            onChange={(value) => setDraft((current) => ({ ...current, region: value }))}
+            options={regions.map((region) => ({ value: region, label: region }))}
+            minWidth={118}
+            disabled={!isSuperAdmin}
+          />
           <TextInput
             style={styles.formInput}
             value={draft.sort_order}
@@ -306,16 +301,13 @@ export default function GestionLocalesPage() {
           placeholderTextColor="#94a3b8"
         />
         {isSuperAdmin && (
-          <View style={styles.filterItem}>
-            <Text style={styles.label}>Region</Text>
-            <View style={styles.pickerShell}>
-              <Picker selectedValue={regionFilter} onValueChange={setRegionFilter} style={styles.picker} dropdownIconColor={brandColors.greenDark}>
-                {allRegions.map((region) => (
-                  <Picker.Item key={region} label={region === 'TODAS' ? 'Todas' : region} value={region} />
-                ))}
-              </Picker>
-            </View>
-          </View>
+          <FloatingSelect
+            label="Región"
+            value={regionFilter}
+            onChange={setRegionFilter}
+            options={allRegions.map((region) => ({ value: region, label: region === 'TODAS' ? 'Todas' : region }))}
+            minWidth={170}
+          />
         )}
       </View>
 
@@ -371,7 +363,7 @@ function compareLocales(left: LocalRow, right: LocalRow) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: brandColors.greenDark },
+  screen: { flex: 1, backgroundColor: brandColors.background },
   container: { padding: 18, paddingBottom: 36, backgroundColor: brandColors.background, width: '100%', maxWidth: 980, alignSelf: 'center' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, backgroundColor: brandColors.background },
   loadingText: { marginTop: 8, color: brandColors.textSecondary },
@@ -380,20 +372,16 @@ const styles = StyleSheet.create({
   title: { fontSize: 25, fontWeight: '900', color: brandColors.textPrimary },
   subtitle: { marginTop: 4, color: brandColors.textSecondary, fontWeight: '600', lineHeight: 18 },
   message: { backgroundColor: brandColors.creamSoft, borderWidth: 1, borderColor: brandColors.warning, borderRadius: 8, padding: 12, marginBottom: 14, color: brandColors.coffeeDark, fontWeight: '800' },
-  formCard: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 14 },
-  formTitle: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 16, marginBottom: 10 },
+  formCard: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, marginBottom: 14, position: 'relative', zIndex: 2000, elevation: 25 },
+  formTitle: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 16, marginBottom: 8 },
   formGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end' },
-  formActions: { flexDirection: 'row', gap: 8, justifyContent: 'flex-end', marginTop: 12, flexWrap: 'wrap' },
-  filterBand: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, marginBottom: 14, gap: 10 },
+  formActions: { flexDirection: 'row', gap: 8, justifyContent: 'flex-end', marginTop: 10, flexWrap: 'wrap' },
+  filterBand: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 8, marginBottom: 14, gap: 8, position: 'relative', zIndex: 1000, elevation: 20 },
   filterItem: { minWidth: 170, flexGrow: 1, flexShrink: 0, flexBasis: 170 },
   label: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 6 },
   input: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700', flex: 1, minWidth: 150 },
   formInput: { height: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700', flexGrow: 1, flexShrink: 1, flexBasis: 126, minWidth: 118 },
-  searchInput: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700' },
-  pickerShell: { height: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.creamSoft, justifyContent: 'center', overflow: 'hidden', width: '100%', minWidth: 160 },
-  picker: { height: 48, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.creamSoft },
-  formPickerShell: { height: 46, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, backgroundColor: brandColors.white, justifyContent: 'center', flexGrow: 1, flexShrink: 1, flexBasis: 126, minWidth: 118 },
-  formPicker: { height: 46, color: brandColors.textPrimary, fontWeight: '700', backgroundColor: brandColors.white },
+  searchInput: { height: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700' },
   card: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', gap: 10, alignItems: 'center' },
   cardText: { flex: 1 },
   localTitle: { color: brandColors.textPrimary, fontWeight: '900', fontSize: 15 },
