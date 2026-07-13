@@ -42,8 +42,8 @@ const monthNames = [
   'Noviembre',
   'Diciembre',
 ];
-const currentYear = new Date().getFullYear();
-const cutoffYearOptions = Array.from({ length: 4 }, (_, index) => currentYear - 1 + index);
+const cutoffYearOptions = Array.from({ length: 11 }, (_, index) => 2026 + index);
+const defaultCutoffYear = cutoffYearOptions.includes(new Date().getFullYear()) ? new Date().getFullYear() : 2026;
 
 function pad(value: number) {
   return String(value).padStart(2, '0');
@@ -153,7 +153,7 @@ export default function CreateInventoryReportScreen() {
   const [responsibleSearchOpen, setResponsibleSearchOpen] = useState(false);
   const [inventoryDate, setInventoryDate] = useState(today);
   const [inventoryCutoffMonth, setInventoryCutoffMonth] = useState('');
-  const [inventoryCutoffYear, setInventoryCutoffYear] = useState(String(currentYear));
+  const [inventoryCutoffYear, setInventoryCutoffYear] = useState(String(defaultCutoffYear));
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [hasSecondTimeRange, setHasSecondTimeRange] = useState(false);
@@ -609,18 +609,20 @@ function SegmentSelector({
       </TouchableOpacity>
       {open ? (
         <View style={styles.segmentSelectorPanel}>
-          {options.map((option) => (
-            <TouchableOpacity
-              key={option.value}
-              style={[styles.categoryDropdownOption, value === option.value && styles.categoryDropdownOptionActive]}
-              onPress={() => {
-                onChange(option.value);
-                setOpen(false);
-              }}
-            >
-              <Text style={styles.categoryDropdownOptionText}>{option.label}</Text>
-            </TouchableOpacity>
-          ))}
+          <ScrollView style={styles.segmentSelectorScroll} nestedScrollEnabled>
+            {options.map((option) => (
+              <TouchableOpacity
+                key={option.value}
+                style={[styles.categoryDropdownOption, value === option.value && styles.categoryDropdownOptionActive]}
+                onPress={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+              >
+                <Text style={styles.categoryDropdownOptionText}>{option.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </View>
       ) : null}
     </View>

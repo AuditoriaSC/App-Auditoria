@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { brandColors } from '../../../../constants/theme';
 import { supabase } from '../../../supabaseClient';
@@ -97,6 +97,7 @@ export default function InventoryModuleScreen() {
   const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [cutoffFilter, setCutoffFilter] = useState('TODOS');
+  const [showCutoffFilterOptions, setShowCutoffFilterOptions] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -393,16 +394,33 @@ export default function InventoryModuleScreen() {
             placeholder="Buscar por local, auditor o fecha"
             placeholderTextColor={brandColors.textSecondary}
           />
-          <View style={styles.cutoffFilterRow}>
-            {cutoffOptions.map((option) => (
-              <TouchableOpacity
-                key={option}
-                style={[styles.cutoffFilterPill, cutoffFilter === option && styles.cutoffFilterPillActive]}
-                onPress={() => setCutoffFilter(option)}
-              >
-                <Text style={[styles.cutoffFilterText, cutoffFilter === option && styles.cutoffFilterTextActive]}>{option}</Text>
-              </TouchableOpacity>
-            ))}
+          <View style={styles.reportCutoffSelector}>
+            <TouchableOpacity
+              style={styles.categoryDropdownButton}
+              onPress={() => setShowCutoffFilterOptions((current) => !current)}
+            >
+              <Text style={styles.categoryDropdownLabel}>Corte: {cutoffFilter}</Text>
+              <Text style={styles.categoryDropdownIcon}>{showCutoffFilterOptions ? '⌃' : '⌄'}</Text>
+            </TouchableOpacity>
+
+            {showCutoffFilterOptions ? (
+              <View style={styles.reportCutoffPanel}>
+                <ScrollView style={styles.segmentSelectorScroll} nestedScrollEnabled>
+                  {cutoffOptions.map((option) => (
+                    <TouchableOpacity
+                      key={option}
+                      style={[styles.categoryDropdownOption, cutoffFilter === option && styles.categoryDropdownOptionActive]}
+                      onPress={() => {
+                        setCutoffFilter(option);
+                        setShowCutoffFilterOptions(false);
+                      }}
+                    >
+                      <Text style={styles.categoryDropdownOptionText}>{option}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            ) : null}
           </View>
         </View>
 
