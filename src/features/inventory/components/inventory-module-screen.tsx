@@ -29,6 +29,10 @@ type InventoryReportListItem = {
   created_at: string;
   inventory_email_sent?: boolean | null;
   inventory_email_status?: string | null;
+  csv_items_count?: number;
+  results_count?: number;
+  manual_validations_count?: number;
+  evidences_count?: number;
 };
 
 type ProfileSummary = {
@@ -56,14 +60,21 @@ function primaryActionForReport(report: InventoryReportListItem) {
     } as const;
   }
 
-  if (report.status === 'results_validated') {
+  if (report.status === 'results_validated' || (report.manual_validations_count || 0) > 0) {
     return {
       label: 'Continuar validaciones',
       pathname: '/modulos/inventarios/validaciones-manuales',
     } as const;
   }
 
-  if (report.status === 'csv_loaded') {
+  if (report.status === 'csv_loaded' || (report.results_count || 0) > 0) {
+    return {
+      label: 'Continuar resultados',
+      pathname: '/modulos/inventarios/resultados',
+    } as const;
+  }
+
+  if ((report.csv_items_count || 0) > 0) {
     return {
       label: 'Continuar resultados',
       pathname: '/modulos/inventarios/resultados',
@@ -111,7 +122,61 @@ export default function InventoryModuleScreen() {
       if (error) {
         setMessage('No se pudo cargar el listado local de informes.');
       } else {
-        setReports((data || []) as InventoryReportListItem[]);
+        const baseReports = (data || []) as InventoryReportListItem[];
+        const enrichedReports = await Promise.all(baseReports.map(async (report) => {
+          const [
+            itemsResult,
+            resultsResult,
+            invoicesResult,
+            recountsResult,
+            finishedProductsResult,
+            cashClosuresResult,
+            evidencesResult,
+          ] = await Promise.all([
+            supabase
+              .from('inventory_report_items')
+              .select('id', { count: 'exact', head: true })
+              .eq('inventory_report_id', report.id),
+            supabase
+              .from('inventory_report_results')
+              .select('id', { count: 'exact', head: true })
+              .eq('inventory_report_id', report.id),
+            supabase
+              .from('inventory_manual_invoice_checks')
+              .select('id', { count: 'exact', head: true })
+              .eq('inventory_report_id', report.id),
+            supabase
+              .from('inventory_recounts')
+              .select('id', { count: 'exact', head: true })
+              .eq('inventory_report_id', report.id),
+            supabase
+              .from('inventory_finished_product_differences')
+              .select('id', { count: 'exact', head: true })
+              .eq('inventory_report_id', report.id),
+            supabase
+              .from('inventory_cash_closures')
+              .select('id', { count: 'exact', head: true })
+              .eq('inventory_report_id', report.id),
+            supabase
+              .from('inventory_report_evidences')
+              .select('id', { count: 'exact', head: true })
+              .eq('inventory_report_id', report.id),
+          ]);
+
+          return {
+            ...report,
+            csv_items_count: itemsResult.count || 0,
+            results_count: resultsResult.count || 0,
+            manual_validations_count:
+              (invoicesResult.count || 0)
+              + (recountsResult.count || 0)
+              + (finishedProductsResult.count || 0)
+              + (cashClosuresResult.count || 0),
+            evidences_count: evidencesResult.count || 0,
+          };
+        }));
+
+        if (active) setReports(enrichedReports);
       }
     }
 

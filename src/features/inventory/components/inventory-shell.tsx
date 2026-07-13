@@ -10,9 +10,20 @@ type InventoryShellProps = {
   subtitle?: string;
   children: ReactNode;
   showBackToModule?: boolean;
+  backLabel?: string;
+  backRoute?: string;
+  backParams?: Record<string, string | undefined>;
 };
 
-export function InventoryShell({ title, subtitle, children, showBackToModule = true }: InventoryShellProps) {
+export function InventoryShell({
+  title,
+  subtitle,
+  children,
+  showBackToModule = true,
+  backLabel = '← Volver a Informes de Inventario',
+  backRoute = '/modulos/inventarios',
+  backParams,
+}: InventoryShellProps) {
   const router = useRouter();
   const [profile, setProfile] = useState<{ role: string | null; email: string | null } | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(Platform.OS === 'web');
@@ -94,8 +105,14 @@ export function InventoryShell({ title, subtitle, children, showBackToModule = t
       </View>
 
       {showBackToModule ? (
-        <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push('/modulos/inventarios')}>
-          <Text style={styles.secondaryButtonText}>← Volver a Informes de Inventario</Text>
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={() => router.push({
+            pathname: backRoute,
+            params: backParams,
+          } as never)}
+        >
+          <Text style={styles.secondaryButtonText}>{backLabel}</Text>
         </TouchableOpacity>
       ) : null}
 
@@ -306,11 +323,84 @@ const styles = StyleSheet.create({
     borderColor: brandColors.greenDark,
     backgroundColor: brandColors.cream,
   },
+  searchSelectorButton: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: brandColors.border,
+    borderRadius: 8,
+    backgroundColor: brandColors.white,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  searchSelectorText: {
+    color: brandColors.inputText,
+    fontSize: 14,
+    fontWeight: '800',
+    flexShrink: 1,
+  },
+  searchSelectorPlaceholder: {
+    color: brandColors.textSecondary,
+    fontSize: 14,
+    fontWeight: '700',
+    flexShrink: 1,
+  },
+  cutoffInlineRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'flex-start',
+    width: '100%',
+    zIndex: 35,
+  },
+  segmentSelector: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    minWidth: 130,
+    position: 'relative',
+    zIndex: 35,
+  },
+  segmentSelectorButton: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: brandColors.border,
+    borderRadius: 8,
+    backgroundColor: brandColors.white,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  segmentSelectorPanel: {
+    position: 'absolute',
+    top: 50,
+    left: 0,
+    right: 0,
+    zIndex: 80,
+    elevation: 12,
+    maxHeight: 260,
+    backgroundColor: brandColors.creamSoft,
+    borderWidth: 1,
+    borderColor: brandColors.border,
+    borderRadius: 10,
+    padding: 6,
+    gap: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 10 },
+  },
   categoryDropdown: {
     width: '100%',
     maxWidth: 520,
     position: 'relative',
-    zIndex: 30,
+    zIndex: 90,
+    elevation: 12,
   },
   categoryDropdownButton: {
     minHeight: 44,
@@ -340,7 +430,8 @@ const styles = StyleSheet.create({
     top: 50,
     left: 0,
     right: 0,
-    zIndex: 40,
+    zIndex: 120,
+    elevation: 16,
     backgroundColor: brandColors.creamSoft,
     borderWidth: 1,
     borderColor: brandColors.border,
@@ -375,6 +466,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 18,
     gap: 14,
+  },
+  dropdownHost: {
+    zIndex: 200,
+    elevation: 20,
+    overflow: 'visible',
   },
   field: {
     gap: 6,
@@ -440,6 +536,34 @@ const styles = StyleSheet.create({
     backgroundColor: brandColors.white,
     justifyContent: 'center',
     overflow: 'hidden',
+  },
+  maskedDateTimeShell: {
+    position: 'relative',
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: brandColors.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    backgroundColor: brandColors.white,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    overflow: 'hidden',
+  },
+  dateTimeIconButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: brandColors.greenSoft,
+  },
+  dateTimeIconText: {
+    fontSize: 16,
+    color: brandColors.greenDark,
+    fontWeight: '900',
   },
   webDateTimeDisplay: {
     color: brandColors.inputText,

@@ -24,6 +24,8 @@ const EVIDENCE_CATEGORY_ORDER = [
 const colors = {
   greenDark: '#165034',
   green: '#1F6B47',
+  greenMedium: '#2F7657',
+  greenMuted: '#DDECE5',
   greenSoft: '#E7F1EC',
   cream: '#F7F1E7',
   creamSoft: '#FBF8F1',
@@ -430,30 +432,38 @@ function renderLogo() {
   return `<img src="${escapeHtml(logoUrl)}" alt="Sweet & Coffee" style="display:block; width:220px; max-width:100%; height:auto;" />`
 }
 
+function roundedTableShell(title: string, innerHtml: string) {
+  return `
+    <div style="margin:22px 0 0 0; border:1px solid ${colors.border}; border-radius:14px; overflow:hidden; background:${colors.white};">
+      <div style="background:${colors.greenMedium}; color:${colors.white}; padding:9px 12px; font-size:13px; line-height:1.2; font-weight:900; text-transform:uppercase;">${escapeHtml(title)}</div>
+      ${innerHtml}
+    </div>
+  `
+}
+
 function table(title: string, headers: string[], rows: string[][]) {
   const bodyRows = rows.length > 0
     ? rows.map((row) => `
       <tr>
-        ${row.map((cell) => `<td style="padding:7px 8px; border:1px solid ${colors.border}; font-size:12px; vertical-align:top;">${cell}</td>`).join('')}
+        ${row.map((cell) => `<td style="padding:8px 9px; border-top:1px solid ${colors.border}; border-right:1px solid ${colors.border}; font-size:12px; vertical-align:top;">${cell}</td>`).join('')}
       </tr>
     `).join('')
-    : `<tr><td colspan="${headers.length}" style="padding:10px; border:1px solid ${colors.border}; color:${colors.textSecondary}; font-size:12px;">Sin registros.</td></tr>`
+    : `<tr><td colspan="${headers.length}" style="padding:12px; border-top:1px solid ${colors.border}; color:${colors.textSecondary}; font-size:12px;">Sin registros.</td></tr>`
 
-  return `
-    <h3 style="background:${colors.greenDark}; color:${colors.white}; margin:22px 0 0 0; padding:8px 10px; font-size:13px; line-height:1.2; text-transform:uppercase;">${escapeHtml(title)}</h3>
-    <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; border:1px solid ${colors.border}; border-top:0;">
+  return roundedTableShell(title, `
+    <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:separate; border-spacing:0; table-layout:fixed;">
       <thead>
-        <tr style="background:${colors.greenDark};">
-          ${headers.map((header) => `<th align="left" style="padding:7px 8px; font-size:11px; color:${colors.white}; border:1px solid ${colors.border};">${escapeHtml(header)}</th>`).join('')}
+        <tr style="background:${colors.greenMuted};">
+          ${headers.map((header) => `<th align="left" style="padding:8px 9px; font-size:11px; color:${colors.greenDark}; border-top:1px solid ${colors.border}; border-right:1px solid ${colors.border};">${escapeHtml(header)}</th>`).join('')}
         </tr>
       </thead>
       <tbody>${bodyRows}</tbody>
     </table>
-  `
+  `)
 }
 
 function buildSubject(report: InventoryReportRow) {
-  return `INFORME DE INVENTARIO GENERAL LOCAL ${report.local_name_snapshot || 'LOCAL'} (${report.local_codigo || '-'}) - CORTE ${report.inventory_cutoff_label || 'SIN CORTE ASIGNADO'}`
+  return `INFORME DE INVENTARIO GENERAL LOCAL ${report.local_name_snapshot || 'LOCAL'} (${report.local_codigo || '-'}) - ${report.inventory_cutoff_label || 'SIN CORTE ASIGNADO'}`
 }
 
 function resultValue(value: unknown) {
@@ -561,6 +571,141 @@ function resultsTable(title: string, results: ResultRow[]) {
   `
 }
 
+function resultCell(content: string, align: 'left' | 'right' = 'left') {
+  return `<td align="${align}" style="padding:7px 8px; border-top:1px solid ${colors.border}; border-right:1px solid ${colors.border}; font-size:12px; vertical-align:top; ${align === 'right' ? 'white-space:nowrap;' : ''}">${content}</td>`
+}
+
+function resultTableRowsStyled(results: ResultRow[]) {
+  const independentResults = results
+    .filter((result) => !result.cross_name || isDisplayAsIndependent(result))
+    .sort((left, right) => Math.abs(Number(independentDisplayData(right).difference || 0)) - Math.abs(Number(independentDisplayData(left).difference || 0)))
+  const crossResults = results
+    .filter((result) => result.cross_name && !isDisplayAsIndependent(result))
+    .sort((left, right) => Math.abs(Number(right.final_result || 0)) - Math.abs(Number(left.final_result || 0)))
+  const rows: string[] = []
+
+  independentResults.forEach((result) => {
+    const display = independentDisplayData(result)
+    rows.push(`
+      <tr>
+        ${resultCell(`<strong>${escapeHtml(display.sku || 'sin SKU')} · ${escapeHtml(display.description || 'Sin descripción')}</strong>${display.note}`)}
+        ${resultCell(formatNumber(display.physicalStock), 'right')}
+        ${resultCell(formatNumber(display.systemStock), 'right')}
+        <td align="right" style="padding:7px 8px; border-top:1px solid ${colors.border}; font-size:12px; white-space:nowrap;">${resultValue(display.difference)}</td>
+      </tr>
+    `)
+  })
+
+  if (independentResults.length > 0 && crossResults.length > 0) {
+    rows.push(`<tr><td colspan="4" style="height:8px; padding:0; border:0; background:${colors.creamSoft};"></td></tr>`)
+  }
+
+  crossResults.forEach((result) => {
+    const components = result.component_items || []
+
+    if (components.length > 0) {
+      components.forEach((item) => {
+        rows.push(`
+          <tr>
+            ${resultCell(`<strong>${escapeHtml(item.sku)} · ${escapeHtml(item.item_description || 'Sin descripción')}</strong>`)}
+            ${resultCell(formatNumber(item.physical_stock), 'right')}
+            ${resultCell(formatNumber(item.system_stock), 'right')}
+            <td align="right" style="padding:7px 8px; border-top:1px solid ${colors.border}; font-size:12px; white-space:nowrap;">${resultValue(item.converted_difference)}</td>
+          </tr>
+        `)
+      })
+    } else {
+      rows.push(`
+        <tr>
+          ${resultCell(`<strong>SKUs: ${escapeHtml((result.component_skus || []).join(', ') || 'sin detalle guardado')}</strong>`)}
+          ${resultCell('-', 'right')}
+          ${resultCell('-', 'right')}
+          <td align="right" style="padding:7px 8px; border-top:1px solid ${colors.border}; font-size:12px;">${resultValue(result.final_result)}</td>
+        </tr>
+      `)
+    }
+
+    const totalBackground = Number(result.final_result || 0) < 0 ? '#F6D8D5' : '#DFF2E8'
+    rows.push(`
+      <tr style="background:${totalBackground};">
+        ${resultCell('')}
+        ${resultCell('-', 'right')}
+        ${resultCell(`<strong>TOTAL DE CRUCE ${escapeHtml(result.cross_name || '-')}</strong>`)}
+        <td align="right" style="padding:8px; border-top:1px solid ${colors.border}; font-size:12px; white-space:nowrap;">${resultValue(result.final_result)}</td>
+      </tr>
+      <tr><td colspan="4" style="height:8px; padding:0; border:0; background:${colors.creamSoft};"></td></tr>
+    `)
+  })
+
+  if (rows.length === 0) {
+    rows.push(`<tr><td colspan="4" style="padding:12px; color:${colors.textSecondary}; font-size:12px;">Sin registros para este bloque.</td></tr>`)
+  }
+
+  return rows.join('')
+}
+
+function resultsTableStyled(title: string, results: ResultRow[]) {
+  return roundedTableShell(title, `
+    <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:separate; border-spacing:0; table-layout:fixed;">
+      <colgroup>
+        <col style="width:52%;">
+        <col style="width:16%;">
+        <col style="width:16%;">
+        <col style="width:16%;">
+      </colgroup>
+      <thead>
+        <tr style="background:${colors.greenMuted};">
+          <th align="left" style="padding:8px 9px; font-size:11px; color:${colors.greenDark}; border-top:1px solid ${colors.border}; border-right:1px solid ${colors.border};">Artículo</th>
+          <th align="right" style="padding:8px 9px; font-size:11px; color:${colors.greenDark}; border-top:1px solid ${colors.border}; border-right:1px solid ${colors.border};">Stock físico</th>
+          <th align="right" style="padding:8px 9px; font-size:11px; color:${colors.greenDark}; border-top:1px solid ${colors.border}; border-right:1px solid ${colors.border};">Stock actual</th>
+          <th align="right" style="padding:8px 9px; font-size:11px; color:${colors.greenDark}; border-top:1px solid ${colors.border};">Diferencia</th>
+        </tr>
+      </thead>
+      <tbody>${resultTableRowsStyled(results)}</tbody>
+    </table>
+  `)
+}
+
+function summaryCard(label: string, value: string) {
+  return `
+    <td style="width:33.333%; padding:6px; vertical-align:top;">
+      <div style="border:1px solid ${colors.border}; border-radius:12px; background:${colors.creamSoft}; padding:10px 12px; min-height:54px;">
+        <div style="font-size:10px; color:${colors.greenDark}; font-weight:900; text-transform:uppercase; letter-spacing:.02em;">${escapeHtml(label)}</div>
+        <div style="font-size:13px; color:${colors.textPrimary}; font-weight:800; margin-top:4px;">${value}</div>
+      </div>
+    </td>
+  `
+}
+
+function reportSummary(report: InventoryReportRow) {
+  const secondSchedule = report.has_second_time_range
+    ? `${formatTime(report.second_start_time)} - ${formatTime(report.second_end_time)}`
+    : 'No aplica'
+
+  return `
+    <div style="margin:18px 0 4px 0; border:1px solid ${colors.border}; border-radius:14px; background:${colors.white}; overflow:hidden;">
+      <div style="background:${colors.greenMuted}; color:${colors.greenDark}; padding:10px 12px; font-size:13px; font-weight:900; text-transform:uppercase;">Datos principales</div>
+      <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:separate; border-spacing:0; padding:8px;">
+        <tr>
+          ${summaryCard('Local', `${escapeHtml(report.local_name_snapshot || '-')} (${escapeHtml(report.local_codigo || '-')})`)}
+          ${summaryCard('Corte', escapeHtml(report.inventory_cutoff_label || 'Sin corte asignado'))}
+          ${summaryCard('Auditor', escapeHtml(report.assigned_auditor_name_snapshot || '-'))}
+        </tr>
+        <tr>
+          ${summaryCard('Inventario', formatDate(report.inventory_date))}
+          ${summaryCard('Regularización', formatDate(report.front_regularization_date))}
+          ${summaryCard('Responsable / líder', escapeHtml(report.responsible_name_snapshot || '-'))}
+        </tr>
+        <tr>
+          ${summaryCard('Horario principal', `${formatTime(report.start_time)} - ${formatTime(report.end_time)}`)}
+          ${summaryCard('Segundo horario', secondSchedule)}
+          ${summaryCard('Código de almacén', escapeHtml(report.local_codigo || '-'))}
+        </tr>
+      </table>
+    </div>
+  `
+}
+
 function evidenceImagesHtml(groups: Record<string, string[]>) {
   const orderedGroups = Object.entries(groups).sort(([left], [right]) => {
     const leftIndex = evidenceCategoryOrderIndex(left)
@@ -648,33 +793,23 @@ function buildHtml(params: {
     </head>
     <body style="margin:0; padding:0; background:${colors.cream}; color:${colors.textPrimary}; font-family:Arial, Helvetica, sans-serif;">
       <div style="padding:24px 10px;">
-        <div style="max-width:980px; margin:0 auto; background:${colors.white}; border:1px solid ${colors.border}; overflow:hidden;">
+        <div style="max-width:980px; margin:0 auto; background:${colors.white}; border:1px solid ${colors.border}; border-radius:16px; overflow:hidden;">
           <div style="background:${colors.greenDark}; color:${colors.white}; padding:18px 22px;">
             <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;">
               <tr>
                 <td>${renderLogo()}</td>
-                <td align="right" style="font-size:13px; color:${colors.creamSoft};">GERENCIA DE AUDITORIA</td>
+                <td align="right" style="font-size:12px; color:${colors.creamSoft}; text-transform:uppercase;">Informe de Inventario</td>
               </tr>
             </table>
-            <h1 style="margin:16px 0 0 0; font-size:22px; line-height:1.25; text-transform:uppercase;">Informe de Visita por Inventario General</h1>
-            <p style="margin:8px 0 0 0; color:${colors.creamSoft};">${escapeHtml(report.local_name_snapshot || '-')} (${escapeHtml(report.local_codigo || '-')})</p>
+            <h1 style="margin:16px 0 0 0; font-size:23px; line-height:1.25;">Informe de Inventario General Local ${escapeHtml(report.local_name_snapshot || '-')} (${escapeHtml(report.local_codigo || '-')})</h1>
+            <p style="margin:8px 0 0 0; color:${colors.creamSoft};">${escapeHtml(report.inventory_cutoff_label || 'Sin corte asignado')}</p>
           </div>
 
           <div style="padding:20px 22px;">
-            ${table('Datos principales', ['Campo', 'Detalle'], [
-              ['Local', `${escapeHtml(report.local_codigo || '-')} - ${escapeHtml(report.local_name_snapshot || '-')}`],
-              ['Codigo local / almacen', escapeHtml(report.local_codigo || '-')],
-              ['Corte de Inventario', escapeHtml(report.inventory_cutoff_label || 'Sin corte asignado')],
-              ['Fecha inventario', formatDate(report.inventory_date)],
-              ['Fecha regularizacion', formatDate(report.front_regularization_date)],
-              ['Horario principal', `${formatTime(report.start_time)} - ${formatTime(report.end_time)}`],
-              ['Segundo horario', report.has_second_time_range ? `${formatTime(report.second_start_time)} - ${formatTime(report.second_end_time)}` : 'No aplica'],
-              ['Auditor encargado', escapeHtml(report.assigned_auditor_name_snapshot || '-')],
-              ['Responsable / lider', escapeHtml(report.responsible_name_snapshot || '-')],
-            ])}
+            ${reportSummary(report)}
 
-            ${resultsTable('4.1 Faltantes', shortageResults)}
-            ${resultsTable('4.2 Sobrantes', surplusResults)}
+            ${resultsTableStyled('4.1 Faltantes', shortageResults)}
+            ${resultsTableStyled('4.2 Sobrantes', surplusResults)}
             ${table('4.3 Recuento de items - Resumen', ['Detalle', 'Cantidad'], recountSummaryRows(recounts))}
             ${table('4.3 Recuento de items - Detalle', ['SKU', 'Descripcion', 'Conteo inicial', 'Nuevo reconteo', 'Diferencia', 'Estado'], recounts.map((row) => [
               escapeHtml(row.sku || '-'),

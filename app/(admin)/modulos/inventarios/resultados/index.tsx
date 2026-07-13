@@ -728,6 +728,9 @@ export default function InventoryResultsScreen() {
     <InventoryShell
       title="Resultados de Inventario"
       subtitle="Cruces aplicados por SKU exacto normalizado."
+      backLabel="← Volver a carga CSV"
+      backRoute="/modulos/inventarios/carga-csv"
+      backParams={{ inventory_report_id }}
     >
       <View style={styles.form}>
         {message ? <Text style={styles.hint}>{message}</Text> : null}

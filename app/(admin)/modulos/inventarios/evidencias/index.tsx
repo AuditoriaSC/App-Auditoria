@@ -529,9 +529,12 @@ export default function InventoryEvidenceScreen() {
   return (
     <InventoryShell
       title="Evidencias"
+      backLabel="← Volver a validaciones"
+      backRoute="/modulos/inventarios/validaciones-manuales"
+      backParams={{ inventory_report_id }}
       subtitle="Adjunta evidencias fotográficas y documentales del informe de inventario. No genera correo ni PDF todavía."
     >
-      <View style={styles.form}>
+      <View style={[styles.form, styles.dropdownHost]}>
         {message ? <Text style={styles.hint}>{message}</Text> : null}
 
         <Text style={styles.blockTitle}>Categoría de evidencia</Text>
