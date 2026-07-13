@@ -3,7 +3,7 @@ import { ActivityIndicator, Modal, Platform, ScrollView, Text, TextInput, Toucha
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { brandColors } from '../../../../../constants/theme';
 import { supabase } from '../../../../../src/supabaseClient';
-import { InventoryShell, inventoryShellStyles as styles } from '../../../../../src/features/inventory/components/inventory-shell';
+import { InventoryNoticeModal, InventoryShell, inventoryShellStyles as styles } from '../../../../../src/features/inventory/components/inventory-shell';
 
 type InventoryReportHeader = {
   id: string;
@@ -346,6 +346,8 @@ export default function InventoryCsvUploadScreen() {
   const [unmappedItems, setUnmappedItems] = useState<UnmappedCsvItem[]>([]);
   const [showUnmappedModal, setShowUnmappedModal] = useState(false);
   const [openCategoryIndex, setOpenCategoryIndex] = useState<number | null>(null);
+  const [showReplaceModal, setShowReplaceModal] = useState(false);
+  const [successModalMessage, setSuccessModalMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -586,7 +588,7 @@ export default function InventoryCsvUploadScreen() {
     input.click();
   };
 
-  const confirmImport = async () => {
+  const confirmImport = async (replaceExisting = false) => {
     if (!canConfirm || !report) {
       setMessage('Corrige los errores antes de confirmar la importación.');
       return;
@@ -606,14 +608,13 @@ export default function InventoryCsvUploadScreen() {
       return;
     }
 
-    if ((count || 0) > 0 && typeof window !== 'undefined') {
-      const shouldReplace = window.confirm('Este informe ya tiene líneas cargadas. ¿Deseas reemplazarlas?');
-      if (!shouldReplace) {
-        setSaving(false);
-        setMessage('Importación cancelada. No se modificaron las líneas existentes.');
-        return;
-      }
+    if ((count || 0) > 0 && !replaceExisting) {
+      setSaving(false);
+      setShowReplaceModal(true);
+      return;
+    }
 
+    if ((count || 0) > 0) {
       const { error: deleteError } = await supabase
         .from('inventory_report_items')
         .delete()
@@ -659,9 +660,7 @@ export default function InventoryCsvUploadScreen() {
 
     setImportConfirmed(true);
     setMessage(`Importación confirmada: ${payload.length} filas guardadas correctamente.`);
-    if (typeof window !== 'undefined') {
-      window.alert(`CSV cargado y confirmado correctamente.\n${payload.length} filas fueron guardadas.`);
-    }
+    setSuccessModalMessage(`CSV cargado y confirmado correctamente. ${payload.length} filas fueron guardadas.`);
   };
 
   if (loadingReport) {
@@ -815,7 +814,7 @@ export default function InventoryCsvUploadScreen() {
           <TouchableOpacity
             disabled={!canConfirm || saving}
             style={[styles.primaryButton, styles.footerPrimaryButton, (!canConfirm || saving) && styles.disabledButton]}
-            onPress={confirmImport}
+            onPress={() => confirmImport()}
           >
             <Text style={styles.primaryButtonText}>{saving ? 'Guardando...' : 'Confirmar importación'}</Text>
           </TouchableOpacity>
@@ -926,6 +925,30 @@ export default function InventoryCsvUploadScreen() {
           </View>
         </Modal>
       </View>
+      <InventoryNoticeModal
+        visible={showReplaceModal}
+        title="Reemplazar CSV cargado"
+        message="Este informe ya tiene líneas cargadas. ¿Deseas reemplazarlas por el CSV seleccionado?"
+        variant="warning"
+        confirmLabel="Reemplazar"
+        cancelLabel="Cancelar"
+        onConfirm={() => {
+          setShowReplaceModal(false);
+          void confirmImport(true);
+        }}
+        onCancel={() => {
+          setShowReplaceModal(false);
+          setMessage('Importación cancelada. No se modificaron las líneas existentes.');
+        }}
+      />
+      <InventoryNoticeModal
+        visible={successModalMessage !== null}
+        title="CSV confirmado"
+        message={successModalMessage || ''}
+        variant="success"
+        confirmLabel="Aceptar"
+        onConfirm={() => setSuccessModalMessage(null)}
+      />
     </InventoryShell>
   );
 }

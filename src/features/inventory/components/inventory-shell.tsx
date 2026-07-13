@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useState } from 'react';
-import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { brandColors } from '../../../../constants/theme';
 import { canAccessInventoryModule } from '../access';
@@ -132,6 +132,58 @@ export function PlaceholderBlock({ title, description }: PlaceholderBlockProps) 
       <Text style={styles.blockTitle}>{title}</Text>
       <Text style={styles.blockDescription}>{description}</Text>
     </View>
+  );
+}
+
+type InventoryNoticeModalProps = {
+  visible: boolean;
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  variant?: 'info' | 'warning' | 'danger' | 'success';
+  onConfirm: () => void;
+  onCancel?: () => void;
+};
+
+export function InventoryNoticeModal({
+  visible,
+  title,
+  message,
+  confirmLabel = 'Aceptar',
+  cancelLabel,
+  variant = 'info',
+  onConfirm,
+  onCancel,
+}: InventoryNoticeModalProps) {
+  const accentStyle = variant === 'danger'
+    ? styles.noticeAccentDanger
+    : variant === 'warning'
+      ? styles.noticeAccentWarning
+      : variant === 'success'
+        ? styles.noticeAccentSuccess
+        : styles.noticeAccentInfo;
+
+  return (
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel || onConfirm}>
+      <View style={styles.noticeOverlay}>
+        <View style={styles.noticeCard}>
+          <View style={[styles.noticeAccent, accentStyle]} />
+          <Text style={styles.noticeTitle}>{title}</Text>
+          <Text style={styles.noticeMessage}>{message}</Text>
+          <View style={styles.noticeActions}>
+            {cancelLabel ? (
+              <TouchableOpacity style={styles.noticeSecondaryButton} onPress={onCancel}>
+                <Text style={styles.noticeSecondaryText}>{cancelLabel}</Text>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity style={styles.noticePrimaryButton} onPress={onConfirm}>
+              <Text style={styles.noticePrimaryText}>{confirmLabel}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -381,8 +433,8 @@ const styles = StyleSheet.create({
     top: 50,
     left: 0,
     right: 0,
-    zIndex: 180,
-    elevation: 18,
+    zIndex: 1200,
+    elevation: 24,
     maxHeight: 188,
     backgroundColor: brandColors.creamSoft,
     borderWidth: 1,
@@ -469,6 +521,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 18,
     gap: 14,
+  },
+  formBehindDropdown: {
+    zIndex: 1,
   },
   dropdownHost: {
     zIndex: 200,
@@ -666,12 +721,17 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     flexBasis: 360,
     minWidth: 260,
+    minHeight: 50,
+    paddingVertical: 13,
   },
   reportCutoffSelector: {
     width: 240,
     maxWidth: '100%',
     position: 'relative',
     zIndex: 150,
+  },
+  reportCutoffButton: {
+    minHeight: 50,
   },
   reportCutoffPanel: {
     position: 'absolute',
@@ -691,6 +751,82 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 10 },
+  },
+  noticeOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(22, 80, 52, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  noticeCard: {
+    width: '100%',
+    maxWidth: 460,
+    backgroundColor: brandColors.white,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: brandColors.border,
+    padding: 18,
+    gap: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 14 },
+    elevation: 24,
+  },
+  noticeAccent: {
+    width: 52,
+    height: 5,
+    borderRadius: 999,
+  },
+  noticeAccentInfo: {
+    backgroundColor: brandColors.greenDark,
+  },
+  noticeAccentSuccess: {
+    backgroundColor: brandColors.green,
+  },
+  noticeAccentWarning: {
+    backgroundColor: brandColors.coffee,
+  },
+  noticeAccentDanger: {
+    backgroundColor: brandColors.danger,
+  },
+  noticeTitle: {
+    color: brandColors.textPrimary,
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  noticeMessage: {
+    color: brandColors.textSecondary,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  noticeActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 6,
+  },
+  noticePrimaryButton: {
+    backgroundColor: brandColors.greenDark,
+    borderRadius: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+  },
+  noticePrimaryText: {
+    color: brandColors.white,
+    fontWeight: '900',
+  },
+  noticeSecondaryButton: {
+    backgroundColor: brandColors.greenSoft,
+    borderRadius: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+  },
+  noticeSecondaryText: {
+    color: brandColors.greenDark,
+    fontWeight: '900',
   },
   reportCardGrid: {
     gap: 10,

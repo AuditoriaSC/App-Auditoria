@@ -3,7 +3,7 @@ import { ActivityIndicator, Modal, Text, TextInput, TouchableOpacity, View } fro
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { brandColors } from '../../../../../constants/theme';
 import { supabase } from '../../../../../src/supabaseClient';
-import { InventoryShell, inventoryShellStyles as styles } from '../../../../../src/features/inventory/components/inventory-shell';
+import { InventoryNoticeModal, InventoryShell, inventoryShellStyles as styles } from '../../../../../src/features/inventory/components/inventory-shell';
 
 type ResultType = 'surplus_without_cross' | 'surplus_cross' | 'shortage_without_cross' | 'shortage_cross';
 
@@ -408,6 +408,7 @@ export default function InventoryResultsScreen() {
   const [unmappedItems, setUnmappedItems] = useState<UnmappedInventoryItem[]>([]);
   const [showUnmappedItems, setShowUnmappedItems] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
+  const [showRecalculateModal, setShowRecalculateModal] = useState(false);
 
   const shortageResults = useMemo(() => {
     return results.filter((result) => toNumber(result.final_result) < 0 && !isExpenseCross(result.cross_name)).sort(sortByImpact);
@@ -467,11 +468,6 @@ export default function InventoryResultsScreen() {
 
   async function recalculateFromCsv(confirmFirst = true) {
     if (!inventory_report_id) return;
-
-    if (confirmFirst && typeof window !== 'undefined') {
-      const shouldRecalculate = window.confirm('Esto recalculará desde las líneas CSV y reemplazará los resultados guardados. ¿Continuar?');
-      if (!shouldRecalculate) return;
-    }
 
     setSaving(true);
     setMessage(null);
@@ -736,7 +732,7 @@ export default function InventoryResultsScreen() {
         {message ? <Text style={styles.hint}>{message}</Text> : null}
 
         <View style={styles.footerActions}>
-          <TouchableOpacity disabled={saving} style={[styles.secondaryButton, styles.footerSecondaryButton, saving && styles.disabledButton]} onPress={() => recalculateFromCsv(true)}>
+          <TouchableOpacity disabled={saving} style={[styles.secondaryButton, styles.footerSecondaryButton, saving && styles.disabledButton]} onPress={() => setShowRecalculateModal(true)}>
             <Text style={styles.secondaryButtonText}>Recalcular desde CSV</Text>
           </TouchableOpacity>
           <TouchableOpacity disabled={saving || results.length === 0} style={[styles.primaryButton, styles.footerPrimaryButton, (saving || results.length === 0) && styles.disabledButton]} onPress={() => saveResults()}>
@@ -838,6 +834,19 @@ export default function InventoryResultsScreen() {
         onCommentDraftChange={setCommentDraft}
         onCancel={closeManualEdit}
         onApply={applyManualEdit}
+      />
+      <InventoryNoticeModal
+        visible={showRecalculateModal}
+        title="Recalcular resultados"
+        message="Esto recalculará desde las líneas CSV y reemplazará los resultados guardados. ¿Deseas continuar?"
+        variant="warning"
+        confirmLabel="Recalcular"
+        cancelLabel="Cancelar"
+        onConfirm={() => {
+          setShowRecalculateModal(false);
+          void recalculateFromCsv(true);
+        }}
+        onCancel={() => setShowRecalculateModal(false)}
       />
     </InventoryShell>
   );

@@ -446,19 +446,21 @@ function roundedTableShell(title: string, innerHtml: string) {
 }
 
 function table(title: string, headers: string[], rows: string[][]) {
+  const compactStatusTable = title === 'Detalle de validaciones' && headers.length === 2 && headers[1] === 'Estado'
   const bodyRows = rows.length > 0
     ? rows.map((row) => `
       <tr>
-        ${row.map((cell) => `<td style="padding:8px 9px; border-top:1px solid ${colors.border}; border-right:1px solid ${colors.border}; font-size:12px; vertical-align:top;">${cell}</td>`).join('')}
+        ${row.map((cell, index) => `<td ${compactStatusTable && index === 1 ? 'align="center"' : ''} style="padding:${compactStatusTable ? '6px 8px' : '8px 9px'}; border-top:1px solid ${colors.border}; border-right:1px solid ${colors.border}; font-size:${compactStatusTable ? '11px' : '12px'}; line-height:${compactStatusTable ? '1.15' : 'normal'}; vertical-align:top; ${compactStatusTable && index === 0 ? 'white-space:nowrap;' : ''}">${cell}</td>`).join('')}
       </tr>
     `).join('')
     : `<tr><td colspan="${headers.length}" style="padding:12px; border-top:1px solid ${colors.border}; color:${colors.textSecondary}; font-size:12px;">Sin registros.</td></tr>`
 
   return roundedTableShell(title, `
     <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:separate; border-spacing:0; table-layout:fixed;">
+      ${compactStatusTable ? '<colgroup><col style="width:92%;"><col style="width:8%;"></colgroup>' : ''}
       <thead>
         <tr style="background:${colors.greenMuted};">
-          ${headers.map((header) => `<th align="left" style="padding:8px 9px; font-size:11px; color:${colors.greenDark}; border-top:1px solid ${colors.border}; border-right:1px solid ${colors.border};">${escapeHtml(header)}</th>`).join('')}
+          ${headers.map((header, index) => `<th align="${compactStatusTable && index === 1 ? 'center' : 'left'}" style="padding:8px 9px; font-size:11px; color:${colors.greenDark}; border-top:1px solid ${colors.border}; border-right:1px solid ${colors.border};">${escapeHtml(header)}</th>`).join('')}
         </tr>
       </thead>
       <tbody>${bodyRows}</tbody>

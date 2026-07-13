@@ -3,7 +3,7 @@ import { ActivityIndicator, Platform, Text, TouchableOpacity, View } from 'react
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { brandColors } from '../../../../../constants/theme';
 import { supabase } from '../../../../../src/supabaseClient';
-import { InventoryShell, inventoryShellStyles as styles } from '../../../../../src/features/inventory/components/inventory-shell';
+import { InventoryNoticeModal, InventoryShell, inventoryShellStyles as styles } from '../../../../../src/features/inventory/components/inventory-shell';
 import { downloadInventoryReportPdf } from '../../../../../src/features/inventory/inventory-pdf';
 
 type EvidenceCategory =
@@ -31,6 +31,12 @@ type EvidenceRow = {
   deleted_after_send_at: string | null;
   cleanup_error: string | null;
 };
+
+type PendingEvidenceAction =
+  | { type: 'delete-evidence'; evidence: EvidenceRow }
+  | { type: 'mark-delete-after-send'; evidence: EvidenceRow }
+  | { type: 'finalize' }
+  | { type: 'send-email' };
 
 type InventoryReportSummary = {
   id: string;
@@ -157,6 +163,7 @@ export default function InventoryEvidenceScreen() {
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [sendingEmail, setSendingEmail] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingEvidenceAction | null>(null);
 
   const incompleteReasons = useMemo(() => {
     const reasons: string[] = [];
@@ -374,11 +381,6 @@ export default function InventoryEvidenceScreen() {
       return;
     }
 
-    if (typeof window !== 'undefined') {
-      const shouldDelete = window.confirm(`¿Eliminar evidencia "${evidence.file_name}"?`);
-      if (!shouldDelete) return;
-    }
-
     const { error: storageError } = await supabase.storage
       .from(bucketName)
       .remove([evidence.file_path]);
@@ -410,11 +412,6 @@ export default function InventoryEvidenceScreen() {
 
     const nextValue = !evidence.delete_after_send;
 
-    if (nextValue && typeof window !== 'undefined') {
-      const shouldMark = window.confirm('Este archivo será adjuntado al correo y eliminado de Supabase Storage solo después de enviarse correctamente. Se conservará registro del envío. ¿Continuar?');
-      if (!shouldMark) return;
-    }
-
     const { error } = await supabase
       .from('inventory_report_evidences')
       .update({
@@ -439,11 +436,6 @@ export default function InventoryEvidenceScreen() {
     if (incompleteReasons.length > 0) {
       setMessage('No se puede finalizar: ' + incompleteReasons.join(' '));
       return;
-    }
-
-    if (typeof window !== 'undefined') {
-      const shouldFinalize = window.confirm('¿Finalizar informe de inventario? Esta fase solo marca el informe como finalized, no genera PDF ni envía correo.');
-      if (!shouldFinalize) return;
     }
 
     setFinalizing(true);
@@ -485,11 +477,6 @@ export default function InventoryEvidenceScreen() {
 
   async function handleSendEmail() {
     if (!inventory_report_id) return;
-    if (typeof window !== 'undefined') {
-      const shouldSend = window.confirm('¿Cerrar y enviar informe de inventario por correo? El PDF seguirá disponible para descarga desde la app y no se enviará como adjunto.');
-      if (!shouldSend) return;
-    }
-
     setSendingEmail(true);
     setMessage(null);
 
@@ -513,6 +500,25 @@ export default function InventoryEvidenceScreen() {
     const recipients = response?.recipients?.length ? ` Destinatarios: ${response.recipients.join(', ')}.` : '';
     setMessage(`${response?.message || 'Correo enviado correctamente.'}${recipients}`);
     await loadEvidences();
+  }
+
+  function confirmPendingAction() {
+    const action = pendingAction;
+    setPendingAction(null);
+    if (!action) return;
+    if (action.type === 'delete-evidence') {
+      void deleteEvidence(action.evidence);
+      return;
+    }
+    if (action.type === 'mark-delete-after-send') {
+      void toggleDeleteAfterSend(action.evidence);
+      return;
+    }
+    if (action.type === 'finalize') {
+      void finalizeInventoryReport();
+      return;
+    }
+    void handleSendEmail();
   }
 
   if (loading) {
@@ -604,11 +610,14 @@ export default function InventoryEvidenceScreen() {
                       <Text style={styles.secondaryButtonText}>Ver</Text>
                     </TouchableOpacity>
                     {canDeleteAfterSend(evidence) ? (
-                      <TouchableOpacity style={[styles.evidenceMiniButton, evidence.delete_after_send && styles.selectedButton]} onPress={() => toggleDeleteAfterSend(evidence)}>
+                      <TouchableOpacity
+                        style={[styles.evidenceMiniButton, evidence.delete_after_send && styles.selectedButton]}
+                        onPress={() => evidence.delete_after_send ? toggleDeleteAfterSend(evidence) : setPendingAction({ type: 'mark-delete-after-send', evidence })}
+                      >
                         <Text style={styles.secondaryButtonText}>{evidence.delete_after_send ? 'No eliminar' : 'Adjuntar y eliminar'}</Text>
                       </TouchableOpacity>
                     ) : null}
-                    <TouchableOpacity style={styles.evidenceMiniButton} onPress={() => deleteEvidence(evidence)}>
+                    <TouchableOpacity style={styles.evidenceMiniButton} onPress={() => setPendingAction({ type: 'delete-evidence', evidence })}>
                       <Text style={styles.secondaryButtonText}>Eliminar</Text>
                     </TouchableOpacity>
                   </View>
@@ -653,14 +662,14 @@ export default function InventoryEvidenceScreen() {
         <TouchableOpacity
           disabled={sendingEmail || !inventory_report_id}
           style={[styles.secondaryButton, styles.footerSecondaryButton, (sendingEmail || !inventory_report_id) && styles.disabledButton]}
-          onPress={handleSendEmail}
+          onPress={() => setPendingAction({ type: 'send-email' })}
         >
           <Text style={styles.secondaryButtonText}>{sendingEmail ? 'Enviando...' : '✉ Cerrar y enviar'}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           disabled={finalizing || incompleteReasons.length > 0}
           style={[styles.primaryButton, styles.footerPrimaryButton, (finalizing || incompleteReasons.length > 0) && styles.disabledButton]}
-          onPress={finalizeInventoryReport}
+          onPress={() => setPendingAction({ type: 'finalize' })}
         >
           <Text style={styles.primaryButtonText}>{finalizing ? 'Finalizando...' : 'Finalizar informe de inventario'}</Text>
         </TouchableOpacity>
@@ -668,6 +677,28 @@ export default function InventoryEvidenceScreen() {
           <Text style={styles.secondaryButtonText}>Volver al listado local</Text>
         </TouchableOpacity>
       </View>
+      <InventoryNoticeModal
+        visible={pendingAction !== null}
+        title={pendingAction?.type === 'delete-evidence'
+          ? 'Eliminar evidencia'
+          : pendingAction?.type === 'mark-delete-after-send'
+            ? 'Adjuntar y limpiar Storage'
+            : pendingAction?.type === 'finalize'
+              ? 'Finalizar informe'
+              : 'Cerrar y enviar'}
+        message={pendingAction?.type === 'delete-evidence'
+          ? `¿Eliminar evidencia "${pendingAction.evidence.file_name}"?`
+          : pendingAction?.type === 'mark-delete-after-send'
+            ? 'Este archivo será adjuntado al correo y eliminado de Supabase Storage solo después de enviarse correctamente. Se conservará registro del envío. ¿Continuar?'
+            : pendingAction?.type === 'finalize'
+              ? '¿Finalizar informe de inventario? Esta fase solo marca el informe como finalized, no genera PDF ni envía correo.'
+              : '¿Cerrar y enviar informe de inventario por correo? El PDF seguirá disponible para descarga desde la app y no se enviará como adjunto.'}
+        variant={pendingAction?.type === 'delete-evidence' ? 'danger' : pendingAction?.type === 'mark-delete-after-send' ? 'warning' : 'info'}
+        confirmLabel={pendingAction?.type === 'delete-evidence' ? 'Eliminar' : pendingAction?.type === 'send-email' ? 'Enviar' : 'Continuar'}
+        cancelLabel="Cancelar"
+        onConfirm={confirmPendingAction}
+        onCancel={() => setPendingAction(null)}
+      />
     </InventoryShell>
   );
 }

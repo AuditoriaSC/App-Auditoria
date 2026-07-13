@@ -1,21 +1,21 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { brandColors } from '../../../../constants/theme';
 import { supabase } from '../../../supabaseClient';
-import { InventoryShell, inventoryShellStyles as styles } from './inventory-shell';
+import { InventoryNoticeModal, InventoryShell, inventoryShellStyles as styles } from './inventory-shell';
 import { downloadInventoryReportPdf } from '../inventory-pdf';
 
 const inventoryCsvTemplate = [
-  'Código de Almacén;Referencia o SKU;Descripción del Item;Stock Contado o Físico;Stock Teórico o Sistema;Diferencia;Costo Unitario;Costo Total',
-  'GM;00123;Producto prueba con ñ;10;8;2;1.50;3.00',
-  'GM;00456;Producto prueba con tilde café;5;7;-2;2.00;-4.00',
+  'CÃ³digo de AlmacÃ©n;Referencia o SKU;DescripciÃ³n del Item;Stock Contado o FÃ­sico;Stock TeÃ³rico o Sistema;Diferencia;Costo Unitario;Costo Total',
+  'GM;00123;Producto prueba con Ã±;10;8;2;1.50;3.00',
+  'GM;00456;Producto prueba con tilde cafÃ©;5;7;-2;2.00;-4.00',
 ].join('\n');
 
 const crossesCsvTemplate = [
-  'SKU;Descripción del artículo;Cruce asignado;Factor de conversión',
-  '00123;Producto prueba con ñ;Materia prima A;1',
-  '00456;Producto prueba con tilde café;Materia prima B;0.5',
+  'SKU;DescripciÃ³n del artÃ­culo;Cruce asignado;Factor de conversiÃ³n',
+  '00123;Producto prueba con Ã±;Materia prima A;1',
+  '00456;Producto prueba con tilde cafÃ©;Materia prima B;0.5',
 ].join('\n');
 
 type InventoryReportListItem = {
@@ -38,6 +38,11 @@ type InventoryReportListItem = {
 type ProfileSummary = {
   role: string | null;
 };
+
+type PendingListAction =
+  | { type: 'send'; report: InventoryReportListItem }
+  | { type: 'request-delete'; report: InventoryReportListItem }
+  | { type: 'delete'; report: InventoryReportListItem };
 
 function formatDate(date: string) {
   if (!date) return '-';
@@ -98,6 +103,7 @@ export default function InventoryModuleScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [cutoffFilter, setCutoffFilter] = useState('TODOS');
   const [showCutoffFilterOptions, setShowCutoffFilterOptions] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingListAction | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -213,7 +219,7 @@ export default function InventoryModuleScreen() {
 
   function downloadCsvTemplate(fileName: string, csvContent: string) {
     if (typeof document === 'undefined') {
-      setMessage('La descarga de plantillas está disponible solo en Web local.');
+      setMessage('La descarga de plantillas estÃ¡ disponible solo en Web local.');
       return;
     }
 
@@ -242,10 +248,6 @@ export default function InventoryModuleScreen() {
   }
 
   async function handleSendEmail(reportId: string) {
-    if (typeof window !== 'undefined') {
-      const shouldSend = window.confirm('¿Reenviar el informe de inventario por correo?');
-      if (!shouldSend) return;
-    }
 
     setSendingReportId(reportId);
     setMessage(null);
@@ -272,10 +274,6 @@ export default function InventoryModuleScreen() {
 
   async function handleDeleteReport(report: InventoryReportListItem) {
     if (!canDeleteReports) {
-      if (typeof window !== 'undefined') {
-        const shouldRequest = window.confirm(`¿Solicitar autorización para eliminar el informe de ${report.local_name_snapshot}?`);
-        if (!shouldRequest) return;
-      }
 
       setDeletingReportId(report.id);
       setMessage(null);
@@ -295,7 +293,7 @@ export default function InventoryModuleScreen() {
           local_name_snapshot: report.local_name_snapshot,
           request_type: 'delete_report',
           requested_by: user.id,
-          reason: `Solicitud de eliminación del informe ${report.local_codigo} · ${report.local_name_snapshot}`,
+          reason: `Solicitud de eliminaciÃ³n del informe ${report.local_codigo} Â· ${report.local_name_snapshot}`,
         }]);
 
       setDeletingReportId(null);
@@ -304,18 +302,14 @@ export default function InventoryModuleScreen() {
         const duplicate = error.message?.toLowerCase().includes('duplicate') || error.code === '23505';
         setMessage(duplicate
           ? 'Ya existe una solicitud pendiente para eliminar este informe.'
-          : 'No se pudo registrar la solicitud. Revisa si la migración de Autorizaciones ya fue aplicada.');
+          : 'No se pudo registrar la solicitud. Revisa si la migraciÃ³n de Autorizaciones ya fue aplicada.');
         return;
       }
 
-      setMessage('Solicitud enviada a Autorizaciones. El informe no se eliminará hasta que un admin o super_admin lo apruebe.');
+      setMessage('Solicitud enviada a Autorizaciones. El informe no se eliminarÃ¡ hasta que un admin o super_admin lo apruebe.');
       return;
     }
 
-    if (typeof window !== 'undefined') {
-      const shouldDelete = window.confirm(`¿Eliminar completamente el informe de ${report.local_name_snapshot}? Esta acción elimina el informe y sus datos asociados.`);
-      if (!shouldDelete) return;
-    }
 
     setDeletingReportId(report.id);
     setMessage(null);
@@ -349,10 +343,21 @@ export default function InventoryModuleScreen() {
     setMessage('Informe eliminado correctamente.');
   }
 
+  function confirmPendingAction() {
+    const action = pendingAction;
+    setPendingAction(null);
+    if (!action) return;
+    if (action.type === 'send') {
+      void handleSendEmail(action.report.id);
+      return;
+    }
+    void handleDeleteReport(action.report);
+  }
+
   return (
     <InventoryShell
       title="Informes de Inventario"
-      subtitle="Módulo web para elaborar, revisar y consultar informes de inventario."
+      subtitle="MÃ³dulo web para elaborar, revisar y consultar informes de inventario."
       showBackToModule={false}
     >
       <View style={styles.compactActionGrid}>
@@ -396,7 +401,7 @@ export default function InventoryModuleScreen() {
           />
           <View style={styles.reportCutoffSelector}>
             <TouchableOpacity
-              style={styles.categoryDropdownButton}
+              style={[styles.categoryDropdownButton, styles.reportCutoffButton]}
               onPress={() => setShowCutoffFilterOptions((current) => !current)}
             >
               <Text style={styles.categoryDropdownLabel}>Corte: {cutoffFilter}</Text>
@@ -424,8 +429,8 @@ export default function InventoryModuleScreen() {
           </View>
         </View>
 
-        {reports.length === 0 ? <Text style={styles.hint}>Aún no hay informes de inventario para mostrar.</Text> : null}
-        {reports.length > 0 && filteredReports.length === 0 ? <Text style={styles.hint}>No hay informes que coincidan con la búsqueda o el corte seleccionado.</Text> : null}
+        {reports.length === 0 ? <Text style={styles.hint}>AÃºn no hay informes de inventario para mostrar.</Text> : null}
+        {reports.length > 0 && filteredReports.length === 0 ? <Text style={styles.hint}>No hay informes que coincidan con la bÃºsqueda o el corte seleccionado.</Text> : null}
 
         <View style={styles.reportCardGrid}>
           {filteredReports.map((report) => {
@@ -434,9 +439,9 @@ export default function InventoryModuleScreen() {
             return (
               <View key={report.id} style={styles.compactReportCard}>
                 <View style={styles.compactReportInfo}>
-                  <Text style={styles.compactReportTitle}>{report.local_codigo} · {report.local_name_snapshot}</Text>
+                  <Text style={styles.compactReportTitle}>{report.local_codigo} Â· {report.local_name_snapshot}</Text>
                   <Text style={styles.compactReportMeta}>Auditor: {report.assigned_auditor_name_snapshot || 'Sin auditor'}</Text>
-                  <Text style={styles.compactReportMeta}>Fecha: {formatDate(report.inventory_date)} · Corte: {report.inventory_cutoff_label || 'Sin corte'}</Text>
+                  <Text style={styles.compactReportMeta}>Fecha: {formatDate(report.inventory_date)} Â· Corte: {report.inventory_cutoff_label || 'Sin corte'}</Text>
                 </View>
 
                 <View style={styles.iconActionRow}>
@@ -448,16 +453,16 @@ export default function InventoryModuleScreen() {
                       params: { inventory_report_id: report.id },
                     })}
                   >
-                    <Text style={styles.iconButtonText}>✎</Text>
+                    <Text style={styles.iconButtonText}>âœŽ</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
                     accessibilityLabel="Reenviar informe por correo"
                     disabled={sendingReportId === report.id}
                     style={[styles.iconButton, sendingReportId === report.id && styles.disabledButton]}
-                    onPress={() => handleSendEmail(report.id)}
+                    onPress={() => setPendingAction({ type: 'send', report })}
                   >
-                    <Text style={styles.iconButtonText}>{sendingReportId === report.id ? '…' : '✉'}</Text>
+                    <Text style={styles.iconButtonText}>{sendingReportId === report.id ? 'â€¦' : 'âœ‰'}</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -466,16 +471,16 @@ export default function InventoryModuleScreen() {
                     style={[styles.iconButton, generatingPdfReportId === report.id && styles.disabledButton]}
                     onPress={() => handleDownloadPdf(report.id)}
                   >
-                    <Text style={styles.iconButtonText}>{generatingPdfReportId === report.id ? '…' : '↓'}</Text>
+                    <Text style={styles.iconButtonText}>{generatingPdfReportId === report.id ? 'â€¦' : 'â†“'}</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    accessibilityLabel={canDeleteReports ? 'Eliminar informe' : 'Solicitar eliminación'}
+                    accessibilityLabel={canDeleteReports ? 'Eliminar informe' : 'Solicitar eliminaciÃ³n'}
                     disabled={deletingReportId === report.id}
                     style={[styles.iconButton, deletingReportId === report.id && styles.disabledButton]}
-                    onPress={() => handleDeleteReport(report)}
+                    onPress={() => setPendingAction({ type: canDeleteReports ? 'delete' : 'request-delete', report })}
                   >
-                    <Text style={styles.iconButtonText}>{deletingReportId === report.id ? '…' : '×'}</Text>
+                    <Text style={styles.iconButtonText}>{deletingReportId === report.id ? 'â€¦' : 'Ã—'}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -483,6 +488,24 @@ export default function InventoryModuleScreen() {
           })}
         </View>
       </View>
+      <InventoryNoticeModal
+        visible={pendingAction !== null}
+        title={pendingAction?.type === 'send'
+          ? 'Reenviar informe'
+          : pendingAction?.type === 'request-delete'
+            ? 'Solicitar eliminación'
+            : 'Eliminar informe'}
+        message={pendingAction?.type === 'send'
+          ? '¿Deseas reenviar el informe de inventario por correo?'
+          : pendingAction?.type === 'request-delete'
+            ? `Se enviará una solicitud para eliminar el informe de ${pendingAction.report.local_name_snapshot}. El registro no se elimina hasta que un superior lo apruebe.`
+            : `¿Eliminar completamente el informe de ${pendingAction?.report.local_name_snapshot || ''}? Esta acción elimina el informe y sus datos asociados.`}
+        variant={pendingAction?.type === 'delete' ? 'danger' : pendingAction?.type === 'request-delete' ? 'warning' : 'info'}
+        confirmLabel={pendingAction?.type === 'send' ? 'Reenviar' : pendingAction?.type === 'delete' ? 'Eliminar' : 'Solicitar'}
+        cancelLabel="Cancelar"
+        onConfirm={confirmPendingAction}
+        onCancel={() => setPendingAction(null)}
+      />
     </InventoryShell>
   );
 }
