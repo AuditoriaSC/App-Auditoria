@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Platform, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
 import { brandColors } from '../../../../../constants/theme';
 import { supabase } from '../../../../../src/supabaseClient';
@@ -29,7 +28,6 @@ type ResponsibleOption = {
   region: string | null;
 };
 
-const maxVisibleOptions = 8;
 const monthNames = [
   'Enero',
   'Febrero',
@@ -44,6 +42,8 @@ const monthNames = [
   'Noviembre',
   'Diciembre',
 ];
+const currentYear = new Date().getFullYear();
+const cutoffYearOptions = Array.from({ length: 4 }, (_, index) => currentYear - 1 + index);
 
 function pad(value: number) {
   return String(value).padStart(2, '0');
@@ -76,6 +76,19 @@ function normalizeDisplayTime(value: string) {
   return `${pad(hour)}:${pad(minute)}`;
 }
 
+function maskDateInput(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function maskTimeInput(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+}
+
 function dateToTime(date: Date) {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
@@ -105,37 +118,20 @@ function isTime(value: string) {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
-function buildCreateReportError(errorMessage?: string) {
-  if (!errorMessage) return 'No se pudo crear el informe de inventario.';
-  if (errorMessage.includes('inventory_module_access')) {
-    return 'No se pudo crear el informe porque falta configurar el acceso interno del módulo Inventarios. Aplica la migración de acceso y habilita tu usuario para inventarios.';
-  }
-  if (errorMessage.toLowerCase().includes('row-level security')) {
-    return 'No se pudo crear el informe por permisos del módulo Inventarios. Verifica que tu usuario tenga acceso habilitado.';
-  }
-  return 'No se pudo crear el informe de inventario: ' + errorMessage;
-}
-
 function pickerDate(dateValue: string, timeValue = '00:00') {
   const date = new Date(`${dateValue}T${timeValue || '00:00'}:00`);
   return Number.isNaN(date.getTime()) ? new Date() : date;
 }
 
-function buildCutoffOptions(baseDate = new Date()) {
-  const startYear = baseDate.getFullYear();
-  const startMonth = baseDate.getMonth();
-  return Array.from({ length: 18 }, (_, index) => {
-    const date = new Date(startYear, startMonth + index, 1);
-    const month = date.getMonth() + 1;
-    const year = date.getFullYear();
-    const label = `${monthNames[month - 1]} ${year}`;
-    return {
-      value: `${year}-${pad(month)}`,
-      label,
-      month,
-      year,
-    };
-  });
+function buildCreateReportError(errorMessage?: string) {
+  if (!errorMessage) return 'No se pudo crear el informe de inventario.';
+  if (errorMessage.includes('inventory_module_access')) {
+    return 'No se pudo crear el informe porque falta configurar el acceso interno del módulo Inventarios.';
+  }
+  if (errorMessage.toLowerCase().includes('row-level security')) {
+    return 'No se pudo crear el informe por permisos del módulo Inventarios. Verifica que tu usuario tenga acceso habilitado.';
+  }
+  return 'No se pudo crear el informe de inventario: ' + errorMessage;
 }
 
 export default function CreateInventoryReportScreen() {
@@ -156,7 +152,8 @@ export default function CreateInventoryReportScreen() {
   const [selectedResponsible, setSelectedResponsible] = useState<ResponsibleOption | null>(null);
   const [responsibleSearchOpen, setResponsibleSearchOpen] = useState(false);
   const [inventoryDate, setInventoryDate] = useState(today);
-  const [inventoryCutoffValue, setInventoryCutoffValue] = useState('');
+  const [inventoryCutoffMonth, setInventoryCutoffMonth] = useState('');
+  const [inventoryCutoffYear, setInventoryCutoffYear] = useState(String(currentYear));
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [hasSecondTimeRange, setHasSecondTimeRange] = useState(false);
@@ -213,16 +210,12 @@ export default function CreateInventoryReportScreen() {
       if (!active) return;
 
       setProfile(profileData);
-      if (localesError) {
-        setMessage('No se pudieron cargar los locales: ' + localesError.message);
-      } else {
-        setLocales(localesData || []);
-      }
-      if (responsiblesError) {
-        setMessage('No se pudieron cargar los responsables: ' + responsiblesError.message);
-      } else {
-        setResponsibles((responsiblesData || []).map(mapResponsibleRow));
-      }
+      if (localesError) setMessage('No se pudieron cargar los locales: ' + localesError.message);
+      else setLocales(localesData || []);
+
+      if (responsiblesError) setMessage('No se pudieron cargar los responsables: ' + responsiblesError.message);
+      else setResponsibles((responsiblesData || []).map(mapResponsibleRow));
+
       setLoading(false);
     }
 
@@ -233,12 +226,18 @@ export default function CreateInventoryReportScreen() {
     };
   }, []);
 
+  const selectedCutoff = useMemo(() => {
+    const month = Number(inventoryCutoffMonth);
+    const year = Number(inventoryCutoffYear);
+    if (!month || !year) return null;
+    return {
+      value: `${year}-${pad(month)}`,
+      label: `${monthNames[month - 1]} ${year}`,
+      month,
+      year,
+    };
+  }, [inventoryCutoffMonth, inventoryCutoffYear]);
   const regularizationDate = useMemo(() => addDaysToIsoDate(inventoryDate, 1), [inventoryDate]);
-  const cutoffOptions = useMemo(() => buildCutoffOptions(new Date()), []);
-  const selectedCutoff = useMemo(
-    () => cutoffOptions.find((option) => option.value === inventoryCutoffValue) || null,
-    [cutoffOptions, inventoryCutoffValue],
-  );
   const selectedInventoryDate = useMemo(() => pickerDate(inventoryDate, startTime), [inventoryDate, startTime]);
   const selectedStartTime = useMemo(() => pickerDate(inventoryDate, startTime || '08:00'), [inventoryDate, startTime]);
   const selectedEndTime = useMemo(() => pickerDate(inventoryDate, endTime || '17:00'), [endTime, inventoryDate]);
@@ -248,50 +247,32 @@ export default function CreateInventoryReportScreen() {
   const filteredLocales = useMemo(() => {
     const term = normalize(localQuery);
     const source = term
-      ? locales.filter((local) =>
-          normalize(`${local.codigo_interno} ${local.nombre_local} ${local.region}`).includes(term),
-        )
+      ? locales.filter((local) => normalize(`${local.codigo_interno} ${local.nombre_local} ${local.region}`).includes(term))
       : locales;
-
-    return source.slice(0, maxVisibleOptions);
+    return source.slice(0, 80);
   }, [localQuery, locales]);
 
   const filteredResponsibles = useMemo(() => {
     const term = normalize(responsibleQuery);
     const source = term
-      ? responsibles.filter((responsible) =>
-          normalize(`${responsible.codigo} ${responsible.nombre} ${responsible.cargo || ''} ${responsible.region || ''}`).includes(term),
-        )
+      ? responsibles.filter((responsible) => normalize(`${responsible.codigo} ${responsible.nombre} ${responsible.cargo || ''} ${responsible.region || ''}`).includes(term))
       : responsibles;
-
-    return source.slice(0, maxVisibleOptions);
+    return source.slice(0, 80);
   }, [responsibleQuery, responsibles]);
 
   const formError = useMemo(() => {
     if (!selectedLocal) return 'Selecciona un local.';
-    if (!selectedCutoff) return 'Selecciona el corte de inventario.';
+    if (!selectedCutoff) return 'Selecciona mes y año del corte de inventario.';
     if (!selectedResponsible) return 'Selecciona el líder o responsable del local.';
-    if (!isIsoDate(inventoryDate)) return 'Ingresa una fecha de inventario válida en formato AAAA-MM-DD.';
+    if (!isIsoDate(inventoryDate)) return 'Ingresa una fecha de inventario válida.';
     if (!regularizationDate) return 'No se pudo calcular la fecha de regularización.';
-    if (!isTime(startTime)) return 'Ingresa hora de inicio válida en formato HH:MM.';
-    if (!isTime(endTime)) return 'Ingresa hora de finalización válida en formato HH:MM.';
+    if (!isTime(startTime)) return 'Ingresa hora de inicio válida.';
+    if (!isTime(endTime)) return 'Ingresa hora de finalización válida.';
     if (!profile?.id) return 'No se pudo validar el auditor encargado.';
-    if (hasSecondTimeRange && !isTime(secondStartTime)) return 'Ingresa segunda hora de inicio válida en formato HH:MM.';
-    if (hasSecondTimeRange && !isTime(secondEndTime)) return 'Ingresa segunda hora de finalización válida en formato HH:MM.';
+    if (hasSecondTimeRange && !isTime(secondStartTime)) return 'Ingresa segunda hora de inicio válida.';
+    if (hasSecondTimeRange && !isTime(secondEndTime)) return 'Ingresa segunda hora de finalización válida.';
     return null;
   }, [endTime, hasSecondTimeRange, inventoryDate, profile?.id, regularizationDate, secondEndTime, secondStartTime, selectedCutoff, selectedLocal, selectedResponsible, startTime]);
-
-  const handleLocalSearch = (value: string) => {
-    setLocalQuery(value);
-    setSelectedLocal(null);
-    setLocalSearchOpen(true);
-  };
-
-  const handleResponsibleSearch = (value: string) => {
-    setResponsibleQuery(value);
-    setSelectedResponsible(null);
-    setResponsibleSearchOpen(true);
-  };
 
   const selectLocal = (local: LocalRow) => {
     setSelectedLocal(local);
@@ -305,31 +286,6 @@ export default function CreateInventoryReportScreen() {
     setResponsibleSearchOpen(false);
   };
 
-  const handleInventoryDateChange = (_event: DateTimePickerEvent, date?: Date) => {
-    if (Platform.OS !== 'ios') setShowInventoryDatePicker(false);
-    if (date) setInventoryDate(dateToIsoDate(date));
-  };
-
-  const handleStartTimeChange = (_event: DateTimePickerEvent, date?: Date) => {
-    if (Platform.OS !== 'ios') setShowStartTimePicker(false);
-    if (date) setStartTime(dateToTime(date));
-  };
-
-  const handleEndTimeChange = (_event: DateTimePickerEvent, date?: Date) => {
-    if (Platform.OS !== 'ios') setShowEndTimePicker(false);
-    if (date) setEndTime(dateToTime(date));
-  };
-
-  const handleSecondStartTimeChange = (_event: DateTimePickerEvent, date?: Date) => {
-    if (Platform.OS !== 'ios') setShowSecondStartTimePicker(false);
-    if (date) setSecondStartTime(dateToTime(date));
-  };
-
-  const handleSecondEndTimeChange = (_event: DateTimePickerEvent, date?: Date) => {
-    if (Platform.OS !== 'ios') setShowSecondEndTimePicker(false);
-    if (date) setSecondEndTime(dateToTime(date));
-  };
-
   const toggleSecondTimeRange = () => {
     setHasSecondTimeRange((current) => {
       if (current) {
@@ -341,12 +297,8 @@ export default function CreateInventoryReportScreen() {
   };
 
   const handleSave = async () => {
-    if (formError || !selectedLocal || !selectedResponsible || !profile) {
+    if (formError || !selectedLocal || !selectedResponsible || !profile || !selectedCutoff) {
       setMessage(formError || 'Completa los campos obligatorios.');
-      return;
-    }
-    if (!selectedCutoff) {
-      setMessage('Selecciona el corte de inventario.');
       return;
     }
 
@@ -395,10 +347,7 @@ export default function CreateInventoryReportScreen() {
 
   if (loading) {
     return (
-      <InventoryShell
-        title="Crear Informe de Inventario"
-        subtitle="Cargando datos base del encabezado."
-      >
+      <InventoryShell title="Crear Informe de Inventario" subtitle="Cargando datos base del encabezado.">
         <View style={styles.center}>
           <ActivityIndicator size="large" color={brandColors.greenDark} />
           <Text style={styles.hint}>Cargando locales y auditor encargado...</Text>
@@ -415,48 +364,34 @@ export default function CreateInventoryReportScreen() {
       <View style={styles.form}>
         {message ? <Text style={styles.errorText}>{message}</Text> : null}
 
-        <View style={styles.field}>
-          <Text style={styles.label}>Local *</Text>
-          <TextInput
-            style={styles.input}
-            value={localQuery}
-            onChangeText={handleLocalSearch}
-            onFocus={() => setLocalSearchOpen(true)}
-            placeholder="Buscar por código o nombre"
-          />
-          {localSearchOpen ? (
-            <View style={styles.optionsPanel}>
-              {filteredLocales.length > 0 ? filteredLocales.map((local) => (
-                <TouchableOpacity key={local.codigo_interno} style={styles.optionRow} onPress={() => selectLocal(local)}>
-                  <Text style={styles.optionTitle}>{local.codigo_interno} · {local.nombre_local}</Text>
-                  <Text style={styles.optionSubtitle}>{local.region}</Text>
-                </TouchableOpacity>
-              )) : (
-                <Text style={styles.hint}>No hay locales que coincidan con la búsqueda.</Text>
-              )}
-            </View>
-          ) : null}
-          {selectedLocal ? (
-            <Text style={styles.hint}>
-              Se guardará código {selectedLocal.codigo_interno} y snapshot “{selectedLocal.nombre_local}”.
-            </Text>
-          ) : null}
-        </View>
-
-        <View style={styles.field}>
-          <Text style={styles.label}>Corte de Inventario *</Text>
-          <View style={styles.input}>
-            <Picker
-              selectedValue={inventoryCutoffValue}
-              onValueChange={(value) => setInventoryCutoffValue(String(value))}
-            >
-              <Picker.Item label="Seleccione el mes y año del corte" value="" />
-              {cutoffOptions.map((option) => (
-                <Picker.Item key={option.value} label={option.label} value={option.value} />
-              ))}
-            </Picker>
+        <View style={styles.twoColumnRow}>
+          <View style={styles.twoColumnItem}>
+            <Text style={styles.label}>Local *</Text>
+            <TouchableOpacity style={styles.searchSelectorButton} onPress={() => setLocalSearchOpen(true)} activeOpacity={0.85}>
+              <Text style={selectedLocal ? styles.searchSelectorText : styles.searchSelectorPlaceholder}>
+                {selectedLocal ? `${selectedLocal.codigo_interno} · ${selectedLocal.nombre_local}` : 'Buscar por código o nombre'}
+              </Text>
+              <Text style={styles.categoryDropdownIcon}>⌕</Text>
+            </TouchableOpacity>
           </View>
-          <Text style={styles.hint}>Seleccione el corte operativo al que corresponde el inventario.</Text>
+
+          <View style={styles.twoColumnItem}>
+            <Text style={styles.label}>Corte de Inventario *</Text>
+            <View style={styles.cutoffInlineRow}>
+              <SegmentSelector
+                value={inventoryCutoffMonth}
+                placeholder="Mes"
+                options={monthNames.map((name, index) => ({ value: String(index + 1), label: name }))}
+                onChange={setInventoryCutoffMonth}
+              />
+              <SegmentSelector
+                value={inventoryCutoffYear}
+                placeholder="Año"
+                options={cutoffYearOptions.map((year) => ({ value: String(year), label: String(year) }))}
+                onChange={setInventoryCutoffYear}
+              />
+            </View>
+          </View>
         </View>
 
         <View style={styles.twoColumnRow}>
@@ -468,7 +403,10 @@ export default function CreateInventoryReportScreen() {
               selectedDate={selectedInventoryDate}
               visible={showInventoryDatePicker}
               onOpen={() => setShowInventoryDatePicker(true)}
-              onChange={handleInventoryDateChange}
+              onChange={(_event, date) => {
+                if (Platform.OS !== 'ios') setShowInventoryDatePicker(false);
+                if (date) setInventoryDate(dateToIsoDate(date));
+              }}
               onWebChange={setInventoryDate}
             />
           </View>
@@ -493,7 +431,10 @@ export default function CreateInventoryReportScreen() {
               selectedDate={selectedStartTime}
               visible={showStartTimePicker}
               onOpen={() => setShowStartTimePicker(true)}
-              onChange={handleStartTimeChange}
+              onChange={(_event, date) => {
+                if (Platform.OS !== 'ios') setShowStartTimePicker(false);
+                if (date) setStartTime(dateToTime(date));
+              }}
               onWebChange={setStartTime}
             />
           </View>
@@ -506,7 +447,10 @@ export default function CreateInventoryReportScreen() {
               selectedDate={selectedEndTime}
               visible={showEndTimePicker}
               onOpen={() => setShowEndTimePicker(true)}
-              onChange={handleEndTimeChange}
+              onChange={(_event, date) => {
+                if (Platform.OS !== 'ios') setShowEndTimePicker(false);
+                if (date) setEndTime(dateToTime(date));
+              }}
               onWebChange={setEndTime}
             />
           </View>
@@ -528,7 +472,10 @@ export default function CreateInventoryReportScreen() {
                 selectedDate={selectedSecondStartTime}
                 visible={showSecondStartTimePicker}
                 onOpen={() => setShowSecondStartTimePicker(true)}
-                onChange={handleSecondStartTimeChange}
+                onChange={(_event, date) => {
+                  if (Platform.OS !== 'ios') setShowSecondStartTimePicker(false);
+                  if (date) setSecondStartTime(dateToTime(date));
+                }}
                 onWebChange={setSecondStartTime}
               />
             </View>
@@ -541,7 +488,10 @@ export default function CreateInventoryReportScreen() {
                 selectedDate={selectedSecondEndTime}
                 visible={showSecondEndTimePicker}
                 onOpen={() => setShowSecondEndTimePicker(true)}
-                onChange={handleSecondEndTimeChange}
+                onChange={(_event, date) => {
+                  if (Platform.OS !== 'ios') setShowSecondEndTimePicker(false);
+                  if (date) setSecondEndTime(dateToTime(date));
+                }}
                 onWebChange={setSecondEndTime}
               />
             </View>
@@ -551,25 +501,12 @@ export default function CreateInventoryReportScreen() {
         <View style={styles.twoColumnRow}>
           <View style={styles.twoColumnItem}>
             <Text style={styles.label}>Líder / responsable del local *</Text>
-            <TextInput
-              style={styles.input}
-              value={responsibleQuery}
-              onChangeText={handleResponsibleSearch}
-              onFocus={() => setResponsibleSearchOpen(true)}
-              placeholder="Buscar por código o nombre"
-            />
-            {responsibleSearchOpen ? (
-              <View style={styles.optionsPanel}>
-                {filteredResponsibles.length > 0 ? filteredResponsibles.map((responsible) => (
-                  <TouchableOpacity key={responsible.id} style={styles.optionRow} onPress={() => selectResponsible(responsible)}>
-                    <Text style={styles.optionTitle}>{responsible.codigo} · {responsible.nombre}</Text>
-                    <Text style={styles.optionSubtitle}>{responsible.cargo || 'Sin cargo'} · {responsible.region || 'Sin región'}</Text>
-                  </TouchableOpacity>
-                )) : (
-                  <Text style={styles.hint}>No hay responsables activos que coincidan con la búsqueda.</Text>
-                )}
-              </View>
-            ) : null}
+            <TouchableOpacity style={styles.searchSelectorButton} onPress={() => setResponsibleSearchOpen(true)} activeOpacity={0.85}>
+              <Text style={selectedResponsible ? styles.searchSelectorText : styles.searchSelectorPlaceholder}>
+                {selectedResponsible ? `${selectedResponsible.codigo} · ${selectedResponsible.nombre}` : 'Buscar por código o nombre'}
+              </Text>
+              <Text style={styles.categoryDropdownIcon}>⌕</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.twoColumnItem}>
@@ -596,6 +533,46 @@ export default function CreateInventoryReportScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      <SearchModal
+        visible={localSearchOpen}
+        title="Buscar local"
+        query={localQuery}
+        onQueryChange={setLocalQuery}
+        placeholder="Buscar por código, nombre o región"
+        emptyText="No hay locales que coincidan con la búsqueda."
+        onClose={() => setLocalSearchOpen(false)}
+      >
+        {filteredLocales.map((local) => (
+          <TouchableOpacity key={local.codigo_interno} style={styles.evidenceMiniCard} onPress={() => selectLocal(local)}>
+            <View style={styles.evidenceMiniInfo}>
+              <Text style={styles.evidenceMiniTitle}>{local.codigo_interno} · {local.nombre_local}</Text>
+              <Text style={styles.evidenceMiniMeta}>{local.region}</Text>
+            </View>
+            <Text style={styles.secondaryButtonText}>Seleccionar</Text>
+          </TouchableOpacity>
+        ))}
+      </SearchModal>
+
+      <SearchModal
+        visible={responsibleSearchOpen}
+        title="Buscar líder / responsable"
+        query={responsibleQuery}
+        onQueryChange={setResponsibleQuery}
+        placeholder="Buscar por código, nombre, cargo o región"
+        emptyText="No hay responsables activos que coincidan con la búsqueda."
+        onClose={() => setResponsibleSearchOpen(false)}
+      >
+        {filteredResponsibles.map((responsible) => (
+          <TouchableOpacity key={responsible.id} style={styles.evidenceMiniCard} onPress={() => selectResponsible(responsible)}>
+            <View style={styles.evidenceMiniInfo}>
+              <Text style={styles.evidenceMiniTitle}>{responsible.codigo} · {responsible.nombre}</Text>
+              <Text style={styles.evidenceMiniMeta}>{responsible.cargo || 'Sin cargo'} · {responsible.region || 'Sin región'}</Text>
+            </View>
+            <Text style={styles.secondaryButtonText}>Seleccionar</Text>
+          </TouchableOpacity>
+        ))}
+      </SearchModal>
     </InventoryShell>
   );
 }
@@ -608,6 +585,94 @@ function mapResponsibleRow(row: ResponsibleRow): ResponsibleOption {
     cargo: row.position,
     region: row.region,
   };
+}
+
+function SegmentSelector({
+  value,
+  placeholder,
+  options,
+  onChange,
+}: {
+  value: string;
+  placeholder: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((option) => option.value === value);
+
+  return (
+    <View style={styles.segmentSelector}>
+      <TouchableOpacity style={styles.segmentSelectorButton} onPress={() => setOpen((current) => !current)}>
+        <Text style={selected ? styles.searchSelectorText : styles.searchSelectorPlaceholder}>{selected?.label || placeholder}</Text>
+        <Text style={styles.categoryDropdownIcon}>{open ? '⌃' : '⌄'}</Text>
+      </TouchableOpacity>
+      {open ? (
+        <View style={styles.segmentSelectorPanel}>
+          {options.map((option) => (
+            <TouchableOpacity
+              key={option.value}
+              style={[styles.categoryDropdownOption, value === option.value && styles.categoryDropdownOptionActive]}
+              onPress={() => {
+                onChange(option.value);
+                setOpen(false);
+              }}
+            >
+              <Text style={styles.categoryDropdownOptionText}>{option.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function SearchModal({
+  visible,
+  title,
+  query,
+  onQueryChange,
+  placeholder,
+  emptyText,
+  onClose,
+  children,
+}: {
+  visible: boolean;
+  title: string;
+  query: string;
+  onQueryChange: (value: string) => void;
+  placeholder: string;
+  emptyText: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const hasResults = React.Children.count(children) > 0;
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalCard, { maxWidth: 760, maxHeight: '82%' }]}>
+          <Text style={styles.blockTitle}>{title}</Text>
+          <TextInput
+            style={styles.input}
+            value={query}
+            onChangeText={onQueryChange}
+            placeholder={placeholder}
+            placeholderTextColor={brandColors.inputPlaceholder}
+            autoFocus
+          />
+          <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={styles.evidenceMiniCardList}>
+            {hasResults ? children : <Text style={styles.hint}>{emptyText}</Text>}
+          </ScrollView>
+          <View style={styles.footerActions}>
+            <TouchableOpacity style={[styles.secondaryButton, styles.footerSecondaryButton]} onPress={onClose}>
+              <Text style={styles.secondaryButtonText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
 }
 
 function DateTimeField({
@@ -654,31 +719,25 @@ function DateTimeField({
     const openPicker = () => {
       const input = inputRef.current;
       if (!input) return;
-      if (typeof input.showPicker === 'function') {
-        input.showPicker();
-      } else {
-        input.click();
-      }
+      if (typeof input.showPicker === 'function') input.showPicker();
+      else input.click();
     };
 
     return (
       <View style={styles.dateTimeItem}>
         <Text style={styles.label}>{label}</Text>
-        <View style={[styles.webDateTimeShell, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, position: 'relative' }]}>
+        <View style={styles.maskedDateTimeShell}>
           <TextInput
             style={[styles.webDateTimeDisplay, { flex: 1, minWidth: 0 }]}
             value={manualValue}
-            onChangeText={setManualValue}
+            onChangeText={(text) => setManualValue(mode === 'date' ? maskDateInput(text) : maskTimeInput(text))}
             onBlur={commitManualValue}
             placeholder={mode === 'date' ? 'dd/mm/aaaa' : 'hh:mm'}
             placeholderTextColor={brandColors.inputPlaceholder}
+            keyboardType="numeric"
           />
-          <TouchableOpacity
-            onPress={openPicker}
-            activeOpacity={0.85}
-            style={{ width: 34, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: brandColors.greenSoft }}
-          >
-            <Text style={{ fontSize: 16 }}>{mode === 'date' ? '📅' : '🕒'}</Text>
+          <TouchableOpacity onPress={openPicker} activeOpacity={0.85} style={styles.dateTimeIconButton}>
+            <Text style={styles.dateTimeIconText}>{mode === 'date' ? '📅' : '◷'}</Text>
           </TouchableOpacity>
           {React.createElement('input', {
             ref: inputRef,
@@ -696,20 +755,18 @@ function DateTimeField({
   return (
     <View style={styles.dateTimeItem}>
       <Text style={styles.label}>{label}</Text>
-      <View style={[styles.clockButton, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }]}>
+      <View style={styles.maskedDateTimeShell}>
         <TextInput
           style={[styles.clockValue, { flex: 1, minWidth: 0 }]}
           value={manualValue}
-          onChangeText={setManualValue}
+          onChangeText={(text) => setManualValue(mode === 'date' ? maskDateInput(text) : maskTimeInput(text))}
           onBlur={commitManualValue}
           placeholder={mode === 'date' ? 'dd/mm/aaaa' : 'hh:mm'}
           placeholderTextColor={brandColors.inputPlaceholder}
+          keyboardType="numeric"
         />
-        <TouchableOpacity
-          onPress={onOpen}
-          style={{ width: 34, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: brandColors.greenSoft }}
-        >
-          <Text style={{ fontSize: 16 }}>{mode === 'date' ? '📅' : '🕒'}</Text>
+        <TouchableOpacity onPress={onOpen} style={styles.dateTimeIconButton}>
+          <Text style={styles.dateTimeIconText}>{mode === 'date' ? '📅' : '◷'}</Text>
         </TouchableOpacity>
       </View>
       {visible && (

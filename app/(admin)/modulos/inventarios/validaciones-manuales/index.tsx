@@ -141,6 +141,13 @@ function displayDateToIsoDate(value: string) {
   return dateToIsoDate(date);
 }
 
+function maskDateInput(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
 function parseDateOnly(value: string) {
   if (!value.trim()) return null;
   const [year, month, day] = value.trim().split('-').map((part) => Number.parseInt(part, 10));
@@ -642,6 +649,9 @@ export default function InventoryManualValidationsScreen() {
     <InventoryShell
       title="Validaciones Manuales"
       subtitle="Ingreso manual del auditor para facturas, reconteos, producto terminado y cierres de caja."
+      backLabel="← Volver a resultados"
+      backRoute="/modulos/inventarios/resultados"
+      backParams={{ inventory_report_id }}
     >
       {message ? <Text style={styles.hint}>{message}</Text> : null}
 
@@ -649,18 +659,23 @@ export default function InventoryManualValidationsScreen() {
         <Text style={styles.blockTitle}>1. Control de facturas manuales</Text>
         <Input label="Última factura registrada en sistema" value={invoiceCheck.lastSystemInvoice} onChangeText={(value) => setInvoiceCheck((current) => ({ ...current, lastSystemInvoice: value }))} />
         <Input label="Última factura en block físico" value={invoiceCheck.lastPhysicalBlockInvoice} onChangeText={(value) => setInvoiceCheck((current) => ({ ...current, lastPhysicalBlockInvoice: value }))} />
-        <DateField
-          label="Fecha de caducidad del block"
-          value={invoiceCheck.blockExpirationDate}
-          selectedDate={selectedBlockExpirationDate}
-          visible={showBlockExpirationDatePicker}
-          onOpen={() => setShowBlockExpirationDatePicker(true)}
-          onChange={(event, date) => {
-            if (Platform.OS !== 'ios') setShowBlockExpirationDatePicker(false);
-            if (date) setInvoiceCheck((current) => ({ ...current, blockExpirationDate: dateToIsoDate(date) }));
-          }}
-          onWebChange={(value) => setInvoiceCheck((current) => ({ ...current, blockExpirationDate: value }))}
-        />
+        <View style={styles.twoColumnRow}>
+          <View style={styles.twoColumnItem}>
+            <DateField
+              label="Fecha de caducidad del block"
+              value={invoiceCheck.blockExpirationDate}
+              selectedDate={selectedBlockExpirationDate}
+              visible={showBlockExpirationDatePicker}
+              onOpen={() => setShowBlockExpirationDatePicker(true)}
+              onChange={(event, date) => {
+                if (Platform.OS !== 'ios') setShowBlockExpirationDatePicker(false);
+                if (date) setInvoiceCheck((current) => ({ ...current, blockExpirationDate: dateToIsoDate(date) }));
+              }}
+              onWebChange={(value) => setInvoiceCheck((current) => ({ ...current, blockExpirationDate: value }))}
+            />
+          </View>
+          <View style={styles.twoColumnItem} />
+        </View>
         {invoiceBlockExpirationStatus ? (
           <Text style={invoiceBlockExpirationStatus.isExpired ? styles.manualNegativeValue : styles.manualPositiveValue}>
             {invoiceBlockExpirationStatus.message}
@@ -937,21 +952,22 @@ function DateField({
     return (
       <View style={styles.dateTimeItem}>
         <Text style={styles.label}>{label}</Text>
-        <View style={[styles.webDateTimeShell, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, position: 'relative' }]}>
+        <View style={styles.maskedDateTimeShell}>
           <TextInput
             style={[styles.webDateTimeDisplay, { flex: 1, minWidth: 0 }]}
             value={manualValue}
-            onChangeText={setManualValue}
+            onChangeText={(text) => setManualValue(maskDateInput(text))}
             onBlur={commitManualValue}
             placeholder="dd/mm/aaaa"
             placeholderTextColor={brandColors.inputPlaceholder}
+            keyboardType="numeric"
           />
           <TouchableOpacity
             onPress={openPicker}
             activeOpacity={0.85}
-            style={{ width: 34, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: brandColors.greenSoft }}
+            style={styles.dateTimeIconButton}
           >
-            <Text style={{ fontSize: 16 }}>📅</Text>
+            <Text style={styles.dateTimeIconText}>📅</Text>
           </TouchableOpacity>
           {React.createElement('input', {
             ref: inputRef,
@@ -969,20 +985,21 @@ function DateField({
   return (
     <View style={styles.dateTimeItem}>
       <Text style={styles.label}>{label}</Text>
-      <View style={[styles.clockButton, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }]}>
+      <View style={styles.maskedDateTimeShell}>
         <TextInput
           style={[styles.clockValue, { flex: 1, minWidth: 0 }]}
           value={manualValue}
-          onChangeText={setManualValue}
+          onChangeText={(text) => setManualValue(maskDateInput(text))}
           onBlur={commitManualValue}
           placeholder="dd/mm/aaaa"
           placeholderTextColor={brandColors.inputPlaceholder}
+          keyboardType="numeric"
         />
         <TouchableOpacity
           onPress={onOpen}
-          style={{ width: 34, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: brandColors.greenSoft }}
+          style={styles.dateTimeIconButton}
         >
-          <Text style={{ fontSize: 16 }}>📅</Text>
+          <Text style={styles.dateTimeIconText}>📅</Text>
         </TouchableOpacity>
       </View>
       {visible && (
