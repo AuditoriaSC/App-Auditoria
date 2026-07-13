@@ -432,6 +432,10 @@ function renderLogo() {
   return `<img src="${escapeHtml(logoUrl)}" alt="Sweet & Coffee" style="display:block; width:220px; max-width:100%; height:auto;" />`
 }
 
+function cutoffLabel(report: InventoryReportRow) {
+  return (report.inventory_cutoff_label || 'Sin corte asignado').toLocaleUpperCase('es-EC')
+}
+
 function roundedTableShell(title: string, innerHtml: string) {
   return `
     <div style="margin:22px 0 0 0; border:1px solid ${colors.border}; border-radius:14px; overflow:hidden; background:${colors.white};">
@@ -463,7 +467,7 @@ function table(title: string, headers: string[], rows: string[][]) {
 }
 
 function buildSubject(report: InventoryReportRow) {
-  return `INFORME DE INVENTARIO GENERAL LOCAL ${report.local_name_snapshot || 'LOCAL'} (${report.local_codigo || '-'}) - ${report.inventory_cutoff_label || 'SIN CORTE ASIGNADO'}`
+  return `INFORME DE INVENTARIO GENERAL LOCAL ${report.local_name_snapshot || 'LOCAL'} (${report.local_codigo || '-'}) - ${cutoffLabel(report)}`
 }
 
 function resultValue(value: unknown) {
@@ -688,7 +692,7 @@ function reportSummary(report: InventoryReportRow) {
       <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:separate; border-spacing:0; padding:8px;">
         <tr>
           ${summaryCard('Local', `${escapeHtml(report.local_name_snapshot || '-')} (${escapeHtml(report.local_codigo || '-')})`)}
-          ${summaryCard('Corte', escapeHtml(report.inventory_cutoff_label || 'Sin corte asignado'))}
+          ${summaryCard('Corte', escapeHtml(cutoffLabel(report)))}
           ${summaryCard('Auditor', escapeHtml(report.assigned_auditor_name_snapshot || '-'))}
         </tr>
         <tr>
@@ -766,6 +770,25 @@ function recountSummaryRows(recounts: RecountRow[]) {
   ]
 }
 
+function lotsValidationSection() {
+  return `
+    <div style="margin:22px 0 0 0;">
+      <h3 style="margin:0 0 8px 0; color:${colors.textPrimary}; font-size:16px; line-height:1.25; text-transform:uppercase;">4.5. Regularización de Inventario General en Front</h3>
+      <p style="margin:0 0 16px 0; font-size:13px; line-height:1.5;">Regularización en <strong>FRONT</strong> del almacén principal y de diferencias: <strong style="color:${colors.greenDark}; text-decoration:underline;">OK</strong></p>
+      <h3 style="margin:0 0 16px 0; color:${colors.textPrimary}; font-size:16px; line-height:1.25; text-transform:uppercase;">5. Lotes</h3>
+      <h4 style="margin:0 0 10px 0; color:${colors.textPrimary}; font-size:14px; line-height:1.25; text-transform:uppercase; text-decoration:underline;">5.1. Revisión de stock lotes vs inventario diario</h4>
+    </div>
+    ${table('Detalle de validaciones', ['Detalle de validaciones', 'Estado'], [
+      ['5.1 No quedaron bajas pendientes, se procedió con la Baja de Caducidad de forma normal.', '<strong>OK</strong>'],
+      ['5.2 Se sacó Tirilla Lotes de Bajas PT antes de transcribir el conteo físico (confirmado por GL en turno).', '<strong>OK</strong>'],
+      ['5.3 Se procedió con la verificación del Stock Lotes vs Inventario Diario en los cuales existieron ítems con diferencias.', '<strong>OK</strong>'],
+      ['5.4 Se realizó chequeo en la pestaña "Ventas No Asignadas / Ventas Caducadas" donde constan registros.', '<strong>OK</strong>'],
+      ['5.5 Se procedió a sacar tirilla Lotes de Bajas al finalizar todo el proceso del Inventario (Toma física/digitación "MP/PT") y regularización del Front.', '<strong>OK</strong>'],
+      ['5.6 Tirilla de los PT que fueron tomados por la decoración y que se consideraron para conteo físico de MP.', '<strong>OK</strong>'],
+    ])}
+  `
+}
+
 function buildHtml(params: {
   report: InventoryReportRow
   results: ResultRow[]
@@ -802,7 +825,7 @@ function buildHtml(params: {
               </tr>
             </table>
             <h1 style="margin:16px 0 0 0; font-size:23px; line-height:1.25;">Informe de Inventario General Local ${escapeHtml(report.local_name_snapshot || '-')} (${escapeHtml(report.local_codigo || '-')})</h1>
-            <p style="margin:8px 0 0 0; color:${colors.creamSoft};">${escapeHtml(report.inventory_cutoff_label || 'Sin corte asignado')}</p>
+            <p style="margin:8px 0 0 0; color:${colors.creamSoft};">${escapeHtml(cutoffLabel(report))}</p>
           </div>
 
           <div style="padding:20px 22px;">
@@ -827,13 +850,7 @@ function buildHtml(params: {
                   formatNumber(row.difference),
                 ]))
               : noNoveltiesTable('4.4 Producto terminado')}
-            ${statusTable('5. Validaciones', [
-              ['Resultado de inventario general revisado', 'OK'],
-              ['Reconteos ingresados y revisados', 'OK'],
-              ['Producto terminado revisado', finishedProducts.length > 0 ? 'CON NOVEDAD' : 'OK'],
-              ['Cierres de caja revisados', cashClosures.length > 0 ? 'OK' : 'SIN REGISTROS'],
-              ['Facturas manuales revisadas', invoice ? 'OK' : 'SIN REGISTROS'],
-            ])}
+            ${lotsValidationSection()}
             ${cashClosures.length > 0
               ? table('6. Cierres de caja', ['Caja', 'Numero', 'Cajero', 'Fisico', 'Sistema', 'Diferencia'], cashClosures.map((row) => [
                   escapeHtml(row.cash_register || '-'),
