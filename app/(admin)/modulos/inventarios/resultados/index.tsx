@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Modal, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { brandColors } from '../../../../../constants/theme';
 import { supabase } from '../../../../../src/supabaseClient';
@@ -326,39 +326,31 @@ async function calculateResultsFromCsv(reportId: string) {
 
 function mergeSavedResultsWithCalculatedDetails(savedResults: InventoryResult[], calculatedResults: InventoryResult[]) {
   return savedResults.map((savedResult) => {
-    if (!savedResult.cross_name) {
-      const calculatedDetail = calculatedResults.find((calculatedResult) =>
+    const calculatedDetail = !savedResult.cross_name
+      ? calculatedResults.find((calculatedResult) =>
         !calculatedResult.cross_name
         && normalizeSku(String(calculatedResult.sku || '')) === normalizeSku(String(savedResult.sku || ''))
-      );
-
-      if (!calculatedDetail) return savedResult;
-
-      return {
-        ...savedResult,
-        component_skus: calculatedDetail.component_skus,
-        physical_stock: calculatedDetail.physical_stock,
-        system_stock: calculatedDetail.system_stock,
-      };
-    }
-
-    const calculatedDetail = calculatedResults.find((calculatedResult) =>
-      calculatedResult.cross_name === savedResult.cross_name
-      && calculatedResult.result_type === savedResult.result_type
-      && !isDisplayAsIndependent(savedResult)
-    ) || calculatedResults.find((calculatedResult) =>
-      calculatedResult.cross_name === savedResult.cross_name
-      && !isDisplayAsIndependent(savedResult)
-    );
+      )
+      : calculatedResults.find((calculatedResult) =>
+        calculatedResult.cross_name === savedResult.cross_name
+        && calculatedResult.result_type === savedResult.result_type
+      ) || calculatedResults.find((calculatedResult) => calculatedResult.cross_name === savedResult.cross_name);
 
     if (!calculatedDetail) return savedResult;
 
     return {
-      ...savedResult,
-      component_skus: calculatedDetail.component_skus,
-      component_items: calculatedDetail.component_items,
-      physical_stock: calculatedDetail.physical_stock,
-      system_stock: calculatedDetail.system_stock,
+      ...calculatedDetail,
+      id: savedResult.id,
+      manual_result: null,
+      final_result: calculatedDetail.calculated_result,
+      is_manual_adjusted: false,
+      manual_comment: null,
+      adjusted_by: null,
+      adjusted_at: null,
+      result_type: classifyResult({
+        ...calculatedDetail,
+        final_result: calculatedDetail.calculated_result,
+      }),
     };
   });
 }
@@ -402,9 +394,6 @@ export default function InventoryResultsScreen() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [results, setResults] = useState<InventoryResult[]>([]);
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [manualDraft, setManualDraft] = useState('');
-  const [commentDraft, setCommentDraft] = useState('');
   const [unmappedItems, setUnmappedItems] = useState<UnmappedInventoryItem[]>([]);
   const [showUnmappedItems, setShowUnmappedItems] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
@@ -593,57 +582,6 @@ export default function InventoryResultsScreen() {
     });
   }
 
-  function updateManualResult(index: number, value: string) {
-    setResults((current) => current.map((result, resultIndex) => {
-      if (resultIndex !== index) return result;
-      const manualResult = value.trim() === '' ? null : Number(value.replace(',', '.'));
-      const isValidNumber = manualResult !== null && Number.isFinite(manualResult);
-      return {
-        ...result,
-        manual_result: isValidNumber ? manualResult : null,
-        final_result: isValidNumber ? manualResult : result.calculated_result,
-        is_manual_adjusted: isValidNumber || Boolean(result.manual_comment),
-        adjusted_at: isValidNumber ? new Date().toISOString() : result.adjusted_at,
-        result_type: classifyResult({
-          ...result,
-          final_result: isValidNumber ? manualResult : result.calculated_result,
-        }),
-      };
-    }));
-  }
-
-  function updateManualComment(index: number, value: string) {
-    setResults((current) => current.map((result, resultIndex) => {
-      if (resultIndex !== index) return result;
-      return {
-        ...result,
-        manual_comment: value,
-        is_manual_adjusted: Boolean(value.trim()) || result.manual_result !== null,
-        adjusted_at: value.trim() ? new Date().toISOString() : result.adjusted_at,
-      };
-    }));
-  }
-
-  function openManualEdit(index: number) {
-    const result = results[index];
-    if (!result) return;
-    setEditingIndex(index);
-    setManualDraft(result.manual_result !== null && result.manual_result !== undefined ? String(result.manual_result) : '');
-    setCommentDraft(result.manual_comment || '');
-  }
-
-  function closeManualEdit() {
-    setEditingIndex(null);
-    setManualDraft('');
-    setCommentDraft('');
-  }
-
-  function applyManualEdit() {
-    if (editingIndex === null) return;
-    updateManualResult(editingIndex, manualDraft);
-    updateManualComment(editingIndex, commentDraft);
-    closeManualEdit();
-  }
 
   function toggleSingleCrossDisplay(index: number) {
     setResults((current) => current.map((result, resultIndex) => {
@@ -730,6 +668,7 @@ export default function InventoryResultsScreen() {
     >
       <View style={styles.form}>
         {message ? <Text style={styles.hint}>{message}</Text> : null}
+        <Text style={styles.hint}>Los conteos y diferencias son de solo lectura. Si necesitas ajustar valores, corrige el CSV y vuelve a subirlo antes de recalcular.</Text>
 
         <View style={styles.footerActions}>
           <TouchableOpacity disabled={saving} style={[styles.secondaryButton, styles.footerSecondaryButton, saving && styles.disabledButton]} onPress={() => setShowRecalculateModal(true)}>
@@ -813,7 +752,6 @@ export default function InventoryResultsScreen() {
         description="Incluye ítems sin cruce y cruces cuyo resultado final es negativo."
         results={shortageResults}
         allResults={results}
-        onEditResult={openManualEdit}
         onToggleSingleCrossDisplay={toggleSingleCrossDisplay}
       />
 
@@ -822,18 +760,7 @@ export default function InventoryResultsScreen() {
         description="Incluye ítems sin cruce y cruces cuyo resultado final es cero o positivo."
         results={surplusResults}
         allResults={results}
-        onEditResult={openManualEdit}
         onToggleSingleCrossDisplay={toggleSingleCrossDisplay}
-      />
-      <ManualEditModal
-        visible={editingIndex !== null}
-        result={editingIndex !== null ? results[editingIndex] : null}
-        manualDraft={manualDraft}
-        commentDraft={commentDraft}
-        onManualDraftChange={setManualDraft}
-        onCommentDraftChange={setCommentDraft}
-        onCancel={closeManualEdit}
-        onApply={applyManualEdit}
       />
       <InventoryNoticeModal
         visible={showRecalculateModal}
@@ -857,11 +784,10 @@ type ResultSectionProps = {
   description: string;
   results: InventoryResult[];
   allResults: InventoryResult[];
-  onEditResult: (index: number) => void;
   onToggleSingleCrossDisplay: (index: number) => void;
 };
 
-function ResultSection({ title, description, results, allResults, onEditResult, onToggleSingleCrossDisplay }: ResultSectionProps) {
+function ResultSection({ title, description, results, allResults, onToggleSingleCrossDisplay }: ResultSectionProps) {
   const independentResults = results
     .filter((result) => !result.cross_name || isDisplayAsIndependent(result))
     .sort(sortIndependentByDisplayImpact);
@@ -893,7 +819,7 @@ function ResultSection({ title, description, results, allResults, onEditResult, 
             const displaySystem = movedFromCross ? firstComponent?.system_stock ?? result.system_stock : result.system_stock;
             const displayDifference = movedFromCross ? firstComponent?.converted_difference ?? result.final_result : result.final_result;
             return (
-              <TouchableOpacity key={`${result.result_type}-${result.sku}-${globalIndex}`} style={styles.tableRow} onPress={() => onEditResult(globalIndex)} activeOpacity={0.85}>
+              <View key={`${result.result_type}-${result.sku}-${globalIndex}`} style={styles.tableRow}>
                 <View style={styles.reportTableArticleCell}>
                   <Text style={styles.reportTableArticleTitle}>{displaySku || 'sin SKU'} · {displayDescription || 'Sin descripción'}</Text>
                   {movedFromCross ? (
@@ -902,14 +828,13 @@ function ResultSection({ title, description, results, allResults, onEditResult, 
                       <Text style={styles.reportTableActionText} onPress={() => onToggleSingleCrossDisplay(globalIndex)}>Devolver a cruces</Text>
                     </>
                   ) : null}
-                  {result.is_manual_adjusted ? <Text style={styles.hint}>Ajuste manual aplicado</Text> : null}
                 </View>
                 <Text style={styles.reportTableNumberCell}>{formatNumber(displayPhysical)}</Text>
                 <Text style={styles.reportTableNumberCell}>{formatNumber(displaySystem)}</Text>
                 <Text style={toNumber(displayDifference) < 0 ? styles.reportTableNegativeCell : styles.reportTablePositiveCell}>
                   {formatNumber(displayDifference)}
                 </Text>
-              </TouchableOpacity>
+              </View>
             );
           })}
 
@@ -945,13 +870,11 @@ function ResultSection({ title, description, results, allResults, onEditResult, 
                   </View>
                 )}
 
-                <TouchableOpacity
+                <View
                   style={[
                     styles.tableRow,
                     toNumber(result.final_result) < 0 ? styles.reportTableTotalShortageRow : styles.reportTableTotalSurplusRow,
                   ]}
-                  onPress={() => onEditResult(globalIndex)}
-                  activeOpacity={0.85}
                 >
                   <View style={[
                     styles.reportTableTotalArticleCell,
@@ -960,7 +883,6 @@ function ResultSection({ title, description, results, allResults, onEditResult, 
                     {componentItems.length === 1 ? (
                       <Text style={styles.reportTableActionText} onPress={() => onToggleSingleCrossDisplay(globalIndex)}>Mover arriba</Text>
                     ) : null}
-                    {result.is_manual_adjusted ? <Text style={styles.hint}>Ajuste manual aplicado</Text> : null}
                   </View>
                   <Text style={[
                     styles.reportTableTotalNumberCell,
@@ -978,7 +900,7 @@ function ResultSection({ title, description, results, allResults, onEditResult, 
                   ]}>
                     {formatNumber(result.final_result)}
                   </Text>
-                </TouchableOpacity>
+                </View>
 
                 <View style={styles.reportTableSpacer} />
               </View>
@@ -988,124 +910,4 @@ function ResultSection({ title, description, results, allResults, onEditResult, 
       )}
     </View>
   );
-
-  return (
-    <View style={styles.form}>
-      <Text style={styles.blockTitle}>{title}</Text>
-      <Text style={styles.hint}>{description}</Text>
-
-      {results.length === 0 ? (
-        <Text style={styles.hint}>Sin registros para este bloque.</Text>
-      ) : (
-        <View style={styles.table}>
-          <View style={styles.tableRow}>
-            <Text style={styles.reportTableArticleHeader}>Artículo</Text>
-            <Text style={styles.reportTableNumberHeader}>Stock físico</Text>
-            <Text style={styles.reportTableNumberHeader}>Stock actual</Text>
-            <Text style={styles.reportTableNumberHeader}>Diferencia</Text>
-          </View>
-
-          {results.map((result) => {
-            const globalIndex = allResults.indexOf(result);
-            const isCross = Boolean(result.cross_name);
-            const articleText = isCross
-              ? `SKUs: ${(result.component_skus || []).join(', ') || 'sin detalle guardado'} · ${result.cross_name || 'Cruce'}`
-              : `${result.sku || 'sin SKU'} · ${result.item_description || 'Sin descripción'}`;
-
-            return (
-              <View key={`${result.result_type}-${result.cross_name || result.sku}-${globalIndex}`}>
-                <TouchableOpacity style={styles.tableRow} onPress={() => onEditResult(globalIndex)} activeOpacity={0.85}>
-                  <View style={styles.reportTableArticleCell}>
-                    <Text style={styles.reportTableArticleTitle}>{articleText}</Text>
-                    {result.is_manual_adjusted || isCross ? (
-                      <Text style={styles.hint}>{result.is_manual_adjusted ? 'Ajuste manual aplicado' : 'Cruce aplicado'}</Text>
-                    ) : null}
-                  </View>
-                  <Text style={styles.reportTableNumberCell}>{isCross ? '-' : formatNumber(result.physical_stock)}</Text>
-                  <Text style={styles.reportTableNumberCell}>{isCross ? '-' : formatNumber(result.system_stock)}</Text>
-                  <Text style={toNumber(result.final_result) < 0 ? styles.reportTableNegativeCell : styles.reportTablePositiveCell}>
-                    {formatNumber(result.final_result)}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            );
-          })}
-        </View>
-      )}
-    </View>
-  );
 }
-
-type ManualEditModalProps = {
-  visible: boolean;
-  result: InventoryResult | null;
-  manualDraft: string;
-  commentDraft: string;
-  onManualDraftChange: (value: string) => void;
-  onCommentDraftChange: (value: string) => void;
-  onCancel: () => void;
-  onApply: () => void;
-};
-
-function ManualEditModal({
-  visible,
-  result,
-  manualDraft,
-  commentDraft,
-  onManualDraftChange,
-  onCommentDraftChange,
-  onCancel,
-  onApply,
-}: ManualEditModalProps) {
-  const isCross = Boolean(result?.cross_name);
-  const title = result
-    ? isCross
-      ? result.cross_name || 'Cruce'
-      : `${result.sku || 'sin SKU'} · ${result.item_description || 'Sin descripción'}`
-    : '';
-
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalCard}>
-          <Text style={styles.blockTitle}>Corregir resultado</Text>
-          <Text style={styles.blockDescription}>{title}</Text>
-          {isCross ? <Text style={styles.hint}>SKUs incluidos: {(result?.component_skus || []).join(', ') || 'sin detalle guardado'}</Text> : null}
-          <Text style={styles.hint}>Resultado calculado: {formatNumber(result?.calculated_result)}</Text>
-          <Text style={styles.hint}>Resultado actual: {formatNumber(result?.final_result)}</Text>
-
-          <View style={styles.field}>
-            <Text style={styles.label}>Resultado corregido</Text>
-            <TextInput
-              style={styles.input}
-              value={manualDraft}
-              onChangeText={onManualDraftChange}
-              placeholder="Ej. -2.50"
-            />
-          </View>
-
-          <View style={styles.field}>
-            <Text style={styles.label}>Comentario del auditor</Text>
-            <TextInput
-              style={styles.input}
-              value={commentDraft}
-              onChangeText={onCommentDraftChange}
-              placeholder="Motivo de la corrección"
-            />
-          </View>
-
-          <View style={styles.footerActions}>
-            <TouchableOpacity style={[styles.secondaryButton, styles.footerSecondaryButton]} onPress={onCancel}>
-              <Text style={styles.secondaryButtonText}>Cancelar</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.primaryButton, styles.footerPrimaryButton]} onPress={onApply}>
-              <Text style={styles.primaryButtonText}>Aplicar corrección</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-
