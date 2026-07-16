@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ActivityIndicator, Alert, Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
 import { brandColors } from '../../../../constants/theme';
@@ -8,6 +8,7 @@ import { useDashboardBackHandler } from '../../../../src/navigation/useDashboard
 import SecureEvidenceImage from '../../../../src/features/audits/components/secure-evidence-image';
 import { supabase } from '../../../../src/supabaseClient';
 import { offlineStorage } from '../../../../src/offlineStorage';
+import { AppNoticeModal } from '../../../../src/components/AppNoticeModal';
 
 type AnswerValue = 'cumple' | 'no_cumple' | null;
 type QuestionType = 'compliance' | 'cash_count' | 'pending_deposit' | 'inventory' | 'cup_count' | 'raw_material_count' | 'follow_up' | 'additional_novelty';
@@ -43,6 +44,8 @@ interface AnswerState {
   observation: string;
   evidenceUrls: string[];
   localImageUris: string[];
+  pendingEvidences: PendingEvidence[];
+  removedEvidenceUrls: string[];
   uploading: boolean;
   theoreticalValue: string;
   physicalValue: string;
@@ -57,6 +60,7 @@ interface DraftAnswerRow {
   value: AnswerValue;
   observation: string | null;
   evidence_url: string | null;
+  evidence_urls: string[];
   numeric_value_theoretical: number | null;
   numeric_value_physical: number | null;
   numeric_value_current: number | null;
@@ -101,11 +105,27 @@ interface PickedImage {
   mimeType: string;
 }
 
+interface PendingEvidence extends PickedImage {
+  id: string;
+  replaces: string | null;
+}
+
+type NoticeState = {
+  title: string;
+  message: string;
+  variant?: 'info' | 'success' | 'warning' | 'danger';
+  confirmLabel?: string;
+  cancelLabel?: string;
+  onConfirm?: () => void;
+} | null;
+
 const emptyAnswer: AnswerState = {
   value: null,
   observation: '',
   evidenceUrls: [],
   localImageUris: [],
+  pendingEvidences: [],
+  removedEvidenceUrls: [],
   uploading: false,
   theoreticalValue: '',
   physicalValue: '',
@@ -132,7 +152,13 @@ function toNumber(value: string) {
 }
 
 function hasNoveltyContent(answer: AnswerState) {
-  return Boolean(answer.observation.trim()) || answer.evidenceUrls.length > 0 || answer.localImageUris.length > 0;
+  return Boolean(answer.observation.trim()) || activeEvidenceCount(answer) > 0;
+}
+
+function activeEvidenceCount(answer: AnswerState) {
+  return answer.evidenceUrls.filter((reference) => !answer.removedEvidenceUrls.includes(reference)).length
+    + answer.localImageUris.length
+    + answer.pendingEvidences.length;
 }
 
 function isMultiItemCount(type: QuestionType) {
@@ -254,6 +280,7 @@ function answerToDraftRow(reportId: string, question: Question, answer: AnswerSt
     value: type === 'additional_novelty' || isCountOnlyQuestion(type) ? 'cumple' : answer.value,
     observation: answer.observation.trim(),
     evidence_url: answer.evidenceUrls[0] || null,
+    evidence_urls: answer.evidenceUrls,
     numeric_value_theoretical: firstNumericItem?.theoretical ?? toNumber(answer.theoreticalValue),
     numeric_value_physical: firstNumericItem?.physical ?? toNumber(answer.physicalValue),
     numeric_value_current: toNumber(answer.currentShift),
@@ -283,7 +310,7 @@ function draftRowToAnswer(question: Question, row: DraftAnswerRow): AnswerState 
     ...emptyAnswer,
     value: row.value,
     observation: row.observation || '',
-    evidenceUrls: row.evidence_url ? [row.evidence_url] : [],
+    evidenceUrls: Array.isArray(row.evidence_urls) && row.evidence_urls.length > 0 ? row.evidence_urls : row.evidence_url ? [row.evidence_url] : [],
     theoreticalValue: row.numeric_value_theoretical === null || row.numeric_value_theoretical === undefined ? '' : String(row.numeric_value_theoretical),
     physicalValue: row.numeric_value_physical === null || row.numeric_value_physical === undefined ? '' : String(row.numeric_value_physical),
     currentShift: row.numeric_value_current === null || row.numeric_value_current === undefined ? '' : String(row.numeric_value_current),
@@ -310,6 +337,12 @@ export default function ChecklistDinamicoPage() {
   const [editReason, setEditReason] = useState('');
   const [hasChanges, setHasChanges] = useState(false);
   const [finalizedSendChoice, setFinalizedSendChoice] = useState<boolean | null>(null);
+  const [notice, setNotice] = useState<NoticeState>(null);
+  const [sourceQuestion, setSourceQuestion] = useState<Question | null>(null);
+  const [replacementTarget, setReplacementTarget] = useState<string | null>(null);
+
+  const showNotice = (nextNotice: NonNullable<NoticeState>) => setNotice(nextNotice);
+  const closeNotice = () => setNotice(null);
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
@@ -369,7 +402,7 @@ export default function ChecklistDinamicoPage() {
       ]);
 
       if (supabaseError) {
-        setError(supabaseError.message);
+        setError('No se pudieron cargar las preguntas. Revisa tu conexión e intenta nuevamente.');
         setLoading(false);
         return;
       }
@@ -399,7 +432,7 @@ export default function ChecklistDinamicoPage() {
       const answerTable = isFinalReport ? 'audit_answers_final' : 'audit_answers_draft';
       const { data: remoteRows, error: draftError } = await supabase
         .from(answerTable)
-        .select('report_id, question_id, value, observation, evidence_url, numeric_value_theoretical, numeric_value_physical, numeric_value_current, numeric_value_previous, numeric_items')
+        .select('report_id, question_id, value, observation, evidence_url, evidence_urls, numeric_value_theoretical, numeric_value_physical, numeric_value_current, numeric_value_previous, numeric_items')
         .eq('report_id', reportId);
 
       if (draftError) {
@@ -453,7 +486,7 @@ export default function ChecklistDinamicoPage() {
     if (source === 'camera') {
       const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
       if (!permissionResult.granted) {
-        alert('Se requieren permisos de camara.');
+        showNotice({ title: 'Permiso de cámara requerido', message: 'Habilita el acceso a la cámara desde la configuración del dispositivo para tomar una foto.', variant: 'warning' });
         return null;
       }
 
@@ -471,7 +504,7 @@ export default function ChecklistDinamicoPage() {
 
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permissionResult.granted) {
-      alert('Se requieren permisos para acceder a la galeria.');
+      showNotice({ title: 'Permiso de galería requerido', message: 'Habilita el acceso a tus imágenes desde la configuración del dispositivo para seleccionar una evidencia.', variant: 'warning' });
       return null;
     }
 
@@ -492,62 +525,64 @@ export default function ChecklistDinamicoPage() {
     const currentAnswer = { ...emptyAnswer, ...answers[questionId] };
     const maxEvidence = getMaxEvidence(question);
 
-    if (currentAnswer.evidenceUrls.length + currentAnswer.localImageUris.length >= maxEvidence) {
-      alert(`Esta pregunta permite hasta ${maxEvidence} imagenes.`);
+    if (activeEvidenceCount(currentAnswer) >= maxEvidence && !replacementTarget) {
+      showNotice({ title: 'Límite de imágenes alcanzado', message: `Esta pregunta permite hasta ${maxEvidence} imágenes. Retira o reemplaza una evidencia para continuar.`, variant: 'warning' });
       return;
     }
 
     if (!source) {
-      if (Platform.OS === 'web') {
-        const useCamera = typeof window !== 'undefined' && window.confirm('Aceptar: tomar foto. Cancelar: seleccionar archivo.');
-        await handlePickImage(question, useCamera ? 'camera' : 'library');
-        return;
-      }
-
-      Alert.alert('Agregar evidencia', 'Elige el origen de la imagen.', [
-        { text: 'Camara', onPress: () => handlePickImage(question, 'camera') },
-        { text: 'Galeria', onPress: () => handlePickImage(question, 'library') },
-        { text: 'Cancelar', style: 'cancel' },
-      ]);
+      setSourceQuestion(question);
       return;
     }
 
     const pickedImage = await pickImageFromSource(source);
     if (!pickedImage) return;
 
-    if (!isOnline) {
+    if (!isOnline && reportHeader?.status !== 'finalized') {
       const nextLocalImages = [...currentAnswer.localImageUris, pickedImage.uri].slice(0, maxEvidence);
       await updateField(questionId, { localImageUris: nextLocalImages, uploading: false });
-      alert('Foto guardada localmente en el borrador.');
+      showNotice({ title: 'Imagen guardada en el borrador', message: 'La imagen se sincronizará cuando recuperes la conexión y guardes la visita.', variant: 'success' });
       return;
     }
 
-    await updateField(questionId, { uploading: true });
+    const pending: PendingEvidence = { ...pickedImage, id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, replaces: replacementTarget };
+    await updateField(questionId, {
+      pendingEvidences: [...currentAnswer.pendingEvidences.filter((item) => item.replaces !== replacementTarget || !replacementTarget), pending],
+      removedEvidenceUrls: replacementTarget ? Array.from(new Set([...currentAnswer.removedEvidenceUrls, replacementTarget])) : currentAnswer.removedEvidenceUrls,
+    });
+    setReplacementTarget(null);
+    showNotice({ title: replacementTarget ? 'Reemplazo preparado' : 'Imagen preparada', message: 'El cambio se aplicará únicamente cuando guardes la visita.', variant: 'success' });
+  };
 
-    try {
-      const folderRegion = String(region).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      const imageIndex = currentAnswer.evidenceUrls.length + currentAnswer.localImageUris.length + 1;
-      const fileRoute = `${folderRegion}/2026-06-01/${local_id || 'sin-local'}/${reportId}/${questionId}/foto-${imageIndex}.jpg`;
+  const requestReplaceEvidence = (question: Question, reference: string) => showNotice({
+    title: '¿Deseas reemplazar esta imagen?',
+    message: 'La imagen anterior dejará de mostrarse en esta visita una vez que guardes los cambios.',
+    variant: 'warning',
+    confirmLabel: 'Reemplazar',
+    cancelLabel: 'Cancelar',
+    onConfirm: () => { closeNotice(); setReplacementTarget(reference); setSourceQuestion(question); },
+  });
 
-      const uploadBody = pickedImage.base64
-        ? base64ToArrayBuffer(pickedImage.base64)
-        : await fetch(pickedImage.uri).then((response) => response.arrayBuffer());
+  const requestRemoveEvidence = (questionId: string, reference: string) => showNotice({
+    title: '¿Deseas eliminar esta imagen?',
+    message: 'Esta acción quitará la imagen de la visita. Si ya fue enviada en un informe anterior, se conservará la trazabilidad histórica.',
+    variant: 'danger',
+    confirmLabel: 'Retirar imagen',
+    cancelLabel: 'Cancelar',
+    onConfirm: () => {
+      const current = { ...emptyAnswer, ...answers[questionId] };
+      updateField(questionId, { removedEvidenceUrls: Array.from(new Set([...current.removedEvidenceUrls, reference])) });
+      closeNotice();
+    },
+  });
 
-      const { error: uploadError } = await supabase.storage
-        .from('evidencias')
-        .upload(fileRoute, uploadBody, { contentType: pickedImage.mimeType, cacheControl: '3600', upsert: true });
-
-      if (uploadError) throw uploadError;
-
-      const latestAnswer = { ...emptyAnswer, ...answers[questionId] };
-      await updateField(questionId, {
-        evidenceUrls: [...latestAnswer.evidenceUrls, fileRoute].slice(0, maxEvidence),
-        uploading: false,
-      });
-    } catch (err: any) {
-      alert('Error de subida: ' + err.message);
-      await updateField(questionId, { uploading: false });
-    }
+  const removePendingEvidence = (questionId: string, pendingId: string) => {
+    const current = { ...emptyAnswer, ...answers[questionId] };
+    const pending = current.pendingEvidences.find((item) => item.id === pendingId);
+    updateField(questionId, {
+      pendingEvidences: current.pendingEvidences.filter((item) => item.id !== pendingId),
+      removedEvidenceUrls: pending?.replaces ? current.removedEvidenceUrls.filter((reference) => reference !== pending.replaces) : current.removedEvidenceUrls,
+    });
   };
 
   const getValidationMessage = (question: Question, answer: AnswerState) => {
@@ -655,12 +690,12 @@ export default function ChecklistDinamicoPage() {
     const reason = editReason.trim();
 
     if (!wasSent && finalizedSendChoice === null) {
-      alert('Elige si deseas enviar el informe o guardar sin enviar antes de salir.');
+      showNotice({ title: 'Elige cómo guardar la visita', message: 'Selecciona si deseas guardar sin enviar o guardar y enviar el informe.', variant: 'warning' });
       return;
     }
 
     if (hasChanges && !reason) {
-      alert('Ingresa el motivo de edicion antes de guardar la visita finalizada.');
+      showNotice({ title: 'Motivo de edición requerido', message: 'Describe brevemente por qué estás modificando esta visita antes de guardar.', variant: 'warning' });
       return;
     }
 
@@ -676,10 +711,14 @@ export default function ChecklistDinamicoPage() {
     if (editError || !data?.ok) throw new Error(data?.error || editError?.message || 'No se pudo procesar la edicion.');
 
     if (data.pending) {
-      alert(wantsInitialSend
-        ? 'Este cambio modifica la calificacion. El informe se enviara despues de que un administrador lo apruebe.'
-        : 'Este cambio modifica la calificacion y requiere autorizacion de un administrador antes de aplicarse.');
-      router.replace('/modulos/evaluaciones');
+      showNotice({
+        title: 'Cambios enviados para aprobación',
+        message: wantsInitialSend
+          ? 'El informe se enviará después de que un administrador apruebe el cambio de calificación.'
+          : 'El cambio de calificación requiere autorización de un administrador antes de aplicarse.',
+        variant: 'info',
+        onConfirm: () => router.replace('/modulos/evaluaciones'),
+      });
       return;
     }
 
@@ -703,19 +742,77 @@ export default function ChecklistDinamicoPage() {
     router.replace('/modulos/evaluaciones');
   };
 
+  const prepareEvidenceForSave = async () => {
+    const prepared: Record<string, AnswerState> = {};
+    const folderRegion = String(region || 'general').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const folderDate = new Date().toISOString().slice(0, 10);
+
+    for (const question of questions) {
+      const answer = { ...emptyAnswer, ...answers[question.id] };
+      const retained = answer.evidenceUrls.filter((reference) => !answer.removedEvidenceUrls.includes(reference));
+      const pending = [
+        ...answer.pendingEvidences,
+        ...answer.localImageUris.map((uri, index) => ({ id: `local-${index}`, uri, base64: null, mimeType: 'image/jpeg', replaces: null })),
+      ];
+      const uploaded: string[] = [];
+
+      for (const [index, image] of pending.entries()) {
+        const extension = image.mimeType.includes('png') ? 'png' : 'jpg';
+        const fileRoute = `${folderRegion}/${folderDate}/${reportId}/${question.id}/evidencia-${Date.now()}-${index}-${image.id}.${extension}`;
+        const uploadBody = image.base64
+          ? base64ToArrayBuffer(image.base64)
+          : await fetch(image.uri).then((response) => {
+            if (!response.ok) throw new Error('image-read-failed');
+            return response.arrayBuffer();
+          });
+        const { error: uploadError } = await supabase.storage.from('evidencias').upload(fileRoute, uploadBody, {
+          contentType: image.mimeType,
+          cacheControl: '3600',
+          upsert: false,
+        });
+        if (uploadError) throw uploadError;
+        uploaded.push(fileRoute);
+      }
+
+      prepared[question.id] = {
+        ...answer,
+        evidenceUrls: [...retained, ...uploaded].slice(0, getMaxEvidence(question)),
+        pendingEvidences: [],
+        localImageUris: [],
+      };
+    }
+    return prepared;
+  };
+
   const handleSubmit = async () => {
     if (!checkFormValidation()) return;
+    if (reportHeader?.status === 'finalized' && !reportHeader.should_send && finalizedSendChoice === null) {
+      showNotice({ title: 'Elige cómo guardar la visita', message: 'Selecciona si deseas guardar sin enviar o guardar y enviar el informe.', variant: 'warning' });
+      return;
+    }
+    if (reportHeader?.status === 'finalized' && hasChanges && !editReason.trim()) {
+      showNotice({ title: 'Motivo de edición requerido', message: 'Describe brevemente por qué estás modificando esta visita antes de guardar.', variant: 'warning' });
+      return;
+    }
     setIsSubmitting(true);
 
     if (!isOnline) {
-      alert('Auditoria guardada localmente como borrador. Se sincronizara al recuperar red.');
-      router.replace('/modulos/evaluaciones/nueva-auditoria');
+      showNotice({ title: 'Borrador guardado', message: 'La visita se sincronizará cuando recuperes la conexión.', variant: 'success', onConfirm: () => router.replace('/modulos/evaluaciones/nueva-auditoria') });
+      setIsSubmitting(false);
+      return;
+    }
+
+    let preparedAnswers = answers;
+    try {
+      preparedAnswers = await prepareEvidenceForSave();
+    } catch {
+      showNotice({ title: 'No se pudo cargar la imagen', message: 'Revisa tu conexión e intenta nuevamente. Si el problema continúa, guarda la visita y vuelve a intentarlo.', variant: 'danger' });
       setIsSubmitting(false);
       return;
     }
 
     const payload = questions.flatMap((q) => {
-      const answer = { ...emptyAnswer, ...answers[q.id] };
+      const answer = { ...emptyAnswer, ...preparedAnswers[q.id] };
       const type = getQuestionType(q);
 
       if (type === 'additional_novelty' && !hasNoveltyContent(answer)) {
@@ -732,7 +829,7 @@ export default function ChecklistDinamicoPage() {
         return;
       }
     } catch (err: any) {
-      alert('No se pudo actualizar la visita: ' + err.message);
+      showNotice({ title: 'No se pudieron guardar los cambios', message: 'Revisa la información ingresada e intenta nuevamente.', variant: 'danger' });
       setIsSubmitting(false);
       return;
     }
@@ -743,7 +840,7 @@ export default function ChecklistDinamicoPage() {
         .upsert(payload, { onConflict: 'report_id,question_id' });
 
       if (insertError) {
-        alert('No se pudo guardar el checklist en Supabase: ' + insertError.message);
+        showNotice({ title: 'No se pudo guardar la visita', message: 'Verifica tu conexión e intenta nuevamente. Tus datos permanecerán en el borrador.', variant: 'danger' });
         setIsSubmitting(false);
         return;
       }
@@ -764,7 +861,7 @@ export default function ChecklistDinamicoPage() {
   }
 
   if (error) {
-    return <View style={styles.center}><Text style={styles.errorText}>Error: {error}</Text></View>;
+    return <View style={styles.center}><Text style={styles.errorText}>No se pudo abrir la visita.</Text><Text style={styles.loadingText}>{error}</Text></View>;
   }
 
   const headerVisitType = reportHeader?.visit_type_id || String(visit_type_id || 'visita');
@@ -843,7 +940,7 @@ export default function ChecklistDinamicoPage() {
         const currentAnswer = { ...emptyAnswer, ...answers[q.id] };
         const type = getQuestionType(q);
         const maxEvidence = getMaxEvidence(q);
-        const evidenceCount = currentAnswer.evidenceUrls.length + currentAnswer.localImageUris.length;
+        const evidenceCount = activeEvidenceCount(currentAnswer);
         const difference = toNumber(currentAnswer.physicalValue) !== null && toNumber(currentAnswer.theoreticalValue) !== null
           ? Number(toNumber(currentAnswer.physicalValue)) - Number(toNumber(currentAnswer.theoreticalValue))
           : null;
@@ -935,9 +1032,28 @@ export default function ChecklistDinamicoPage() {
             </View>
 
             <View style={styles.imageGrid}>
-              {[...currentAnswer.localImageUris, ...currentAnswer.evidenceUrls].slice(0, maxEvidence).map((uri, imageIndex) => (
-                <SecureEvidenceImage key={`${q.id}-${imageIndex}-${uri}`} reference={uri} />
+              {currentAnswer.evidenceUrls.map((uri) => {
+                const removed = currentAnswer.removedEvidenceUrls.includes(uri);
+                const replaced = currentAnswer.pendingEvidences.some((item) => item.replaces === uri);
+                return (
+                  <View key={`${q.id}-${uri}`} style={[styles.evidenceCard, removed && styles.evidenceCardRemoved]}>
+                    <SecureEvidenceImage reference={uri} />
+                    <Text style={[styles.evidenceStatus, removed && styles.evidenceStatusRemoved]}>{replaced ? 'Imagen anterior' : removed ? 'Eliminación pendiente' : 'Imagen actual'}</Text>
+                    {!removed ? <View style={styles.evidenceActions}>
+                      <TouchableOpacity onPress={() => requestReplaceEvidence(q, uri)}><Text style={styles.evidenceActionText}>Reemplazar</Text></TouchableOpacity>
+                      <TouchableOpacity onPress={() => requestRemoveEvidence(q.id, uri)}><Text style={styles.evidenceRemoveText}>Eliminar</Text></TouchableOpacity>
+                    </View> : null}
+                  </View>
+                );
+              })}
+              {currentAnswer.pendingEvidences.map((item) => (
+                <View key={item.id} style={[styles.evidenceCard, styles.evidenceCardPending]}>
+                  <Image source={{ uri: item.uri }} style={styles.imagePreview} />
+                  <Text style={styles.evidenceStatus}>Imagen nueva pendiente</Text>
+                  <TouchableOpacity onPress={() => removePendingEvidence(q.id, item.id)}><Text style={styles.evidenceRemoveText}>Descartar</Text></TouchableOpacity>
+                </View>
               ))}
+              {currentAnswer.localImageUris.map((uri, imageIndex) => <Image key={`${uri}-${imageIndex}`} source={{ uri }} style={styles.imagePreview} />)}
               {evidenceCount < maxEvidence && (
                 <TouchableOpacity style={styles.photoButton} onPress={() => handlePickImage(q)} disabled={currentAnswer.uploading}>
                   {currentAnswer.uploading ? <ActivityIndicator size="small" color="#0f766e" /> : <Text style={styles.photoButtonText}>+ Imagen</Text>}
@@ -969,6 +1085,27 @@ export default function ChecklistDinamicoPage() {
                 : 'Guardar borrador local'}
         </Text>
       </TouchableOpacity>
+      <AppNoticeModal
+        visible={Boolean(notice)}
+        title={notice?.title || ''}
+        message={notice?.message || ''}
+        variant={notice?.variant}
+        confirmLabel={notice?.confirmLabel}
+        cancelLabel={notice?.cancelLabel}
+        onConfirm={() => { const action = notice?.onConfirm; closeNotice(); action?.(); }}
+        onCancel={closeNotice}
+      />
+      <AppNoticeModal
+        visible={Boolean(sourceQuestion)}
+        title="Agregar evidencia"
+        message="Elige cómo deseas seleccionar la imagen. El cambio se aplicará cuando guardes la visita."
+        confirmLabel="Cámara"
+        cancelLabel="Galería"
+        neutralLabel="Cancelar"
+        onConfirm={() => { const question = sourceQuestion; setSourceQuestion(null); if (question) handlePickImage(question, 'camera'); }}
+        onCancel={() => { const question = sourceQuestion; setSourceQuestion(null); if (question) handlePickImage(question, 'library'); }}
+        onNeutral={() => { setSourceQuestion(null); setReplacementTarget(null); }}
+      />
     </ScrollView>
   );
 }
@@ -1133,6 +1270,14 @@ const styles = StyleSheet.create({
   photoButton: { width: 118, height: 92, borderWidth: 1, borderColor: brandColors.greenDark, borderStyle: 'dashed', borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: brandColors.greenSoft },
   photoButtonText: { color: brandColors.greenDark, fontWeight: '900' },
   imagePreview: { width: 118, height: 92, borderRadius: 8, backgroundColor: brandColors.border },
+  evidenceCard: { width: 132, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 6, backgroundColor: brandColors.white, gap: 5 },
+  evidenceCardPending: { borderColor: brandColors.warning, backgroundColor: brandColors.creamSoft },
+  evidenceCardRemoved: { opacity: 0.55, borderColor: brandColors.danger },
+  evidenceStatus: { color: brandColors.textSecondary, fontSize: 11, fontWeight: '900' },
+  evidenceStatusRemoved: { color: brandColors.danger },
+  evidenceActions: { flexDirection: 'row', justifyContent: 'space-between', gap: 6 },
+  evidenceActionText: { color: brandColors.greenDark, fontSize: 11, fontWeight: '900' },
+  evidenceRemoveText: { color: brandColors.danger, fontSize: 11, fontWeight: '900' },
   validationText: { marginTop: 10, color: brandColors.danger, fontWeight: '800', fontSize: 12 },
   submitButton: { backgroundColor: brandColors.greenDark, padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 24, marginBottom: 40 },
   disabledButton: { backgroundColor: brandColors.green, opacity: 0.7 },

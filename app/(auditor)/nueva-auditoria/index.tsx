@@ -103,7 +103,7 @@ export default function NuevaAuditoriaPage() {
       .single<ProfileRow>();
 
     if (profileError || !profileData) {
-      setMessage(buildMissingProfileMessage(user.email, user.id, profileError?.message));
+      setMessage('No pudimos preparar tu perfil para crear una visita. Cierra sesión, vuelve a ingresar e inténtalo nuevamente.');
       setLoading(false);
       return;
     }
@@ -123,7 +123,7 @@ export default function NuevaAuditoriaPage() {
     const { data: localData, error: localError } = await localQueryBuilder;
 
     if (localError) {
-      setMessage('No se pudieron cargar los locales: ' + localError.message);
+      setMessage('No se pudieron cargar los locales. Revisa tu conexión e intenta nuevamente.');
     } else {
       setLocales(localData || []);
     }
@@ -131,7 +131,7 @@ export default function NuevaAuditoriaPage() {
     const { data: responsibleData, error: responsibleError } = await listActiveResponsibles(profileData.role, profileData.region);
 
     if (responsibleError) {
-      setMessage('No se pudieron cargar los responsables: ' + responsibleError.message);
+      setMessage('No se pudieron cargar los responsables. Revisa tu conexión e intenta nuevamente.');
     } else {
       setResponsables((responsibleData || []).map(mapResponsibleRow));
     }
@@ -706,15 +706,6 @@ function mapResponsibleRow(row: {
     cargo: row.position,
     region: row.region,
   };
-}
-
-function buildMissingProfileMessage(email?: string | null, uid?: string, detail?: string) {
-  return [
-    'No se encontro el perfil del auditor autenticado.',
-    `Correo: ${email || 'sin correo'}`,
-    `UID Auth: ${uid || 'sin uid'}`,
-    detail ? `Detalle: ${detail}` : null,
-  ].filter(Boolean).join('\n');
 }
 
 const styles = StyleSheet.create({

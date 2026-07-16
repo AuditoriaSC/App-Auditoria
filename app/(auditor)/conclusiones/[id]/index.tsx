@@ -5,6 +5,7 @@ import { brandColors } from '../../../../constants/theme';
 import { useDashboardBackHandler } from '../../../../src/navigation/useDashboardBackHandler';
 import { supabase } from '../../../../src/supabaseClient';
 import SignaturePad, { SignatureInputType } from '../../../../src/features/audits/components/signature-pad';
+import { AppNoticeModal } from '../../../../src/components/AppNoticeModal';
 
 type SendChoice = boolean | null;
 
@@ -13,6 +14,7 @@ interface AnswerRecord {
   value: 'cumple' | 'no_cumple';
   observation: string;
   evidence_url: string | null;
+  evidence_urls?: string[] | null;
   numeric_value_theoretical?: number | null;
   numeric_value_physical?: number | null;
   numeric_value_current?: number | null;
@@ -76,6 +78,7 @@ export default function FinalizarReportePage() {
   const completionPreview = useMemo(() => new Date(), []);
   const [isSaving, setIsSaving] = useState(false);
   const [scrollEnabled, setScrollEnabled] = useState(true);
+  const [notice, setNotice] = useState<{ title: string; message: string; variant?: 'info' | 'success' | 'warning' | 'danger' } | null>(null);
 
   const [auditorSignature, setAuditorSignature] = useState<string | null>(null);
   const [responsibleSignature, setResponsibleSignature] = useState<string | null>(null);
@@ -102,11 +105,11 @@ export default function FinalizarReportePage() {
       ]);
 
       if (answersError) {
-        alert('No se pudieron cargar las respuestas: ' + answersError.message);
+        setNotice({ title: 'No se pudieron cargar las respuestas', message: 'Revisa tu conexión e intenta abrir nuevamente la visita.', variant: 'danger' });
       }
 
       if (reportError) {
-        alert('No se pudo cargar el reporte: ' + reportError.message);
+        setNotice({ title: 'No se pudo cargar la visita', message: 'Revisa tu conexión e intenta nuevamente.', variant: 'danger' });
       }
 
       const answers = (answersData || []) as AnswerRecord[];
@@ -172,7 +175,7 @@ export default function FinalizarReportePage() {
 
   const handleFinalizarReporte = async () => {
     if (!canFinalize || !auditorSignature || !auditorSignatureType) {
-      alert('Completa la firma del auditor y la opción Enviar.');
+      setNotice({ title: 'Información pendiente', message: 'Completa la firma del auditor y elige si deseas enviar el informe.', variant: 'warning' });
       return;
     }
 
@@ -198,6 +201,7 @@ export default function FinalizarReportePage() {
         value: answer.value,
         observation: answer.observation,
         evidence_url: answer.evidence_url,
+        evidence_urls: answer.evidence_urls || (answer.evidence_url ? [answer.evidence_url] : []),
         numeric_value_theoretical: answer.numeric_value_theoretical ?? null,
         numeric_value_physical: answer.numeric_value_physical ?? null,
         numeric_value_current: answer.numeric_value_current ?? null,
@@ -265,7 +269,7 @@ export default function FinalizarReportePage() {
 
       router.replace('/modulos/evaluaciones');
     } catch (err: any) {
-      alert('Error en consolidacion del reporte: ' + err.message);
+      setNotice({ title: 'No se pudo finalizar la visita', message: 'Revisa la información y tu conexión antes de intentarlo nuevamente.', variant: 'danger' });
     } finally {
       setIsSaving(false);
     }
@@ -363,6 +367,13 @@ export default function FinalizarReportePage() {
       >
         <Text style={styles.submitButtonText}>{isSaving ? 'Finalizando...' : 'Finalizar'}</Text>
       </TouchableOpacity>
+      <AppNoticeModal
+        visible={Boolean(notice)}
+        title={notice?.title || ''}
+        message={notice?.message || ''}
+        variant={notice?.variant}
+        onConfirm={() => setNotice(null)}
+      />
     </ScrollView>
   );
 }

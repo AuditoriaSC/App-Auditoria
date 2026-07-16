@@ -4,12 +4,29 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Content-Type': 'application/json' }
 
-type Answer = { report_id: string; question_id: string; value: string | null; observation?: string | null; evidence_url?: string | null; numeric_value_theoretical?: number | null; numeric_value_physical?: number | null; numeric_value_current?: number | null; numeric_value_previous?: number | null; numeric_items?: unknown[] | null }
+type Answer = { report_id: string; question_id: string; value: string | null; observation?: string | null; evidence_url?: string | null; evidence_urls?: string[] | null; numeric_value_theoretical?: number | null; numeric_value_physical?: number | null; numeric_value_current?: number | null; numeric_value_previous?: number | null; numeric_items?: unknown[] | null }
 type Profile = { id: string; role: string; region: string | null; is_active: boolean }
-type Report = { id: string; user_id: string | null; region: string; should_send: boolean | null; resent_count: number | null }
+type Report = { id: string; user_id: string | null; region: string; should_send: boolean | null; resent_count: number | null; evidence_change_log?: unknown[] | null }
 
 const respond = (body: Record<string, unknown>, status = 200) => new Response(JSON.stringify(body), { status, headers: cors })
 const isScored = (question: { is_scored: boolean | null; question_type: string | null }) => question.is_scored !== false && !['follow_up', 'additional_novelty', 'inventory', 'raw_material_count'].includes(question.question_type || '')
+
+function evidenceList(answer?: Answer) {
+  const values = Array.isArray(answer?.evidence_urls) ? answer.evidence_urls : answer?.evidence_url ? [answer.evidence_url] : []
+  return values.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+}
+
+function evidenceChanges(before: Map<string, Answer>, after: Answer[], actorId: string, changedAt: string) {
+  return after.flatMap((answer) => {
+    const previous = evidenceList(before.get(answer.question_id))
+    const next = evidenceList(answer)
+    const removed = previous.filter((reference) => !next.includes(reference))
+    const added = next.filter((reference) => !previous.includes(reference))
+    if (removed.length === 0 && added.length === 0) return []
+    const action = removed.length > 0 && added.length > 0 ? 'replaced' : added.length > 0 ? 'added' : 'removed'
+    return [{ action, actor_id: actorId, changed_at: changedAt, question_id: answer.question_id, previous_references: removed, new_references: added }]
+  })
+}
 
 function score(answers: Answer[], questions: Map<string, { score_points: number; is_scored: boolean | null; question_type: string | null }>) {
   let obtained = 0
@@ -48,7 +65,7 @@ Deno.serve(async (req) => {
 
       const { data: approval } = await admin.from('audit_edit_approvals').select('*').eq('id', approvalId).single()
       if (!approval || approval.status !== 'pending') return respond({ error: 'Solicitud no disponible.' }, 409)
-      const { data: report } = await admin.from('audit_reports').select('id, user_id, region, should_send, resent_count').eq('id', approval.audit_report_id).single<Report>()
+      const { data: report } = await admin.from('audit_reports').select('id, user_id, region, should_send, resent_count, evidence_change_log').eq('id', approval.audit_report_id).single<Report>()
       const canReview = report && ['admin', 'super_admin'].includes(caller.role) && (caller.role === 'super_admin' || caller.region === 'Global' || caller.region === report.region)
       if (!canReview || approval.requested_by === caller.id) return respond({ error: 'No puedes revisar esta solicitud.' }, 403)
 
@@ -60,7 +77,7 @@ Deno.serve(async (req) => {
       const payload = Array.isArray(approval.change_payload) ? approval.change_payload as Answer[] : []
       const sendAfterApproval = approval.change_type === 'scored_answer_change_send'
       const summary = Array.isArray(approval.change_summary) ? approval.change_summary as { question_id?: string; old_value?: string | null }[] : []
-      const { data: latestRows } = await admin.from('audit_answers_final').select('question_id, value').eq('report_id', report!.id)
+      const { data: latestRows } = await admin.from('audit_answers_final').select('*').eq('report_id', report!.id)
       const latest = new Map((latestRows || []).map((item) => [item.question_id, item.value]))
       if (summary.some((item) => item.question_id && latest.get(item.question_id) !== item.old_value)) {
         return respond({ error: 'La visita cambio despues de la solicitud. Cancela esta solicitud y genera una nueva.' }, 409)
@@ -70,9 +87,11 @@ Deno.serve(async (req) => {
       const questions = new Map((questionRows || []).map((item) => [item.id, item]))
       const result = score(payload, questions)
       const now = new Date().toISOString()
+      const currentAnswers = new Map(((latestRows || []) as Answer[]).map((item) => [item.question_id, item]))
+      const changeLog = evidenceChanges(currentAnswers, payload, approval.requested_by, now)
       const { error: answersError } = await admin.from('audit_answers_final').upsert(payload.map((item) => ({ ...item, created_at: now })), { onConflict: 'report_id,question_id' })
       if (answersError) throw answersError
-      await admin.from('audit_reports').update({ final_percentage: result.percentage, final_grade: result.grade, should_send: sendAfterApproval ? true : report!.should_send, edited_after_send: report!.should_send === true, last_edited_at: now, last_edited_by: caller.id, last_edit_reason: approval.reason, updated_at: now }).eq('id', report!.id)
+      await admin.from('audit_reports').update({ final_percentage: result.percentage, final_grade: result.grade, should_send: sendAfterApproval ? true : report!.should_send, edited_after_send: report!.should_send === true, last_edited_at: now, last_edited_by: caller.id, last_edit_reason: approval.reason, evidence_change_log: [...(Array.isArray(report!.evidence_change_log) ? report!.evidence_change_log : []), ...changeLog], updated_at: now }).eq('id', report!.id)
       await admin.from('audit_edit_approvals').update({ status: 'approved', approved_by: caller.id, admin_comment: String(body?.adminComment || ''), reviewed_at: now, new_score: result.grade }).eq('id', approvalId)
       return respond({ ok: true, status: 'approved', shouldResend: report?.should_send === true || sendAfterApproval, isInitialSend: sendAfterApproval && report?.should_send !== true, reportId: report?.id, region: report?.region, resentCount: report?.resent_count || 0 })
     }
@@ -82,7 +101,7 @@ Deno.serve(async (req) => {
     const sendAfterApproval = body?.sendAfterApproval === true
     const payload = Array.isArray(body?.answers) ? body.answers as Answer[] : []
     if (!reportId || !reason || payload.length === 0) return respond({ error: 'Ingresa el motivo y los cambios.' }, 400)
-    const { data: report } = await admin.from('audit_reports').select('id, user_id, region, should_send, resent_count').eq('id', reportId).single<Report>()
+    const { data: report } = await admin.from('audit_reports').select('id, user_id, region, should_send, resent_count, evidence_change_log').eq('id', reportId).single<Report>()
     if (!report) return respond({ error: 'Visita no encontrada.' }, 404)
     const canEdit = report.user_id === caller.id
       || caller.role === 'super_admin'
@@ -112,9 +131,10 @@ Deno.serve(async (req) => {
     }
 
     const now = new Date().toISOString()
+    const changeLog = evidenceChanges(current, payload, caller.id, now)
     const { error: updateError } = await admin.from('audit_answers_final').upsert(payload.map((item) => ({ ...item, created_at: now })), { onConflict: 'report_id,question_id' })
     if (updateError) throw updateError
-    await admin.from('audit_reports').update({ edited_after_send: report.should_send === true, last_edited_at: now, last_edited_by: caller.id, last_edit_reason: reason, updated_at: now }).eq('id', reportId)
+    await admin.from('audit_reports').update({ edited_after_send: report.should_send === true, last_edited_at: now, last_edited_by: caller.id, last_edit_reason: reason, evidence_change_log: [...(Array.isArray(report.evidence_change_log) ? report.evidence_change_log : []), ...changeLog], updated_at: now }).eq('id', reportId)
     return respond({ ok: true, applied: true, shouldResend: report.should_send === true, resentCount: report.resent_count || 0 })
   } catch (error) {
     console.error('manage-report-edit:error', error)
