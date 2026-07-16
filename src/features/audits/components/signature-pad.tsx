@@ -3,6 +3,7 @@ import { Image, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react
 import * as ImagePicker from 'expo-image-picker';
 import { brandColors } from '../../../../constants/theme';
 import SignatureScreen, { SignatureViewRef } from 'react-native-signature-canvas';
+import { AppNoticeModal } from '../../../components/AppNoticeModal';
 
 export type SignatureInputType = 'drawn' | 'uploaded';
 
@@ -22,6 +23,7 @@ export default function SignaturePad({ title, penColor, previewUri, previewType,
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isDrawingRef = useRef(false);
   const [hasWebSignature, setHasWebSignature] = useState(false);
+  const [permissionNotice, setPermissionNotice] = useState(false);
   const showUploadedPreview = Boolean(previewUri && previewType === 'uploaded');
   const uploadedPreviewUri = showUploadedPreview ? previewUri : null;
 
@@ -120,7 +122,7 @@ export default function SignaturePad({ title, penColor, previewUri, previewType,
   const handleUploadSignature = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      alert('Se requieren permisos para acceder a la galeria.');
+      setPermissionNotice(true);
       return;
     }
 
@@ -193,6 +195,13 @@ export default function SignaturePad({ title, penColor, previewUri, previewType,
           <Text style={styles.secondaryButtonText}>Subir imagen</Text>
         </TouchableOpacity>
       </View>
+      <AppNoticeModal
+        visible={permissionNotice}
+        title="Permiso de galería requerido"
+        message="Habilita el acceso a tus imágenes desde la configuración del dispositivo para seleccionar una firma."
+        variant="warning"
+        onConfirm={() => setPermissionNotice(false)}
+      />
     </View>
   );
 }

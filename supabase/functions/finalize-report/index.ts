@@ -68,6 +68,7 @@ type AnswerRow = {
   value: 'cumple' | 'no_cumple'
   observation: string | null
   evidence_url: string | null
+  evidence_urls?: string[] | null
   numeric_value_theoretical: number | null
   numeric_value_physical: number | null
   numeric_value_current: number | null
@@ -240,6 +241,13 @@ function imageHtml(url: string | null | undefined, alt: string) {
   </a>`
 }
 
+function evidenceImagesHtml(answer: AnswerRow, alt: string) {
+  const references = Array.isArray(answer.evidence_urls) && answer.evidence_urls.length > 0
+    ? answer.evidence_urls
+    : answer.evidence_url ? [answer.evidence_url] : []
+  return references.map((reference, index) => imageHtml(reference, `${alt} ${index + 1}`)).join('')
+}
+
 function numericRows(answer: AnswerRow) {
   const items = Array.isArray(answer.numeric_items) ? answer.numeric_items : []
 
@@ -366,7 +374,7 @@ function renderQuestionDetail(answer: AnswerRow, index: number) {
   const questionText = answer.checklist_questions?.question_text || 'Pregunta'
   const result = answer.value === 'cumple' ? 'SI CUMPLE' : 'NO CUMPLE'
   const resultColor = answer.value === 'cumple' ? emailColors.greenDark : emailColors.danger
-  const evidence = imageHtml(answer.evidence_url, `Evidencia pregunta ${index + 1}`)
+  const evidence = evidenceImagesHtml(answer, `Evidencia pregunta ${index + 1}`)
   const rows = numericRows(answer)
   let numericBlock = ''
 
@@ -424,7 +432,7 @@ function renderQuestionDetail(answer: AnswerRow, index: number) {
 }
 
 function renderNoveltySection(answers: AnswerRow[]) {
-  const novelties = answers.filter((answer) => questionType(answer) === 'additional_novelty' && ((answer.observation || '').trim() || answer.evidence_url))
+  const novelties = answers.filter((answer) => questionType(answer) === 'additional_novelty' && ((answer.observation || '').trim() || answer.evidence_url || (answer.evidence_urls?.length || 0) > 0))
 
   if (novelties.length === 0) {
     return `<p style="margin:0; color:${emailColors.textSecondary};">Sin novedades adicionales.</p>`
@@ -433,7 +441,7 @@ function renderNoveltySection(answers: AnswerRow[]) {
   return novelties.map((answer, index) => `
     <div style="border:1px solid ${emailColors.border}; border-radius:8px; padding:16px; margin-bottom:10px;">
       <p style="margin:0 0 6px 0;"><strong>Novedad ${index + 1}:</strong> ${escapeHtml(answer.observation || 'Sin texto')}</p>
-      ${imageHtml(answer.evidence_url, `Novedad ${index + 1}`)}
+      ${evidenceImagesHtml(answer, `Novedad ${index + 1}`)}
     </div>
   `).join('')
 }
@@ -569,15 +577,17 @@ Deno.serve(async (req) => {
 
     const { data: answers, error: errAnswers } = await supabase
       .from('audit_answers_final')
-      .select('question_id, value, observation, evidence_url, numeric_value_theoretical, numeric_value_physical, numeric_value_current, numeric_value_previous, numeric_items, checklist_questions(question_text, score_points, question_type, is_scored, sort_order)')
+      .select('question_id, value, observation, evidence_url, evidence_urls, numeric_value_theoretical, numeric_value_physical, numeric_value_current, numeric_value_previous, numeric_items, checklist_questions(question_text, score_points, question_type, is_scored, sort_order)')
       .eq('report_id', reportId)
 
     if (errAnswers) throw new Error(`Error leyendo respuestas: ${errAnswers.message}`)
 
-    const finalAnswers = await Promise.all(((answers || []) as AnswerRow[]).sort(compareAnswerOrder).map(async (answer) => ({
-      ...answer,
-      evidence_url: await signedEvidenceReference(supabase, answer.evidence_url),
-    })))
+    const finalAnswers = await Promise.all(((answers || []) as AnswerRow[]).sort(compareAnswerOrder).map(async (answer) => {
+      const references = Array.isArray(answer.evidence_urls) && answer.evidence_urls.length > 0 ? answer.evidence_urls : answer.evidence_url ? [answer.evidence_url] : []
+      const signedReferences = await Promise.all(references.map((reference) => signedEvidenceReference(supabase, reference)))
+      const evidenceUrls = signedReferences.filter((reference): reference is string => Boolean(reference))
+      return { ...answer, evidence_url: evidenceUrls[0] || null, evidence_urls: evidenceUrls }
+    }))
     const visitType = report.visit_type_id || 'Visita'
     const localName = report.local_name_snapshot || report.locales?.nombre_local || report.local_codigo || 'Local'
     const localCode = report.local_code_snapshot || report.local_codigo || ''

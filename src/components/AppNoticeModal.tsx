@@ -11,8 +11,10 @@ type AppNoticeModalProps = {
   variant?: NoticeVariant;
   confirmLabel?: string;
   cancelLabel?: string;
+  neutralLabel?: string;
   onConfirm: () => void;
   onCancel?: () => void;
+  onNeutral?: () => void;
 };
 
 export function AppNoticeModal({
@@ -22,8 +24,10 @@ export function AppNoticeModal({
   variant = 'info',
   confirmLabel = 'Aceptar',
   cancelLabel,
+  neutralLabel,
   onConfirm,
   onCancel,
+  onNeutral,
 }: AppNoticeModalProps) {
   const accentStyle = variant === 'danger'
     ? styles.accentDanger
@@ -34,7 +38,7 @@ export function AppNoticeModal({
         : styles.accentInfo;
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel || onConfirm}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onNeutral || onCancel || onConfirm}>
       <View style={styles.backdrop}>
         <View style={styles.card}>
           <View style={[styles.accent, accentStyle]} />
@@ -42,6 +46,11 @@ export function AppNoticeModal({
           <Text style={styles.message}>{message}</Text>
 
           <View style={styles.actions}>
+            {neutralLabel && onNeutral ? (
+              <TouchableOpacity style={styles.secondaryButton} onPress={onNeutral} activeOpacity={0.84}>
+                <Text style={styles.secondaryButtonText}>{neutralLabel}</Text>
+              </TouchableOpacity>
+            ) : null}
             {cancelLabel && onCancel ? (
               <TouchableOpacity style={styles.secondaryButton} onPress={onCancel} activeOpacity={0.84}>
                 <Text style={styles.secondaryButtonText}>{cancelLabel}</Text>
