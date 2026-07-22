@@ -399,7 +399,7 @@ export default function InventoryModuleScreen() {
             placeholder="Buscar por local, auditor o fecha"
             placeholderTextColor={brandColors.textSecondary}
           />
-          <View style={styles.reportCutoffSelector} onPointerLeave={() => setShowCutoffFilterOptions(false)}>
+          <View style={styles.reportCutoffSelector}>
             <TouchableOpacity
               style={[styles.categoryDropdownButton, styles.reportCutoffButton]}
               onPress={() => setShowCutoffFilterOptions((current) => !current)}
@@ -409,7 +409,7 @@ export default function InventoryModuleScreen() {
             </TouchableOpacity>
 
             {showCutoffFilterOptions ? (
-              <View style={styles.reportCutoffPanel}>
+              <View style={styles.reportCutoffPanel} onPointerLeave={() => setShowCutoffFilterOptions(false)}>
                 <ScrollView style={styles.segmentSelectorScroll} nestedScrollEnabled>
                   {cutoffOptions.map((option) => (
                     <TouchableOpacity
