@@ -399,7 +399,7 @@ export default function InventoryModuleScreen() {
             placeholder="Buscar por local, auditor o fecha"
             placeholderTextColor={brandColors.textSecondary}
           />
-          <View style={styles.reportCutoffSelector}>
+          <View style={styles.reportCutoffSelector} onPointerLeave={() => setShowCutoffFilterOptions(false)}>
             <TouchableOpacity
               style={[styles.categoryDropdownButton, styles.reportCutoffButton]}
               onPress={() => setShowCutoffFilterOptions((current) => !current)}

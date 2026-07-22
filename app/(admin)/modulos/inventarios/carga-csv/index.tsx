@@ -874,7 +874,12 @@ export default function InventoryCsvUploadScreen() {
                     </View>
 
                     <View style={[styles.evidenceMiniActions, { flex: 1, minWidth: 420 }]}>
-                      <View style={[styles.field, { minWidth: 190, flex: 1, position: 'relative', zIndex: openCategoryIndex === index ? 30 : 1 }]}>
+                      <View
+                        style={[styles.field, { minWidth: 190, flex: 1, position: 'relative', zIndex: openCategoryIndex === index ? 30 : 1 }]}
+                        onPointerLeave={() => {
+                          if (openCategoryIndex === index) setOpenCategoryIndex(null);
+                        }}
+                      >
                         <TouchableOpacity
                           style={styles.input}
                           onPress={() => setOpenCategoryIndex(openCategoryIndex === index ? null : index)}

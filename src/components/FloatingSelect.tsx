@@ -22,7 +22,10 @@ export function FloatingSelect({ label, value, options, onChange, minWidth = 152
   const hasLabel = label.trim().length > 0;
 
   return (
-    <View style={[styles.wrapper, { minWidth }, open && styles.wrapperOpen, disabled && styles.wrapperDisabled]}>
+    <View
+      style={[styles.wrapper, { minWidth }, open && styles.wrapperOpen, disabled && styles.wrapperDisabled]}
+      onPointerLeave={() => setOpen(false)}
+    >
       {hasLabel ? <Text style={styles.label}>{label}</Text> : null}
       <TouchableOpacity
         style={[styles.trigger, disabled && styles.triggerDisabled]}
