@@ -602,7 +602,7 @@ function SegmentSelector({
   const selected = options.find((option) => option.value === value);
 
   return (
-    <View style={styles.segmentSelector}>
+    <View style={styles.segmentSelector} onPointerLeave={() => setOpen(false)}>
       <TouchableOpacity style={styles.segmentSelectorButton} onPress={() => setOpen((current) => !current)}>
         <Text style={selected ? styles.searchSelectorText : styles.searchSelectorPlaceholder}>{selected?.label || placeholder}</Text>
         <Text style={styles.categoryDropdownIcon}>{open ? '⌃' : '⌄'}</Text>

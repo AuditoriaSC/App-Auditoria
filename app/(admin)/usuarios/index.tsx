@@ -285,7 +285,7 @@ export default function UsuariosAdminPage() {
         const editable = canEditUser(user);
 
         return (
-          <View key={user.id} style={[styles.card, !user.is_active && styles.disabledCard]}>
+          <View key={user.id} style={[styles.card, editing && styles.cardEditing, !user.is_active && styles.disabledCard]}>
             <View style={styles.cardHeader}>
               <View style={styles.cardText}>
                 <Text style={styles.cardTitle}>{user.full_name || user.email}</Text>
@@ -412,6 +412,7 @@ const styles = StyleSheet.create({
   label: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 6 },
   searchInput: { height: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, paddingHorizontal: 12, backgroundColor: brandColors.white, color: brandColors.inputText, fontWeight: '700' },
   card: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 10 },
+  cardEditing: { position: 'relative', zIndex: 2000, elevation: 20 },
   disabledCard: { opacity: 0.62, backgroundColor: brandColors.creamSoft },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   cardText: { flex: 1 },
