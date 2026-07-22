@@ -544,7 +544,7 @@ export default function InventoryEvidenceScreen() {
         {message ? <Text style={styles.hint}>{message}</Text> : null}
 
         <Text style={styles.blockTitle}>Categoría de evidencia</Text>
-        <View style={styles.categoryDropdown} onPointerLeave={() => setShowCategoryOptions(false)}>
+        <View style={styles.categoryDropdown}>
           <TouchableOpacity
             style={styles.categoryDropdownButton}
             onPress={() => setShowCategoryOptions((current) => !current)}
@@ -554,7 +554,7 @@ export default function InventoryEvidenceScreen() {
           </TouchableOpacity>
 
           {showCategoryOptions ? (
-            <View style={styles.categoryDropdownPanel}>
+            <View style={styles.categoryDropdownPanel} onPointerLeave={() => setShowCategoryOptions(false)}>
               {categoryOptions.map((item) => (
                 <TouchableOpacity
                   key={item.value}

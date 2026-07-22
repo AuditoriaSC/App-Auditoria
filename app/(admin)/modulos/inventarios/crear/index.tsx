@@ -602,13 +602,13 @@ function SegmentSelector({
   const selected = options.find((option) => option.value === value);
 
   return (
-    <View style={styles.segmentSelector} onPointerLeave={() => setOpen(false)}>
+    <View style={styles.segmentSelector}>
       <TouchableOpacity style={styles.segmentSelectorButton} onPress={() => setOpen((current) => !current)}>
         <Text style={selected ? styles.searchSelectorText : styles.searchSelectorPlaceholder}>{selected?.label || placeholder}</Text>
         <Text style={styles.categoryDropdownIcon}>{open ? '⌃' : '⌄'}</Text>
       </TouchableOpacity>
       {open ? (
-        <View style={styles.segmentSelectorPanel}>
+        <View style={styles.segmentSelectorPanel} onPointerLeave={() => setOpen(false)}>
           <ScrollView style={styles.segmentSelectorScroll} nestedScrollEnabled>
             {options.map((option) => (
               <TouchableOpacity

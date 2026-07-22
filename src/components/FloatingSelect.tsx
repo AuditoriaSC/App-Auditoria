@@ -22,10 +22,7 @@ export function FloatingSelect({ label, value, options, onChange, minWidth = 152
   const hasLabel = label.trim().length > 0;
 
   return (
-    <View
-      style={[styles.wrapper, { minWidth }, open && styles.wrapperOpen, disabled && styles.wrapperDisabled]}
-      onPointerLeave={() => setOpen(false)}
-    >
+    <View style={[styles.wrapper, { minWidth }, open && styles.wrapperOpen, disabled && styles.wrapperDisabled]}>
       {hasLabel ? <Text style={styles.label}>{label}</Text> : null}
       <TouchableOpacity
         style={[styles.trigger, disabled && styles.triggerDisabled]}
@@ -40,7 +37,7 @@ export function FloatingSelect({ label, value, options, onChange, minWidth = 152
       </TouchableOpacity>
 
       {open ? (
-        <View style={[styles.menu, { top: hasLabel ? 70 : 46 }]}>
+        <View style={[styles.menu, { top: hasLabel ? 70 : 46 }]} onPointerLeave={() => setOpen(false)}>
           <ScrollView style={styles.scroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
             {options.map((option) => {
               const active = option.value === value;
