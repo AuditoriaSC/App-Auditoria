@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { brandColors } from '../../../../../constants/theme';
 import { supabase } from '../../../../../src/supabaseClient';
 import { InventoryShell, inventoryShellStyles as styles } from '../../../../../src/features/inventory/components/inventory-shell';
-import { listActiveResponsibles, ResponsibleRow } from '../../../../../src/services/responsiblesService';
+import { listActiveResponsibles, ResponsibleRow, searchResponsibles } from '../../../../../src/services/responsiblesService';
 
 type ProfileRow = {
   id: string;
@@ -225,6 +225,28 @@ export default function CreateInventoryReportScreen() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!profile || !responsibleSearchOpen) return;
+
+    let active = true;
+    const timer = setTimeout(async () => {
+      const { data, error } = await searchResponsibles(responsibleQuery, profile.role, profile.region);
+      if (!active) return;
+
+      if (error) {
+        setMessage('No se pudo buscar responsables: ' + error.message);
+        return;
+      }
+
+      setResponsibles((data || []).map(mapResponsibleRow));
+    }, 250);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [profile, responsibleQuery, responsibleSearchOpen]);
 
   const selectedCutoff = useMemo(() => {
     const month = Number(inventoryCutoffMonth);
