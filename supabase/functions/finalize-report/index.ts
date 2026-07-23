@@ -407,7 +407,7 @@ function renderDetailRows(answer: AnswerRow) {
   const depositTable = depositRows.length === 0 ? '' : `
     <p style="font-weight:700; color:${emailColors.coffeeDark};">Registro adicional de depósitos</p>
     <table style="width:100%; border-collapse:collapse; font-size:13px;">
-      <thead><tr style="background:${emailColors.cream};">${['Fecha', 'Registro cuaderno', 'Declarado sistema', 'Responsable'].map((header) => `<th style="border:1px solid ${emailColors.border}; padding:7px;">${header}</th>`).join('')}</tr></thead>
+      <thead><tr style="background:${emailColors.cream};">${['Fecha', 'Cuaderno', 'Sistema', 'Líder'].map((header) => `<th style="border:1px solid ${emailColors.border}; padding:7px;">${header}</th>`).join('')}</tr></thead>
       <tbody>${depositRows.map((row) => `<tr><td style="border:1px solid ${emailColors.border}; padding:7px;">${escapeHtml(row.record_date)}</td><td style="border:1px solid ${emailColors.border}; padding:7px;">$ ${formatNumber(row.notebook_amount)}</td><td style="border:1px solid ${emailColors.border}; padding:7px;">$ ${formatNumber(row.system_amount)}</td><td style="border:1px solid ${emailColors.border}; padding:7px;">${escapeHtml(responsible(row))}</td></tr>`).join('')}</tbody>
     </table>`
   return `${productTable}${depositTable}`

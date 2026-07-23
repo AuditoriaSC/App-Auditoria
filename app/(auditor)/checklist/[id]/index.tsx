@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { createElement, useEffect, useMemo, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import NetInfo from '@react-native-community/netinfo';
@@ -10,7 +10,6 @@ import SecureEvidenceImage from '../../../../src/features/audits/components/secu
 import { supabase } from '../../../../src/supabaseClient';
 import { offlineStorage } from '../../../../src/offlineStorage';
 import { AppNoticeModal } from '../../../../src/components/AppNoticeModal';
-import { FloatingSelect } from '../../../../src/components/FloatingSelect';
 import {
   DepositDeclarationRow,
   ProductWriteoffRow,
@@ -1255,12 +1254,12 @@ export default function ChecklistDinamicoPage() {
             {requiresComplianceAnswer(type) && q.dual_compliance && (
               <View style={styles.dualComplianceGrid}>
                 <ComplianceSelector
-                  label="Cumplimiento del Local"
+                  label="Local"
                   value={currentAnswer.localCompliance}
                   onChange={(value) => updateField(q.id, { localCompliance: value })}
                 />
                 <ComplianceSelector
-                  label="Cumplimiento del Líder"
+                  label="Líder"
                   value={currentAnswer.leaderCompliance}
                   onChange={(value) => updateField(q.id, { leaderCompliance: value })}
                 />
@@ -1468,7 +1467,23 @@ function DateField({ label, value, onChange }: { label: string; value: string; o
     <View style={styles.detailField}>
       <Text style={styles.detailLabel}>{label}</Text>
       {Platform.OS === 'web' ? (
-        <DateTimePicker value={date} mode="date" onChange={handleChange} />
+        createElement('input', {
+          type: 'date',
+          value,
+          onChange: (event: { target: { value: string } }) => onChange(event.target.value),
+          style: {
+            width: '100%',
+            minHeight: 44,
+            border: `1px solid ${brandColors.border}`,
+            borderRadius: 8,
+            padding: '0 10px',
+            backgroundColor: brandColors.white,
+            color: brandColors.inputText,
+            fontFamily: 'inherit',
+            fontWeight: 700,
+            boxSizing: 'border-box',
+          },
+        })
       ) : (
         <>
           <TouchableOpacity style={styles.detailInput} onPress={() => setOpen(true)}>
@@ -1485,29 +1500,83 @@ function ResponsibleField({
   value,
   options,
   onChange,
+  label = 'Responsable',
 }: {
   value: string;
   options: ResponsibleOption[];
   onChange: (responsible: ResponsibleOption) => void;
+  label?: string;
 }) {
+  const [visible, setVisible] = useState(false);
+  const [query, setQuery] = useState('');
+  const selected = options.find((item) => item.id === value);
+  const normalizedQuery = query.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const filtered = options.filter((item) => {
+    const searchable = `${item.responsible_code} ${item.responsible_name}`
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+    return !normalizedQuery || searchable.includes(normalizedQuery);
+  });
+
+  const close = () => {
+    setVisible(false);
+    setQuery('');
+  };
+
   return (
     <View style={styles.detailResponsible}>
-      <FloatingSelect
-        label="Responsable"
-        value={value}
-        options={[
-          { value: '', label: 'Seleccionar responsable' },
-          ...options.map((item) => ({
-            value: item.id,
-            label: `${item.responsible_code} · ${item.responsible_name}`,
-          })),
-        ]}
-        onChange={(id) => {
-          const selected = options.find((item) => item.id === id);
-          if (selected) onChange(selected);
-        }}
-        minWidth={220}
-      />
+      <Text style={styles.detailLabel}>{label}</Text>
+      <TouchableOpacity style={styles.responsibleTrigger} onPress={() => setVisible(true)}>
+        <Text
+          numberOfLines={2}
+          style={selected ? styles.responsibleTriggerText : styles.detailPlaceholder}
+        >
+          {selected
+            ? `${selected.responsible_code} · ${selected.responsible_name}`
+            : `Seleccionar ${label.toLowerCase()}`}
+        </Text>
+        <Text style={styles.responsibleTriggerIcon}>⌕</Text>
+      </TouchableOpacity>
+
+      <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
+        <View style={styles.responsibleModalBackdrop}>
+          <View style={styles.responsibleModalCard}>
+            <View style={styles.responsibleModalHeader}>
+              <Text style={styles.responsibleModalTitle}>Seleccionar {label.toLowerCase()}</Text>
+              <TouchableOpacity style={styles.responsibleModalClose} onPress={close}>
+                <Text style={styles.responsibleModalCloseText}>Cerrar</Text>
+              </TouchableOpacity>
+            </View>
+            <TextInput
+              autoFocus={Platform.OS === 'web'}
+              style={styles.responsibleSearch}
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Buscar por código o nombre"
+              placeholderTextColor={brandColors.inputPlaceholder}
+            />
+            <ScrollView style={styles.responsibleOptions} keyboardShouldPersistTaps="handled">
+              {filtered.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[styles.responsibleOption, item.id === value && styles.responsibleOptionActive]}
+                  onPress={() => {
+                    onChange(item);
+                    close();
+                  }}
+                >
+                  <Text style={styles.responsibleOptionCode}>{item.responsible_code}</Text>
+                  <Text style={styles.responsibleOptionName}>{item.responsible_name}</Text>
+                </TouchableOpacity>
+              ))}
+              {filtered.length === 0 ? (
+                <Text style={styles.responsibleEmpty}>No se encontraron responsables.</Text>
+              ) : null}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1528,35 +1597,38 @@ function ProductWriteoffTable({
   return (
     <View style={styles.detailTable}>
       <Text style={styles.detailTableTitle}>Detalle de bajas de productos</Text>
-      {rows.map((row, index) => (
+      {rows.map((row) => (
         <View key={row.id} style={styles.detailRow}>
-          <Text style={styles.detailRowNumber}>Línea {index + 1}</Text>
-          <DateField label="Fecha del lote" value={row.lotDate} onChange={(lotDate) => onChange(row.id, { lotDate })} />
-          <DateField label="Fecha de la baja" value={row.writeoffDate} onChange={(writeoffDate) => onChange(row.id, { writeoffDate })} />
-          <View style={[styles.detailField, styles.detailDescription]}>
-            <Text style={styles.detailLabel}>Descripción</Text>
-            <TextInput style={styles.detailInput} value={row.description} maxLength={500} onChangeText={(description) => onChange(row.id, { description })} placeholder="Producto dado de baja" placeholderTextColor={brandColors.inputPlaceholder} />
+          <View style={styles.detailRowToolbar}>
+            <ResponsibleField
+              value={row.responsibleId}
+              options={responsibles}
+              onChange={(responsible) => onChange(row.id, {
+                responsibleId: responsible.id,
+                responsibleCode: responsible.responsible_code,
+                responsibleName: responsible.responsible_name,
+              })}
+            />
+            <TouchableOpacity style={styles.removeDetailButton} onPress={() => onRemove(row.id)}>
+              <Text style={styles.removeDetailButtonText}>Eliminar</Text>
+            </TouchableOpacity>
           </View>
-          <View style={styles.detailField}>
-            <Text style={styles.detailLabel}>Cantidad</Text>
-            <TextInput style={styles.detailInput} value={row.quantity} keyboardType="decimal-pad" onChangeText={(quantity) => onChange(row.id, { quantity })} placeholder="0.00" placeholderTextColor={brandColors.inputPlaceholder} />
+          <View style={styles.detailFieldsGrid}>
+            <DateField label="Fecha del lote" value={row.lotDate} onChange={(lotDate) => onChange(row.id, { lotDate })} />
+            <DateField label="Fecha de la baja" value={row.writeoffDate} onChange={(writeoffDate) => onChange(row.id, { writeoffDate })} />
+            <View style={[styles.detailField, styles.detailDescription]}>
+              <Text style={styles.detailLabel}>Descripción</Text>
+              <TextInput style={styles.detailInput} value={row.description} maxLength={500} onChangeText={(description) => onChange(row.id, { description })} placeholder="Producto dado de baja" placeholderTextColor={brandColors.inputPlaceholder} />
+            </View>
+            <View style={styles.detailField}>
+              <Text style={styles.detailLabel}>Cantidad</Text>
+              <TextInput style={styles.detailInput} value={row.quantity} keyboardType="decimal-pad" onChangeText={(quantity) => onChange(row.id, { quantity })} placeholder="0.00" placeholderTextColor={brandColors.inputPlaceholder} />
+            </View>
           </View>
-          <ResponsibleField
-            value={row.responsibleId}
-            options={responsibles}
-            onChange={(responsible) => onChange(row.id, {
-              responsibleId: responsible.id,
-              responsibleCode: responsible.responsible_code,
-              responsibleName: responsible.responsible_name,
-            })}
-          />
-          <TouchableOpacity style={styles.removeDetailButton} onPress={() => onRemove(row.id)}>
-            <Text style={styles.removeDetailButtonText}>Eliminar</Text>
-          </TouchableOpacity>
         </View>
       ))}
-      <TouchableOpacity style={styles.secondaryButton} onPress={onAdd}>
-        <Text style={styles.secondaryButtonText}>Agregar línea de baja</Text>
+      <TouchableOpacity style={styles.compactAddButton} onPress={onAdd}>
+        <Text style={styles.secondaryButtonText}>+ Agregar baja</Text>
       </TouchableOpacity>
     </View>
   );
@@ -1578,34 +1650,38 @@ function DepositDeclarationTable({
   return (
     <View style={styles.detailTable}>
       <Text style={styles.detailTableTitle}>Registro adicional de depósitos</Text>
-      {rows.map((row, index) => (
+      {rows.map((row) => (
         <View key={row.id} style={styles.detailRow}>
-          <Text style={styles.detailRowNumber}>Línea {index + 1}</Text>
-          <DateField label="Fecha" value={row.date} onChange={(date) => onChange(row.id, { date })} />
-          <View style={styles.detailField}>
-            <Text style={styles.detailLabel}>Registro del cuaderno</Text>
-            <TextInput style={styles.detailInput} value={row.notebookAmount} keyboardType="decimal-pad" onChangeText={(notebookAmount) => onChange(row.id, { notebookAmount })} placeholder="$ 0.00" placeholderTextColor={brandColors.inputPlaceholder} />
+          <View style={styles.detailRowToolbar}>
+            <ResponsibleField
+              label="Líder"
+              value={row.responsibleId}
+              options={responsibles}
+              onChange={(responsible) => onChange(row.id, {
+                responsibleId: responsible.id,
+                responsibleCode: responsible.responsible_code,
+                responsibleName: responsible.responsible_name,
+              })}
+            />
+            <TouchableOpacity style={styles.removeDetailButton} onPress={() => onRemove(row.id)}>
+              <Text style={styles.removeDetailButtonText}>Eliminar</Text>
+            </TouchableOpacity>
           </View>
-          <View style={styles.detailField}>
-            <Text style={styles.detailLabel}>Declarado en sistema</Text>
-            <TextInput style={styles.detailInput} value={row.systemAmount} keyboardType="decimal-pad" onChangeText={(systemAmount) => onChange(row.id, { systemAmount })} placeholder="$ 0.00" placeholderTextColor={brandColors.inputPlaceholder} />
+          <View style={styles.depositFieldsGrid}>
+            <DateField label="Fecha" value={row.date} onChange={(date) => onChange(row.id, { date })} />
+            <View style={styles.detailField}>
+              <Text style={styles.detailLabel}>Cuaderno</Text>
+              <TextInput style={styles.detailInput} value={row.notebookAmount} keyboardType="decimal-pad" onChangeText={(notebookAmount) => onChange(row.id, { notebookAmount })} placeholder="$ 0.00" placeholderTextColor={brandColors.inputPlaceholder} />
+            </View>
+            <View style={styles.detailField}>
+              <Text style={styles.detailLabel}>Sistema</Text>
+              <TextInput style={styles.detailInput} value={row.systemAmount} keyboardType="decimal-pad" onChangeText={(systemAmount) => onChange(row.id, { systemAmount })} placeholder="$ 0.00" placeholderTextColor={brandColors.inputPlaceholder} />
+            </View>
           </View>
-          <ResponsibleField
-            value={row.responsibleId}
-            options={responsibles}
-            onChange={(responsible) => onChange(row.id, {
-              responsibleId: responsible.id,
-              responsibleCode: responsible.responsible_code,
-              responsibleName: responsible.responsible_name,
-            })}
-          />
-          <TouchableOpacity style={styles.removeDetailButton} onPress={() => onRemove(row.id)}>
-            <Text style={styles.removeDetailButtonText}>Eliminar</Text>
-          </TouchableOpacity>
         </View>
       ))}
-      <TouchableOpacity style={styles.secondaryButton} onPress={onAdd}>
-        <Text style={styles.secondaryButtonText}>Agregar registro</Text>
+      <TouchableOpacity style={styles.compactAddButton} onPress={onAdd}>
+        <Text style={styles.secondaryButtonText}>+ Agregar registro</Text>
       </TouchableOpacity>
     </View>
   );
@@ -1742,26 +1818,45 @@ const styles = StyleSheet.create({
   radioActiveNoCumple: { backgroundColor: brandColors.danger, borderColor: brandColors.danger, borderWidth: 2 },
   radioText: { fontWeight: '900', color: brandColors.textSecondary },
   textWhite: { color: brandColors.white },
-  dualComplianceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 4 },
-  complianceSection: { flexGrow: 1, flexBasis: 260, minWidth: 220 },
+  dualComplianceGrid: { gap: 2, marginBottom: 4 },
+  complianceSection: { width: '100%' },
   fieldLabel: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 6, marginTop: 8 },
   textArea: { borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 10, fontSize: 14, backgroundColor: brandColors.white, minHeight: 76, textAlignVertical: 'top', color: brandColors.inputText },
   numericGrid: { marginTop: 8, gap: 8 },
   numberField: { flex: 1 },
   detailTable: { marginTop: 14, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, backgroundColor: brandColors.creamSoft, gap: 10 },
   detailTableTitle: { color: brandColors.textPrimary, fontSize: 15, fontWeight: '900' },
-  detailRow: { position: 'relative', zIndex: 20, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 10, backgroundColor: brandColors.white, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: 8 },
-  detailRowNumber: { width: '100%', color: brandColors.greenDark, fontWeight: '900', fontSize: 12 },
+  detailRow: { borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 10, backgroundColor: brandColors.white, gap: 9 },
+  detailRowToolbar: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  detailFieldsGrid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: 8 },
+  depositFieldsGrid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: 8 },
   detailField: { flexGrow: 1, flexBasis: 145, minWidth: 130 },
   detailDescription: { flexBasis: 240 },
-  detailResponsible: { flexGrow: 1, flexBasis: 230, minWidth: 220, position: 'relative', zIndex: 100 },
+  detailResponsible: { flex: 1, minWidth: 0 },
   detailLabel: { color: brandColors.textSecondary, fontWeight: '900', fontSize: 11, marginBottom: 5 },
   detailInput: { minHeight: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingHorizontal: 10, backgroundColor: brandColors.white, color: brandColors.inputText, justifyContent: 'center' },
   detailInputText: { color: brandColors.inputText, fontWeight: '700' },
   detailPlaceholder: { color: brandColors.inputPlaceholder, fontWeight: '700' },
-  removeDetailButton: { minHeight: 44, borderWidth: 1, borderColor: brandColors.danger, borderRadius: 8, paddingHorizontal: 12, justifyContent: 'center', alignItems: 'center', backgroundColor: brandColors.white },
+  responsibleTrigger: { minHeight: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingHorizontal: 10, backgroundColor: brandColors.white, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  responsibleTriggerText: { flex: 1, color: brandColors.inputText, fontWeight: '800', lineHeight: 17 },
+  responsibleTriggerIcon: { color: brandColors.greenDark, fontWeight: '900', fontSize: 18 },
+  responsibleModalBackdrop: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.42)', justifyContent: 'center', padding: 18 },
+  responsibleModalCard: { width: '100%', maxWidth: 620, maxHeight: '82%', alignSelf: 'center', borderWidth: 1, borderColor: brandColors.border, borderRadius: 10, padding: 16, backgroundColor: brandColors.white },
+  responsibleModalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 },
+  responsibleModalTitle: { flex: 1, color: brandColors.textPrimary, fontSize: 17, fontWeight: '900' },
+  responsibleModalClose: { borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingHorizontal: 10, minHeight: 38, justifyContent: 'center', backgroundColor: brandColors.creamSoft },
+  responsibleModalCloseText: { color: brandColors.greenDark, fontWeight: '900' },
+  responsibleSearch: { minHeight: 46, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingHorizontal: 11, color: brandColors.inputText, backgroundColor: brandColors.white, fontWeight: '700', marginBottom: 10 },
+  responsibleOptions: { maxHeight: 360 },
+  responsibleOption: { borderTopWidth: 1, borderTopColor: brandColors.border, paddingVertical: 11, paddingHorizontal: 8 },
+  responsibleOptionActive: { backgroundColor: brandColors.greenSoft },
+  responsibleOptionCode: { color: brandColors.greenDark, fontSize: 11, fontWeight: '900' },
+  responsibleOptionName: { color: brandColors.textPrimary, fontWeight: '800', marginTop: 2 },
+  responsibleEmpty: { color: brandColors.textSecondary, textAlign: 'center', paddingVertical: 24, fontWeight: '700' },
+  removeDetailButton: { minHeight: 44, borderWidth: 1, borderColor: brandColors.danger, borderRadius: 8, paddingHorizontal: 11, justifyContent: 'center', alignItems: 'center', backgroundColor: brandColors.white },
   removeDetailButtonText: { color: brandColors.danger, fontWeight: '900' },
   secondaryButton: { minHeight: 44, borderWidth: 1, borderColor: brandColors.greenDark, borderRadius: 8, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: brandColors.white },
+  compactAddButton: { minHeight: 38, alignSelf: 'flex-start', borderWidth: 1, borderColor: brandColors.greenDark, borderRadius: 8, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: brandColors.white },
   secondaryButtonText: { color: brandColors.greenDark, fontWeight: '900' },
   input: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingHorizontal: 10, backgroundColor: brandColors.white, fontSize: 15, color: brandColors.inputText },
   differenceText: { color: brandColors.greenDark, fontWeight: '900', marginTop: 2 },
