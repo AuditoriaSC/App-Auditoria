@@ -233,9 +233,19 @@ function parseNumber(value: string) {
   const trimmed = value.trim().replace(/\s/g, '').replace(/\$/g, '');
   if (!trimmed) return null;
 
-  const normalized = trimmed.includes(',') && trimmed.includes('.')
-    ? trimmed.replace(/,/g, '')
-    : trimmed.replace(',', '.');
+  const lastComma = trimmed.lastIndexOf(',');
+  const lastDot = trimmed.lastIndexOf('.');
+  let normalized = trimmed;
+
+  if (lastComma >= 0 && lastDot >= 0) {
+    normalized = lastComma > lastDot
+      ? trimmed.replace(/\./g, '').replace(',', '.')
+      : trimmed.replace(/,/g, '');
+  } else if (lastComma >= 0) {
+    normalized = trimmed.replace(',', '.');
+  } else if (/^[+-]?\d{1,3}(?:\.\d{3})+$/.test(trimmed)) {
+    normalized = trimmed.replace(/\./g, '');
+  }
 
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
