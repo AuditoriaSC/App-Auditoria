@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -18,14 +18,30 @@ interface AuditReport {
   } | null;
 }
 
+const REPORTS_PER_PAGE = 10;
+
 export default function HistoricoAuditoriasPage() {
   const [reports, setReports] = useState<AuditReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Cuando se agreguen filtros o búsqueda, deben producir esta colección antes
+  // de paginar. Así cada página siempre contiene 10 resultados ya filtrados.
+  const filteredReports = reports;
+  const pageCount = Math.max(1, Math.ceil(filteredReports.length / REPORTS_PER_PAGE));
+  const paginatedReports = useMemo(() => {
+    const start = (currentPage - 1) * REPORTS_PER_PAGE;
+    return filteredReports.slice(start, start + REPORTS_PER_PAGE);
+  }, [currentPage, filteredReports]);
 
   useEffect(() => {
     fetchFinishedReports();
   }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filteredReports]);
 
   const fetchFinishedReports = async () => {
     setLoading(true);
@@ -115,7 +131,7 @@ export default function HistoricoAuditoriasPage() {
       {reports.length === 0 ? (
         <Text style={styles.emptyText}>No se encuentran reportes consolidados.</Text>
       ) : (
-        reports.map((report) => {
+        paginatedReports.map((report) => {
           const localGrade = report.local_final_grade ?? report.final_grade;
           const esAprobado = localGrade >= 8.5;
           return (
@@ -136,6 +152,28 @@ export default function HistoricoAuditoriasPage() {
           );
         })
       )}
+
+      {pageCount > 1 ? (
+        <View style={styles.pagination}>
+          <TouchableOpacity
+            style={[styles.pageButton, currentPage === 1 && styles.pageButtonDisabled]}
+            disabled={currentPage === 1}
+            accessibilityLabel="Página anterior"
+            onPress={() => setCurrentPage((page) => Math.max(1, page - 1))}
+          >
+            <Text style={[styles.pageButtonText, currentPage === 1 && styles.pageButtonTextDisabled]}>←</Text>
+          </TouchableOpacity>
+          <Text style={styles.pageStatus}>Página {currentPage} de {pageCount}</Text>
+          <TouchableOpacity
+            style={[styles.pageButton, currentPage === pageCount && styles.pageButtonDisabled]}
+            disabled={currentPage === pageCount}
+            accessibilityLabel="Página siguiente"
+            onPress={() => setCurrentPage((page) => Math.min(pageCount, page + 1))}
+          >
+            <Text style={[styles.pageButtonText, currentPage === pageCount && styles.pageButtonTextDisabled]}>→</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
     </ScrollView>
   );
 }
@@ -161,4 +199,10 @@ const styles = StyleSheet.create({
   percentageText: { fontSize: 12, color: brandColors.textSecondary, fontWeight: '500', marginTop: 2 },
   textGreen: { color: brandColors.success },
   textRed: { color: brandColors.danger },
+  pagination: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: brandColors.border },
+  pageButton: { width: 42, height: 40, borderWidth: 1, borderColor: brandColors.greenDark, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: brandColors.white },
+  pageButtonDisabled: { borderColor: brandColors.border, backgroundColor: brandColors.creamSoft },
+  pageButtonText: { color: brandColors.greenDark, fontWeight: '900', fontSize: 20, lineHeight: 22 },
+  pageButtonTextDisabled: { color: brandColors.inputPlaceholder },
+  pageStatus: { color: brandColors.textSecondary, fontWeight: '800', fontSize: 12, textAlign: 'center' },
 });
