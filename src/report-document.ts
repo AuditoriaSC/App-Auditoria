@@ -43,7 +43,7 @@ export async function buildReportDocumentHtml(reportId: string) {
       ? `<table><thead><tr><th>Fecha lote</th><th>Fecha baja</th><th>Descripción</th><th>Cantidad</th><th>Responsable</th></tr></thead><tbody>${productRows.map((row) => `<tr><td>${escapeHtml(row.lot_date)}</td><td>${escapeHtml(row.writeoff_date)}</td><td>${escapeHtml(row.description)}</td><td>${Number(row.quantity || 0).toFixed(2)}</td><td>${escapeHtml(responsible(row))}</td></tr>`).join('')}</tbody></table>`
       : '';
     const depositTable = depositRows.length > 0
-      ? `<table><thead><tr><th>Fecha</th><th>Registro cuaderno</th><th>Declarado sistema</th><th>Responsable</th></tr></thead><tbody>${depositRows.map((row) => `<tr><td>${escapeHtml(row.record_date)}</td><td>$ ${Number(row.notebook_amount || 0).toFixed(2)}</td><td>$ ${Number(row.system_amount || 0).toFixed(2)}</td><td>${escapeHtml(responsible(row))}</td></tr>`).join('')}</tbody></table>`
+      ? `<table><thead><tr><th>Fecha</th><th>Cuaderno</th><th>Sistema</th><th>Líder</th></tr></thead><tbody>${depositRows.map((row) => `<tr><td>${escapeHtml(row.record_date)}</td><td>$ ${Number(row.notebook_amount || 0).toFixed(2)}</td><td>$ ${Number(row.system_amount || 0).toFixed(2)}</td><td>${escapeHtml(responsible(row))}</td></tr>`).join('')}</tbody></table>`
       : '';
     const compliance = dual
       ? `<p><strong>Cumplimiento del Local:</strong> ${(answer.local_compliance || answer.value) === 'cumple' ? 'Cumple' : 'No cumple'}</p><p><strong>Cumplimiento del Líder:</strong> ${answer.leader_compliance === 'cumple' ? 'Cumple' : answer.leader_compliance === 'no_cumple' ? 'No cumple' : 'Sin información'}</p>`
