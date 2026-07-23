@@ -30,7 +30,7 @@ const emailColors = {
   danger: '#B23B32',
 }
 
-type QuestionType = 'compliance' | 'cash_count' | 'pending_deposit' | 'inventory' | 'cup_count' | 'raw_material_count' | 'follow_up' | 'additional_novelty'
+type QuestionType = 'compliance' | 'cash_count' | 'pending_deposit' | 'product_writeoff' | 'inventory' | 'cup_count' | 'raw_material_count' | 'follow_up' | 'additional_novelty'
 
 type ReportRow = {
   id: string
@@ -40,6 +40,8 @@ type ReportRow = {
   status: string | null
   final_grade: number | null
   final_percentage: number | null
+  local_final_grade: number | null
+  leader_final_grade: number | null
   local_codigo: string | null
   local_code_snapshot: string | null
   local_name_snapshot: string | null
@@ -74,13 +76,32 @@ type AnswerRow = {
   numeric_value_current: number | null
   numeric_value_previous: number | null
   numeric_items: Array<Record<string, unknown>> | null
+  local_compliance: 'cumple' | 'no_cumple' | null
+  leader_compliance: 'cumple' | 'no_cumple' | null
+  detail_rows?: DetailRow[]
   checklist_questions?: {
     question_text: string | null
     score_points: number | null
     question_type: QuestionType | string | null
     is_scored: boolean | null
     sort_order: number | null
+    dual_compliance: boolean | null
   } | null
+}
+
+type DetailRow = {
+  question_id: string
+  row_kind: 'product_writeoff' | 'deposit_declaration'
+  sort_order: number
+  lot_date: string | null
+  writeoff_date: string | null
+  description: string | null
+  quantity: number | null
+  record_date: string | null
+  notebook_amount: number | null
+  system_amount: number | null
+  responsible_code_snapshot: string | null
+  responsible_name_snapshot: string
 }
 
 const corsHeaders = {
@@ -369,11 +390,39 @@ function renderDepositData(answer: AnswerRow) {
   `
 }
 
+function renderDetailRows(answer: AnswerRow) {
+  const rows = [...(answer.detail_rows || [])].sort((left, right) => left.sort_order - right.sort_order)
+  if (rows.length === 0) return ''
+  const productRows = rows.filter((row) => row.row_kind === 'product_writeoff')
+  const depositRows = rows.filter((row) => row.row_kind === 'deposit_declaration')
+  const responsible = (row: DetailRow) => row.responsible_code_snapshot
+    ? `${row.responsible_code_snapshot} · ${row.responsible_name_snapshot}`
+    : row.responsible_name_snapshot
+  const productTable = productRows.length === 0 ? '' : `
+    <p style="font-weight:700; color:${emailColors.coffeeDark};">Bajas de productos</p>
+    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+      <thead><tr style="background:${emailColors.cream};">${['Fecha lote', 'Fecha baja', 'Descripción', 'Cantidad', 'Responsable'].map((header) => `<th style="border:1px solid ${emailColors.border}; padding:7px;">${header}</th>`).join('')}</tr></thead>
+      <tbody>${productRows.map((row) => `<tr><td style="border:1px solid ${emailColors.border}; padding:7px;">${escapeHtml(row.lot_date)}</td><td style="border:1px solid ${emailColors.border}; padding:7px;">${escapeHtml(row.writeoff_date)}</td><td style="border:1px solid ${emailColors.border}; padding:7px;">${escapeHtml(row.description)}</td><td style="border:1px solid ${emailColors.border}; padding:7px;">${formatNumber(row.quantity)}</td><td style="border:1px solid ${emailColors.border}; padding:7px;">${escapeHtml(responsible(row))}</td></tr>`).join('')}</tbody>
+    </table>`
+  const depositTable = depositRows.length === 0 ? '' : `
+    <p style="font-weight:700; color:${emailColors.coffeeDark};">Registro adicional de depósitos</p>
+    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+      <thead><tr style="background:${emailColors.cream};">${['Fecha', 'Registro cuaderno', 'Declarado sistema', 'Responsable'].map((header) => `<th style="border:1px solid ${emailColors.border}; padding:7px;">${header}</th>`).join('')}</tr></thead>
+      <tbody>${depositRows.map((row) => `<tr><td style="border:1px solid ${emailColors.border}; padding:7px;">${escapeHtml(row.record_date)}</td><td style="border:1px solid ${emailColors.border}; padding:7px;">$ ${formatNumber(row.notebook_amount)}</td><td style="border:1px solid ${emailColors.border}; padding:7px;">$ ${formatNumber(row.system_amount)}</td><td style="border:1px solid ${emailColors.border}; padding:7px;">${escapeHtml(responsible(row))}</td></tr>`).join('')}</tbody>
+    </table>`
+  return `${productTable}${depositTable}`
+}
+
 function renderQuestionDetail(answer: AnswerRow, index: number) {
   const type = questionType(answer)
   const questionText = answer.checklist_questions?.question_text || 'Pregunta'
   const result = answer.value === 'cumple' ? 'SI CUMPLE' : 'NO CUMPLE'
   const resultColor = answer.value === 'cumple' ? emailColors.greenDark : emailColors.danger
+  const localResult = (answer.local_compliance || answer.value) === 'cumple' ? 'SI CUMPLE' : 'NO CUMPLE'
+  const leaderResult = answer.leader_compliance === 'cumple' ? 'SI CUMPLE' : answer.leader_compliance === 'no_cumple' ? 'NO CUMPLE' : 'Sin información'
+  const dualResult = answer.checklist_questions?.dual_compliance
+    ? `<p style="margin:0 0 4px 0;"><strong>Cumplimiento del Local:</strong> ${localResult}</p><p style="margin:0 0 4px 0;"><strong>Cumplimiento del Líder:</strong> ${leaderResult}</p>`
+    : `<p style="margin:0 0 4px 0;"><strong>Resultado:</strong> <span style="color:${resultColor}; font-weight:700;">${result}</span></p>`
   const evidence = evidenceImagesHtml(answer, `Evidencia pregunta ${index + 1}`)
   const rows = numericRows(answer)
   let numericBlock = ''
@@ -422,10 +471,11 @@ function renderQuestionDetail(answer: AnswerRow, index: number) {
   return `
     <div style="border:1px solid ${emailColors.border}; border-radius:8px; padding:12px; margin-bottom:10px; background:${answer.value === 'cumple' ? emailColors.white : emailColors.creamSoft};">
       <p style="margin:0 0 6px 0; font-weight:700; color:${emailColors.textPrimary};">${index + 1}. ${escapeHtml(questionText)}</p>
-      <p style="margin:0 0 4px 0;"><strong>Resultado:</strong> <span style="color:${resultColor}; font-weight:700;">${result}</span></p>
+      ${dualResult}
       <p style="margin:0 0 4px 0;"><strong>Puntaje:</strong> ${formatNumber(obtainedPoints(answer))} / ${formatNumber(possiblePoints(answer))}</p>
       <p style="margin:0 0 6px 0;"><strong>Observaciones:</strong> ${escapeHtml(answer.observation || 'Sin observaciones')}</p>
       ${numericBlock}
+      ${renderDetailRows(answer)}
       ${evidence ? `<div style="margin-top:8px;"><strong>Evidencias:</strong><br/>${evidence}</div>` : ''}
     </div>
   `
@@ -460,7 +510,8 @@ function buildHeaderTable(report: ReportRow) {
     { label: 'Hora Inicio', value: formatTime(report.start_time) },
     { label: 'Responsable Auditado', value: responsible },
     { label: 'Hora de Finalización', value: formatTime(report.end_time) },
-    { label: 'Calificación', value: renderGradeBadge(report.final_grade), isHtml: true },
+    { label: 'Calificación del Local', value: renderGradeBadge(report.local_final_grade ?? report.final_grade), isHtml: true },
+    { label: 'Calificación del Líder', value: report.leader_final_grade === null ? 'Sin información' : renderGradeBadge(report.leader_final_grade), isHtml: report.leader_final_grade !== null },
   ]
 
   return `
@@ -537,7 +588,7 @@ Deno.serve(async (req) => {
 
     const { data: report, error: errReport } = await supabase
       .from('audit_reports')
-      .select('id, user_id, region, visit_type_id, status, final_grade, final_percentage, local_codigo, local_code_snapshot, local_name_snapshot, auditor_name_snapshot, responsible_code, responsible_name_snapshot, start_date, start_time, end_time, should_send, edited_after_send, last_edit_reason, last_edited_at, resent_count, last_resent_at, signature_auditor_url, signature_responsible_url, auditor_signature_url, responsible_signature_url, profiles!audit_reports_user_id_fkey(full_name, email), locales(nombre_local)')
+      .select('id, user_id, region, visit_type_id, status, final_grade, final_percentage, local_final_grade, leader_final_grade, local_codigo, local_code_snapshot, local_name_snapshot, auditor_name_snapshot, responsible_code, responsible_name_snapshot, start_date, start_time, end_time, should_send, edited_after_send, last_edit_reason, last_edited_at, resent_count, last_resent_at, signature_auditor_url, signature_responsible_url, auditor_signature_url, responsible_signature_url, profiles!audit_reports_user_id_fkey(full_name, email), locales(nombre_local)')
       .eq('id', reportId)
       .single<ReportRow>()
 
@@ -577,16 +628,25 @@ Deno.serve(async (req) => {
 
     const { data: answers, error: errAnswers } = await supabase
       .from('audit_answers_final')
-      .select('question_id, value, observation, evidence_url, evidence_urls, numeric_value_theoretical, numeric_value_physical, numeric_value_current, numeric_value_previous, numeric_items, checklist_questions(question_text, score_points, question_type, is_scored, sort_order)')
+      .select('question_id, value, local_compliance, leader_compliance, observation, evidence_url, evidence_urls, numeric_value_theoretical, numeric_value_physical, numeric_value_current, numeric_value_previous, numeric_items, checklist_questions(question_text, score_points, question_type, is_scored, sort_order, dual_compliance)')
       .eq('report_id', reportId)
 
     if (errAnswers) throw new Error(`Error leyendo respuestas: ${errAnswers.message}`)
+
+    const { data: detailRows, error: detailRowsError } = await supabase
+      .from('audit_answer_detail_rows')
+      .select('question_id, row_kind, sort_order, lot_date, writeoff_date, description, quantity, record_date, notebook_amount, system_amount, responsible_code_snapshot, responsible_name_snapshot')
+      .eq('report_id', reportId)
+      .not('final_answer_id', 'is', null)
+    if (detailRowsError) throw new Error(`Error leyendo líneas: ${detailRowsError.message}`)
+    const detailsByQuestion = new Map<string, DetailRow[]>()
+    ;((detailRows || []) as DetailRow[]).forEach((row) => detailsByQuestion.set(row.question_id, [...(detailsByQuestion.get(row.question_id) || []), row]))
 
     const finalAnswers = await Promise.all(((answers || []) as AnswerRow[]).sort(compareAnswerOrder).map(async (answer) => {
       const references = Array.isArray(answer.evidence_urls) && answer.evidence_urls.length > 0 ? answer.evidence_urls : answer.evidence_url ? [answer.evidence_url] : []
       const signedReferences = await Promise.all(references.map((reference) => signedEvidenceReference(supabase, reference)))
       const evidenceUrls = signedReferences.filter((reference): reference is string => Boolean(reference))
-      return { ...answer, evidence_url: evidenceUrls[0] || null, evidence_urls: evidenceUrls }
+      return { ...answer, evidence_url: evidenceUrls[0] || null, evidence_urls: evidenceUrls, detail_rows: detailsByQuestion.get(answer.question_id) || [] }
     }))
     const visitType = report.visit_type_id || 'Visita'
     const localName = report.local_name_snapshot || report.locales?.nombre_local || report.local_codigo || 'Local'

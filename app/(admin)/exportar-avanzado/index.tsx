@@ -14,6 +14,8 @@ type ReportRow = {
   visit_type_id: string | null;
   final_grade: number | null;
   final_percentage: number | null;
+  local_final_grade: number | null;
+  leader_final_grade: number | null;
   updated_at: string | null;
   profiles: { full_name: string | null } | { full_name: string | null }[] | null;
 };
@@ -57,7 +59,7 @@ export default function ExportacionAvanzadaPage() {
     try {
       let query = supabase
         .from('audit_reports')
-        .select('id, region, visit_type_id, final_grade, final_percentage, updated_at, profiles!audit_reports_user_id_fkey(full_name)')
+        .select('id, region, visit_type_id, final_grade, final_percentage, local_final_grade, leader_final_grade, updated_at, profiles!audit_reports_user_id_fkey(full_name)')
         .eq('status', 'finalized');
 
       if (regionFilter !== 'TODAS') {
@@ -77,12 +79,11 @@ export default function ExportacionAvanzadaPage() {
       }
 
       let csvContent = '\uFEFF';
-      csvContent += 'ID Reporte;Región;Tipo de Visita;Auditor Evaluador;Calificación;Porcentaje de Cumplimiento;Fecha de Sello\n';
+      csvContent += 'ID Reporte;Región;Tipo de Visita;Auditor Evaluador;Calificación Local;Calificación Líder;Fecha de Sello\n';
 
       (reports as unknown as ReportRow[]).forEach((report) => {
         const profile = Array.isArray(report.profiles) ? report.profiles[0] : report.profiles;
         const auditor = profile?.full_name ? profile.full_name.replace(/;/g, ' ') : 'Anónimo';
-        const percentage = `${report.final_percentage ?? 0}%`;
         const date = report.updated_at ? report.updated_at.substring(0, 10) : '';
 
         csvContent += [
@@ -90,8 +91,8 @@ export default function ExportacionAvanzadaPage() {
           report.region || 'No especificada',
           report.visit_type_id || 'Ordinaria',
           auditor,
-          report.final_grade ?? 0,
-          percentage,
+          report.local_final_grade ?? report.final_grade ?? 0,
+          report.leader_final_grade ?? '',
           date,
         ].join(';') + '\n';
       });

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import NetInfo from '@react-native-community/netinfo';
 import { brandColors } from '../../../../constants/theme';
 import { useDashboardBackHandler } from '../../../../src/navigation/useDashboardBackHandler';
@@ -9,9 +10,18 @@ import SecureEvidenceImage from '../../../../src/features/audits/components/secu
 import { supabase } from '../../../../src/supabaseClient';
 import { offlineStorage } from '../../../../src/offlineStorage';
 import { AppNoticeModal } from '../../../../src/components/AppNoticeModal';
+import { FloatingSelect } from '../../../../src/components/FloatingSelect';
+import {
+  DepositDeclarationRow,
+  ProductWriteoffRow,
+  calculateDualScore,
+  createStableRowId,
+  validateDepositDeclarationRow,
+  validateProductWriteoffRow,
+} from '../../../../src/features/audits/domain/dual-compliance';
 
 type AnswerValue = 'cumple' | 'no_cumple' | null;
-type QuestionType = 'compliance' | 'cash_count' | 'pending_deposit' | 'inventory' | 'cup_count' | 'raw_material_count' | 'follow_up' | 'additional_novelty';
+type QuestionType = 'compliance' | 'cash_count' | 'pending_deposit' | 'product_writeoff' | 'inventory' | 'cup_count' | 'raw_material_count' | 'follow_up' | 'additional_novelty';
 
 interface CountItem {
   label: string;
@@ -37,6 +47,7 @@ interface Question {
   max_evidence?: number | null;
   numeric_mode?: string | null;
   item_schema?: { label?: string; name?: string; unit?: string; cross_group?: string; crossGroup?: string; conversion_factor?: number; conversionFactor?: number }[] | null;
+  dual_compliance?: boolean | null;
 }
 
 interface AnswerState {
@@ -52,6 +63,10 @@ interface AnswerState {
   currentShift: string;
   previousShift: string;
   countItems: CountItem[];
+  localCompliance: AnswerValue;
+  leaderCompliance: AnswerValue;
+  productWriteoffRows: ProductWriteoffRow[];
+  depositDeclarationRows: DepositDeclarationRow[];
 }
 
 interface DraftAnswerRow {
@@ -73,6 +88,31 @@ interface DraftAnswerRow {
     cross_group?: string | null;
     conversion_factor?: number | null;
   }[] | null;
+  local_compliance: AnswerValue;
+  leader_compliance: AnswerValue;
+  detail_rows?: DetailRowPayload[];
+}
+
+interface DetailRowPayload {
+  id: string;
+  row_kind: 'product_writeoff' | 'deposit_declaration';
+  sort_order: number;
+  lot_date: string | null;
+  writeoff_date: string | null;
+  description: string | null;
+  quantity: number | null;
+  record_date: string | null;
+  notebook_amount: number | null;
+  system_amount: number | null;
+  responsible_id: string;
+  responsible_code_snapshot: string | null;
+  responsible_name_snapshot: string;
+}
+
+interface ResponsibleOption {
+  id: string;
+  responsible_code: string;
+  responsible_name: string;
 }
 
 interface ReportHeader {
@@ -132,6 +172,10 @@ const emptyAnswer: AnswerState = {
   currentShift: '',
   previousShift: '',
   countItems: [],
+  localCompliance: null,
+  leaderCompliance: null,
+  productWriteoffRows: [],
+  depositDeclarationRows: [],
 };
 
 const appLogo = require('../../../../assets/brand/sweet-coffee-logo.png');
@@ -277,7 +321,11 @@ function answerToDraftRow(reportId: string, question: Question, answer: AnswerSt
   return {
     report_id: reportId,
     question_id: question.id,
-    value: type === 'additional_novelty' || isCountOnlyQuestion(type) ? 'cumple' : answer.value,
+    value: type === 'additional_novelty' || isCountOnlyQuestion(type)
+      ? 'cumple'
+      : question.dual_compliance
+        ? answer.localCompliance
+        : answer.value,
     observation: answer.observation.trim(),
     evidence_url: answer.evidenceUrls[0] || null,
     evidence_urls: answer.evidenceUrls,
@@ -286,6 +334,9 @@ function answerToDraftRow(reportId: string, question: Question, answer: AnswerSt
     numeric_value_current: toNumber(answer.currentShift),
     numeric_value_previous: toNumber(answer.previousShift),
     numeric_items: numericItems,
+    local_compliance: question.dual_compliance ? answer.localCompliance : null,
+    leader_compliance: question.dual_compliance ? answer.leaderCompliance : null,
+    detail_rows: detailRowsFromAnswer(answer),
   };
 }
 
@@ -309,6 +360,8 @@ function draftRowToAnswer(question: Question, row: DraftAnswerRow): AnswerState 
   return {
     ...emptyAnswer,
     value: row.value,
+    localCompliance: row.local_compliance ?? row.value,
+    leaderCompliance: row.leader_compliance ?? null,
     observation: row.observation || '',
     evidenceUrls: Array.isArray(row.evidence_urls) && row.evidence_urls.length > 0 ? row.evidence_urls : row.evidence_url ? [row.evidence_url] : [],
     theoreticalValue: row.numeric_value_theoretical === null || row.numeric_value_theoretical === undefined ? '' : String(row.numeric_value_theoretical),
@@ -316,6 +369,73 @@ function draftRowToAnswer(question: Question, row: DraftAnswerRow): AnswerState 
     currentShift: row.numeric_value_current === null || row.numeric_value_current === undefined ? '' : String(row.numeric_value_current),
     previousShift: row.numeric_value_previous === null || row.numeric_value_previous === undefined ? '' : String(row.numeric_value_previous),
     countItems,
+    productWriteoffRows: [],
+    depositDeclarationRows: [],
+  };
+}
+
+function detailRowsFromAnswer(answer: AnswerState): DetailRowPayload[] {
+  const productRows: DetailRowPayload[] = answer.productWriteoffRows.map((row, index) => ({
+    id: row.id,
+    row_kind: 'product_writeoff',
+    sort_order: index,
+    lot_date: row.lotDate || null,
+    writeoff_date: row.writeoffDate || null,
+    description: row.description.trim() || null,
+    quantity: toNumber(row.quantity),
+    record_date: null,
+    notebook_amount: null,
+    system_amount: null,
+    responsible_id: row.responsibleId,
+    responsible_code_snapshot: row.responsibleCode || null,
+    responsible_name_snapshot: row.responsibleName,
+  }));
+  const depositRows: DetailRowPayload[] = answer.depositDeclarationRows.map((row, index) => ({
+    id: row.id,
+    row_kind: 'deposit_declaration',
+    sort_order: index,
+    lot_date: null,
+    writeoff_date: null,
+    description: null,
+    quantity: null,
+    record_date: row.date || null,
+    notebook_amount: toNumber(row.notebookAmount),
+    system_amount: toNumber(row.systemAmount),
+    responsible_id: row.responsibleId,
+    responsible_code_snapshot: row.responsibleCode || null,
+    responsible_name_snapshot: row.responsibleName,
+  }));
+  return [...productRows, ...depositRows];
+}
+
+function applyDetailRows(answer: AnswerState, rows: DetailRowPayload[]): AnswerState {
+  return {
+    ...answer,
+    productWriteoffRows: rows
+      .filter((row) => row.row_kind === 'product_writeoff')
+      .sort((left, right) => left.sort_order - right.sort_order)
+      .map((row) => ({
+        id: row.id,
+        lotDate: row.lot_date || '',
+        writeoffDate: row.writeoff_date || '',
+        description: row.description || '',
+        quantity: row.quantity === null ? '' : String(row.quantity),
+        responsibleId: row.responsible_id,
+        responsibleCode: row.responsible_code_snapshot || '',
+        responsibleName: row.responsible_name_snapshot,
+      })),
+    depositDeclarationRows: rows
+      .filter((row) => row.row_kind === 'deposit_declaration')
+      .sort((left, right) => left.sort_order - right.sort_order)
+      .map((row) => ({
+        id: row.id,
+        date: row.record_date || '',
+        notebookAmount: row.notebook_amount === null ? '' : String(row.notebook_amount),
+        systemAmount: row.system_amount === null ? '' : String(row.system_amount),
+        responsibleId: row.responsible_id,
+        responsibleCode: row.responsible_code_snapshot || '',
+        responsibleName: row.responsible_name_snapshot,
+      })),
   };
 }
 
@@ -338,6 +458,7 @@ export default function ChecklistDinamicoPage() {
   const [hasChanges, setHasChanges] = useState(false);
   const [finalizedSendChoice, setFinalizedSendChoice] = useState<boolean | null>(null);
   const [notice, setNotice] = useState<NoticeState>(null);
+  const [responsibleOptions, setResponsibleOptions] = useState<ResponsibleOption[]>([]);
   const [sourceQuestion, setSourceQuestion] = useState<Question | null>(null);
   const [replacementTarget, setReplacementTarget] = useState<string | null>(null);
 
@@ -385,6 +506,7 @@ export default function ChecklistDinamicoPage() {
       const [
         { data, error: supabaseError },
         { data: reportData, error: reportError },
+        { data: responsibleRows },
       ] = await Promise.all([
         supabase
           .from('checklist_questions')
@@ -399,7 +521,13 @@ export default function ChecklistDinamicoPage() {
           .select('id, user_id, visit_type_id, status, should_send, resent_count, local_code_snapshot, local_name_snapshot, local_codigo, responsible_name_snapshot, responsible_code, auditor_name_snapshot, auditor_team, locales(nombre_local), profiles!audit_reports_user_id_fkey(full_name)')
           .eq('id', reportId)
           .single<ReportHeader>(),
+        supabase
+          .from('responsibles')
+          .select('id, responsible_code, responsible_name')
+          .eq('is_active', true)
+          .order('responsible_name', { ascending: true }),
       ]);
+      setResponsibleOptions((responsibleRows || []) as ResponsibleOption[]);
 
       if (supabaseError) {
         setError('No se pudieron cargar las preguntas. Revisa tu conexión e intenta nuevamente.');
@@ -432,7 +560,7 @@ export default function ChecklistDinamicoPage() {
       const answerTable = isFinalReport ? 'audit_answers_final' : 'audit_answers_draft';
       const { data: remoteRows, error: draftError } = await supabase
         .from(answerTable)
-        .select('report_id, question_id, value, observation, evidence_url, evidence_urls, numeric_value_theoretical, numeric_value_physical, numeric_value_current, numeric_value_previous, numeric_items')
+        .select('report_id, question_id, value, observation, evidence_url, evidence_urls, numeric_value_theoretical, numeric_value_physical, numeric_value_current, numeric_value_previous, numeric_items, local_compliance, leader_compliance')
         .eq('report_id', reportId);
 
       if (draftError) {
@@ -444,6 +572,24 @@ export default function ChecklistDinamicoPage() {
         const question = questionsById.get(row.question_id);
         if (question) initialAnswers[row.question_id] = draftRowToAnswer(question, row as DraftAnswerRow);
       });
+
+      const { data: detailRows, error: detailError } = await supabase
+        .from('audit_answer_detail_rows')
+        .select('id, question_id, row_kind, sort_order, lot_date, writeoff_date, description, quantity, record_date, notebook_amount, system_amount, responsible_id, responsible_code_snapshot, responsible_name_snapshot')
+        .eq('report_id', reportId)
+        .not(isFinalReport ? 'final_answer_id' : 'draft_answer_id', 'is', null);
+
+      if (!detailError) {
+        const detailsByQuestion = new Map<string, DetailRowPayload[]>();
+        (detailRows || []).forEach((row: any) => {
+          const current = detailsByQuestion.get(row.question_id) || [];
+          current.push(row as DetailRowPayload);
+          detailsByQuestion.set(row.question_id, current);
+        });
+        detailsByQuestion.forEach((rows, questionId) => {
+          if (initialAnswers[questionId]) initialAnswers[questionId] = applyDetailRows(initialAnswers[questionId], rows);
+        });
+      }
 
       const savedDraft = isFinalReport ? null : await offlineStorage.getDraft(String(reportId));
       setAnswers(savedDraft ? { ...initialAnswers, ...savedDraft } : initialAnswers);
@@ -458,13 +604,40 @@ export default function ChecklistDinamicoPage() {
     const question = questions.find((item) => item.id === questionId);
     if (!question || !reportId) return;
 
-    const { error: upsertError } = await supabase
+    const draftPayload = answerToDraftRow(String(reportId), question, answer);
+    const { detail_rows: detailRows = [], ...answerColumns } = draftPayload;
+    const { data: savedAnswer, error: upsertError } = await supabase
       .from('audit_answers_draft')
-      .upsert(answerToDraftRow(String(reportId), question, answer), { onConflict: 'report_id,question_id' });
+      .upsert(answerColumns, { onConflict: 'report_id,question_id' })
+      .select('id')
+      .single();
 
     if (upsertError) {
       setSaveWarning('No se pudo guardar este cambio en Supabase. Se mantiene respaldo local.');
     } else {
+      const { error: deleteRowsError } = await supabase
+        .from('audit_answer_detail_rows')
+        .delete()
+        .eq('draft_answer_id', savedAnswer.id);
+      if (deleteRowsError) {
+        setSaveWarning('La respuesta se guardó, pero no se pudieron actualizar sus líneas.');
+        return;
+      }
+      if (detailRows.length > 0) {
+        const { error: insertRowsError } = await supabase
+          .from('audit_answer_detail_rows')
+          .insert(detailRows.map((row) => ({
+            ...row,
+            report_id: reportId,
+            question_id: questionId,
+            draft_answer_id: savedAnswer.id,
+            final_answer_id: null,
+          })));
+        if (insertRowsError) {
+          setSaveWarning('La respuesta se guardó, pero no se pudieron actualizar sus líneas.');
+          return;
+        }
+      }
       setSaveWarning(null);
     }
   };
@@ -587,7 +760,8 @@ export default function ChecklistDinamicoPage() {
 
   const getValidationMessage = (question: Question, answer: AnswerState) => {
     const type = getQuestionType(question);
-    const observationRequired = answer.value === 'no_cumple' && question.requires_observation_on_fail !== false;
+    const localValue = question.dual_compliance ? answer.localCompliance : answer.value;
+    const observationRequired = localValue === 'no_cumple' && question.requires_observation_on_fail !== false;
 
     if (type === 'additional_novelty') return null;
 
@@ -604,11 +778,35 @@ export default function ChecklistDinamicoPage() {
       if (isCountOnlyQuestion(type)) return null;
     }
 
-    if (!answer.value) return 'Selecciona CUMPLE o NO CUMPLE.';
-    if (type !== 'follow_up' && observationRequired && !answer.observation.trim()) return 'Agrega una observacion para NO CUMPLE.';
+    if (question.dual_compliance) {
+      if (!answer.localCompliance) return 'Selecciona el cumplimiento del Local.';
+      if (!answer.leaderCompliance) return 'Selecciona el cumplimiento del Líder.';
+    } else if (!answer.value) {
+      return 'Selecciona CUMPLE o NO CUMPLE.';
+    }
+    if (
+      type !== 'follow_up'
+      && observationRequired
+      && !answer.observation.trim()
+      && !(type === 'product_writeoff' && answer.productWriteoffRows.length > 0)
+    ) return 'Agrega una observacion para NO CUMPLE.';
 
     if (type === 'pending_deposit' && (!answer.currentShift.trim() || !answer.previousShift.trim())) {
       return 'Completa turno actual y turno anterior.';
+    }
+
+    if (type === 'product_writeoff') {
+      const invalidRow = answer.productWriteoffRows.map(validateProductWriteoffRow).find(Boolean);
+      if (invalidRow) return invalidRow;
+      const hasFailure = answer.localCompliance === 'no_cumple' || answer.leaderCompliance === 'no_cumple';
+      if (hasFailure && !answer.observation.trim() && answer.productWriteoffRows.length === 0) {
+        return 'Si Local o Líder no cumple, agrega una observación o al menos una línea de baja.';
+      }
+    }
+
+    if (type === 'pending_deposit') {
+      const invalidRow = answer.depositDeclarationRows.map(validateDepositDeclarationRow).find(Boolean);
+      if (invalidRow) return invalidRow;
     }
 
     return null;
@@ -621,17 +819,81 @@ export default function ChecklistDinamicoPage() {
 
   const calculateScore = (payload: DraftAnswerRow[]) => {
     const questionsById = new Map(questions.map((question) => [question.id, question]));
-    return payload.reduce(
-      (acc, answer) => {
-        const question = questionsById.get(answer.question_id);
-        if (!question || !isScoredQuestion(question)) return acc;
-        const points = Number(question.score_points || 0);
-        acc.possible += points;
-        if (answer.value === 'cumple') acc.obtained += points;
-        return acc;
+    return calculateDualScore(payload.flatMap((answer) => {
+      const question = questionsById.get(answer.question_id);
+      if (!question) return [];
+      return [{
+        questionId: answer.question_id,
+        points: Number(question.score_points || 0),
+        isScored: isScoredQuestion(question),
+        dualCompliance: question.dual_compliance === true,
+        value: answer.value,
+        localCompliance: answer.local_compliance,
+        leaderCompliance: answer.leader_compliance,
+      }];
+    }));
+  };
+
+  const addProductWriteoffRow = (questionId: string) => {
+    const current = { ...emptyAnswer, ...answers[questionId] };
+    updateField(questionId, {
+      productWriteoffRows: [...current.productWriteoffRows, {
+        id: createStableRowId(),
+        lotDate: '',
+        writeoffDate: '',
+        description: '',
+        quantity: '',
+        responsibleId: '',
+        responsibleCode: '',
+        responsibleName: '',
+      }],
+    });
+  };
+
+  const updateProductWriteoffRow = (questionId: string, rowId: string, fields: Partial<ProductWriteoffRow>) => {
+    const current = { ...emptyAnswer, ...answers[questionId] };
+    updateField(questionId, {
+      productWriteoffRows: current.productWriteoffRows.map((row) => row.id === rowId ? { ...row, ...fields } : row),
+    });
+  };
+
+  const addDepositDeclarationRow = (questionId: string) => {
+    const current = { ...emptyAnswer, ...answers[questionId] };
+    updateField(questionId, {
+      depositDeclarationRows: [...current.depositDeclarationRows, {
+        id: createStableRowId(),
+        date: '',
+        notebookAmount: '',
+        systemAmount: '',
+        responsibleId: '',
+        responsibleCode: '',
+        responsibleName: '',
+      }],
+    });
+  };
+
+  const updateDepositDeclarationRow = (questionId: string, rowId: string, fields: Partial<DepositDeclarationRow>) => {
+    const current = { ...emptyAnswer, ...answers[questionId] };
+    updateField(questionId, {
+      depositDeclarationRows: current.depositDeclarationRows.map((row) => row.id === rowId ? { ...row, ...fields } : row),
+    });
+  };
+
+  const requestRemoveDetailRow = (questionId: string, rowId: string, rowKind: 'product_writeoff' | 'deposit_declaration') => {
+    showNotice({
+      title: '¿Eliminar esta línea?',
+      message: 'La línea se retirará de la visita cuando guardes los cambios.',
+      variant: 'danger',
+      confirmLabel: 'Eliminar línea',
+      cancelLabel: 'Cancelar',
+      onConfirm: () => {
+        const current = { ...emptyAnswer, ...answers[questionId] };
+        updateField(questionId, rowKind === 'product_writeoff'
+          ? { productWriteoffRows: current.productWriteoffRows.filter((row) => row.id !== rowId) }
+          : { depositDeclarationRows: current.depositDeclarationRows.filter((row) => row.id !== rowId) });
+        closeNotice();
       },
-      { obtained: 0, possible: 0 },
-    );
+    });
   };
 
   const sendUpdatedReport = async () => {
@@ -719,6 +981,7 @@ export default function ChecklistDinamicoPage() {
         variant: 'info',
         onConfirm: () => router.replace('/modulos/evaluaciones'),
       });
+
       return;
     }
 
@@ -835,14 +1098,46 @@ export default function ChecklistDinamicoPage() {
     }
 
     if (payload.length > 0) {
-      const { error: insertError } = await supabase
+      const answerColumns = payload.map(({ detail_rows: _detailRows, ...row }) => row);
+      const { data: savedAnswers, error: insertError } = await supabase
         .from('audit_answers_draft')
-        .upsert(payload, { onConflict: 'report_id,question_id' });
+        .upsert(answerColumns, { onConflict: 'report_id,question_id' })
+        .select('id, question_id');
 
       if (insertError) {
         showNotice({ title: 'No se pudo guardar la visita', message: 'Verifica tu conexión e intenta nuevamente. Tus datos permanecerán en el borrador.', variant: 'danger' });
         setIsSubmitting(false);
         return;
+      }
+
+      for (const savedAnswer of savedAnswers || []) {
+        const answerPayload = payload.find((item) => item.question_id === savedAnswer.question_id);
+        const rows = answerPayload?.detail_rows || [];
+        const { error: deleteRowsError } = await supabase
+          .from('audit_answer_detail_rows')
+          .delete()
+          .eq('draft_answer_id', savedAnswer.id);
+        if (deleteRowsError) {
+          showNotice({ title: 'No se pudieron guardar las líneas', message: 'La respuesta principal se guardó, pero sus líneas dinámicas no. Intenta nuevamente.', variant: 'danger' });
+          setIsSubmitting(false);
+          return;
+        }
+        if (rows.length > 0) {
+          const { error: insertRowsError } = await supabase
+            .from('audit_answer_detail_rows')
+            .insert(rows.map((row) => ({
+              ...row,
+              report_id: reportId,
+              question_id: savedAnswer.question_id,
+              draft_answer_id: savedAnswer.id,
+              final_answer_id: null,
+            })));
+          if (insertRowsError) {
+            showNotice({ title: 'No se pudieron guardar las líneas', message: 'Revisa los datos ingresados e intenta nuevamente.', variant: 'danger' });
+            setIsSubmitting(false);
+            return;
+          }
+        }
       }
     }
 
@@ -957,7 +1252,22 @@ export default function ChecklistDinamicoPage() {
               )}
             </View>
 
-            {requiresComplianceAnswer(type) && (
+            {requiresComplianceAnswer(type) && q.dual_compliance && (
+              <View style={styles.dualComplianceGrid}>
+                <ComplianceSelector
+                  label="Cumplimiento del Local"
+                  value={currentAnswer.localCompliance}
+                  onChange={(value) => updateField(q.id, { localCompliance: value })}
+                />
+                <ComplianceSelector
+                  label="Cumplimiento del Líder"
+                  value={currentAnswer.leaderCompliance}
+                  onChange={(value) => updateField(q.id, { leaderCompliance: value })}
+                />
+              </View>
+            )}
+
+            {requiresComplianceAnswer(type) && !q.dual_compliance && (
               <View style={styles.radioGroup}>
                 <TouchableOpacity
                   style={[styles.radioButton, currentAnswer.value === 'cumple' && styles.radioActiveCumple]}
@@ -1020,10 +1330,29 @@ export default function ChecklistDinamicoPage() {
             )}
 
             {type === 'pending_deposit' && (
-              <View style={styles.numericGrid}>
-                <NumberField label="Turno actual" value={currentAnswer.currentShift} onChangeText={(text) => updateField(q.id, { currentShift: text })} />
-                <NumberField label="Turno anterior" value={currentAnswer.previousShift} onChangeText={(text) => updateField(q.id, { previousShift: text })} />
-              </View>
+              <>
+                <View style={styles.numericGrid}>
+                  <NumberField label="Turno actual" value={currentAnswer.currentShift} onChangeText={(text) => updateField(q.id, { currentShift: text })} />
+                  <NumberField label="Turno anterior" value={currentAnswer.previousShift} onChangeText={(text) => updateField(q.id, { previousShift: text })} />
+                </View>
+                <DepositDeclarationTable
+                  rows={currentAnswer.depositDeclarationRows}
+                  responsibles={responsibleOptions}
+                  onAdd={() => addDepositDeclarationRow(q.id)}
+                  onChange={(rowId, fields) => updateDepositDeclarationRow(q.id, rowId, fields)}
+                  onRemove={(rowId) => requestRemoveDetailRow(q.id, rowId, 'deposit_declaration')}
+                />
+              </>
+            )}
+
+            {type === 'product_writeoff' && (
+              <ProductWriteoffTable
+                rows={currentAnswer.productWriteoffRows}
+                responsibles={responsibleOptions}
+                onAdd={() => addProductWriteoffRow(q.id)}
+                onChange={(rowId, fields) => updateProductWriteoffRow(q.id, rowId, fields)}
+                onRemove={(rowId) => requestRemoveDetailRow(q.id, rowId, 'product_writeoff')}
+              />
             )}
 
             <View style={styles.evidenceHeader}>
@@ -1107,6 +1436,178 @@ export default function ChecklistDinamicoPage() {
         onNeutral={() => { setSourceQuestion(null); setReplacementTarget(null); }}
       />
     </ScrollView>
+  );
+}
+
+function ComplianceSelector({ label, value, onChange }: { label: string; value: AnswerValue; onChange: (value: Exclude<AnswerValue, null>) => void }) {
+  return (
+    <View style={styles.complianceSection}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <View style={styles.radioGroup}>
+        <TouchableOpacity style={[styles.radioButton, value === 'cumple' && styles.radioActiveCumple]} onPress={() => onChange('cumple')}>
+          <Text style={[styles.radioText, value === 'cumple' && styles.textWhite]}>CUMPLE</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.radioButton, value === 'no_cumple' && styles.radioActiveNoCumple]} onPress={() => onChange('no_cumple')}>
+          <Text style={[styles.radioText, value === 'no_cumple' && styles.textWhite]}>NO CUMPLE</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+function DateField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const parsed = value ? new Date(`${value}T12:00:00`) : new Date();
+  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  const handleChange = (_event: DateTimePickerEvent, selected?: Date) => {
+    if (Platform.OS !== 'web') setOpen(false);
+    if (selected) onChange(selected.toISOString().slice(0, 10));
+  };
+
+  return (
+    <View style={styles.detailField}>
+      <Text style={styles.detailLabel}>{label}</Text>
+      {Platform.OS === 'web' ? (
+        <DateTimePicker value={date} mode="date" onChange={handleChange} />
+      ) : (
+        <>
+          <TouchableOpacity style={styles.detailInput} onPress={() => setOpen(true)}>
+            <Text style={value ? styles.detailInputText : styles.detailPlaceholder}>{value || 'Seleccionar fecha'}</Text>
+          </TouchableOpacity>
+          {open ? <DateTimePicker value={date} mode="date" onChange={handleChange} /> : null}
+        </>
+      )}
+    </View>
+  );
+}
+
+function ResponsibleField({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: ResponsibleOption[];
+  onChange: (responsible: ResponsibleOption) => void;
+}) {
+  return (
+    <View style={styles.detailResponsible}>
+      <FloatingSelect
+        label="Responsable"
+        value={value}
+        options={[
+          { value: '', label: 'Seleccionar responsable' },
+          ...options.map((item) => ({
+            value: item.id,
+            label: `${item.responsible_code} · ${item.responsible_name}`,
+          })),
+        ]}
+        onChange={(id) => {
+          const selected = options.find((item) => item.id === id);
+          if (selected) onChange(selected);
+        }}
+        minWidth={220}
+      />
+    </View>
+  );
+}
+
+function ProductWriteoffTable({
+  rows,
+  responsibles,
+  onAdd,
+  onChange,
+  onRemove,
+}: {
+  rows: ProductWriteoffRow[];
+  responsibles: ResponsibleOption[];
+  onAdd: () => void;
+  onChange: (rowId: string, fields: Partial<ProductWriteoffRow>) => void;
+  onRemove: (rowId: string) => void;
+}) {
+  return (
+    <View style={styles.detailTable}>
+      <Text style={styles.detailTableTitle}>Detalle de bajas de productos</Text>
+      {rows.map((row, index) => (
+        <View key={row.id} style={styles.detailRow}>
+          <Text style={styles.detailRowNumber}>Línea {index + 1}</Text>
+          <DateField label="Fecha del lote" value={row.lotDate} onChange={(lotDate) => onChange(row.id, { lotDate })} />
+          <DateField label="Fecha de la baja" value={row.writeoffDate} onChange={(writeoffDate) => onChange(row.id, { writeoffDate })} />
+          <View style={[styles.detailField, styles.detailDescription]}>
+            <Text style={styles.detailLabel}>Descripción</Text>
+            <TextInput style={styles.detailInput} value={row.description} maxLength={500} onChangeText={(description) => onChange(row.id, { description })} placeholder="Producto dado de baja" placeholderTextColor={brandColors.inputPlaceholder} />
+          </View>
+          <View style={styles.detailField}>
+            <Text style={styles.detailLabel}>Cantidad</Text>
+            <TextInput style={styles.detailInput} value={row.quantity} keyboardType="decimal-pad" onChangeText={(quantity) => onChange(row.id, { quantity })} placeholder="0.00" placeholderTextColor={brandColors.inputPlaceholder} />
+          </View>
+          <ResponsibleField
+            value={row.responsibleId}
+            options={responsibles}
+            onChange={(responsible) => onChange(row.id, {
+              responsibleId: responsible.id,
+              responsibleCode: responsible.responsible_code,
+              responsibleName: responsible.responsible_name,
+            })}
+          />
+          <TouchableOpacity style={styles.removeDetailButton} onPress={() => onRemove(row.id)}>
+            <Text style={styles.removeDetailButtonText}>Eliminar</Text>
+          </TouchableOpacity>
+        </View>
+      ))}
+      <TouchableOpacity style={styles.secondaryButton} onPress={onAdd}>
+        <Text style={styles.secondaryButtonText}>Agregar línea de baja</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function DepositDeclarationTable({
+  rows,
+  responsibles,
+  onAdd,
+  onChange,
+  onRemove,
+}: {
+  rows: DepositDeclarationRow[];
+  responsibles: ResponsibleOption[];
+  onAdd: () => void;
+  onChange: (rowId: string, fields: Partial<DepositDeclarationRow>) => void;
+  onRemove: (rowId: string) => void;
+}) {
+  return (
+    <View style={styles.detailTable}>
+      <Text style={styles.detailTableTitle}>Registro adicional de depósitos</Text>
+      {rows.map((row, index) => (
+        <View key={row.id} style={styles.detailRow}>
+          <Text style={styles.detailRowNumber}>Línea {index + 1}</Text>
+          <DateField label="Fecha" value={row.date} onChange={(date) => onChange(row.id, { date })} />
+          <View style={styles.detailField}>
+            <Text style={styles.detailLabel}>Registro del cuaderno</Text>
+            <TextInput style={styles.detailInput} value={row.notebookAmount} keyboardType="decimal-pad" onChangeText={(notebookAmount) => onChange(row.id, { notebookAmount })} placeholder="$ 0.00" placeholderTextColor={brandColors.inputPlaceholder} />
+          </View>
+          <View style={styles.detailField}>
+            <Text style={styles.detailLabel}>Declarado en sistema</Text>
+            <TextInput style={styles.detailInput} value={row.systemAmount} keyboardType="decimal-pad" onChangeText={(systemAmount) => onChange(row.id, { systemAmount })} placeholder="$ 0.00" placeholderTextColor={brandColors.inputPlaceholder} />
+          </View>
+          <ResponsibleField
+            value={row.responsibleId}
+            options={responsibles}
+            onChange={(responsible) => onChange(row.id, {
+              responsibleId: responsible.id,
+              responsibleCode: responsible.responsible_code,
+              responsibleName: responsible.responsible_name,
+            })}
+          />
+          <TouchableOpacity style={styles.removeDetailButton} onPress={() => onRemove(row.id)}>
+            <Text style={styles.removeDetailButtonText}>Eliminar</Text>
+          </TouchableOpacity>
+        </View>
+      ))}
+      <TouchableOpacity style={styles.secondaryButton} onPress={onAdd}>
+        <Text style={styles.secondaryButtonText}>Agregar registro</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -1241,10 +1742,27 @@ const styles = StyleSheet.create({
   radioActiveNoCumple: { backgroundColor: brandColors.danger, borderColor: brandColors.danger, borderWidth: 2 },
   radioText: { fontWeight: '900', color: brandColors.textSecondary },
   textWhite: { color: brandColors.white },
+  dualComplianceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 4 },
+  complianceSection: { flexGrow: 1, flexBasis: 260, minWidth: 220 },
   fieldLabel: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 6, marginTop: 8 },
   textArea: { borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 10, fontSize: 14, backgroundColor: brandColors.white, minHeight: 76, textAlignVertical: 'top', color: brandColors.inputText },
   numericGrid: { marginTop: 8, gap: 8 },
   numberField: { flex: 1 },
+  detailTable: { marginTop: 14, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 12, backgroundColor: brandColors.creamSoft, gap: 10 },
+  detailTableTitle: { color: brandColors.textPrimary, fontSize: 15, fontWeight: '900' },
+  detailRow: { position: 'relative', zIndex: 20, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 10, backgroundColor: brandColors.white, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: 8 },
+  detailRowNumber: { width: '100%', color: brandColors.greenDark, fontWeight: '900', fontSize: 12 },
+  detailField: { flexGrow: 1, flexBasis: 145, minWidth: 130 },
+  detailDescription: { flexBasis: 240 },
+  detailResponsible: { flexGrow: 1, flexBasis: 230, minWidth: 220, position: 'relative', zIndex: 100 },
+  detailLabel: { color: brandColors.textSecondary, fontWeight: '900', fontSize: 11, marginBottom: 5 },
+  detailInput: { minHeight: 44, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingHorizontal: 10, backgroundColor: brandColors.white, color: brandColors.inputText, justifyContent: 'center' },
+  detailInputText: { color: brandColors.inputText, fontWeight: '700' },
+  detailPlaceholder: { color: brandColors.inputPlaceholder, fontWeight: '700' },
+  removeDetailButton: { minHeight: 44, borderWidth: 1, borderColor: brandColors.danger, borderRadius: 8, paddingHorizontal: 12, justifyContent: 'center', alignItems: 'center', backgroundColor: brandColors.white },
+  removeDetailButtonText: { color: brandColors.danger, fontWeight: '900' },
+  secondaryButton: { minHeight: 44, borderWidth: 1, borderColor: brandColors.greenDark, borderRadius: 8, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: brandColors.white },
+  secondaryButtonText: { color: brandColors.greenDark, fontWeight: '900' },
   input: { minHeight: 48, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, paddingHorizontal: 10, backgroundColor: brandColors.white, fontSize: 15, color: brandColors.inputText },
   differenceText: { color: brandColors.greenDark, fontWeight: '900', marginTop: 2 },
   negativeDifferenceText: { color: brandColors.danger },

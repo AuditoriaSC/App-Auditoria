@@ -24,6 +24,7 @@ type QuestionRow = {
   created_at: string | null;
   numeric_mode: string | null;
   item_schema: CountSchemaItem[] | null;
+  dual_compliance: boolean;
 };
 
 type CountSchemaItem = {
@@ -42,12 +43,13 @@ type QuestionDraft = {
   region: string;
   is_active: boolean;
   item_schema: Array<{ label: string; unit: string; cross_group: string; conversion_factor: string }>;
+  dual_compliance: boolean;
 };
 
 const allOption = 'TODOS';
 const regions = ['TODOS', 'Costa', 'Sierra', 'Global'];
 const visitTypes = ['TODOS', 'Sabatina', 'Nocturna'];
-const questionTypes = ['TODOS', 'compliance', 'cash_count', 'pending_deposit', 'inventory', 'cup_count', 'raw_material_count', 'follow_up', 'additional_novelty'];
+const questionTypes = ['TODOS', 'compliance', 'cash_count', 'pending_deposit', 'product_writeoff', 'inventory', 'cup_count', 'raw_material_count', 'follow_up', 'additional_novelty'];
 
 function emptyDraft(region = 'Costa'): QuestionDraft {
   return {
@@ -59,6 +61,7 @@ function emptyDraft(region = 'Costa'): QuestionDraft {
     region,
     is_active: true,
     item_schema: [],
+    dual_compliance: false,
   };
 }
 
@@ -141,7 +144,7 @@ export default function GestionPreguntasPage() {
 
     let query = supabase
       .from('checklist_questions')
-      .select('id, question_text, region, visit_type_id, score_points, is_active, question_type, is_scored, sort_order, created_at, numeric_mode, item_schema')
+      .select('id, question_text, region, visit_type_id, score_points, is_active, question_type, is_scored, sort_order, created_at, numeric_mode, item_schema, dual_compliance')
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: true });
 
@@ -180,6 +183,7 @@ export default function GestionPreguntasPage() {
         cross_group: item.cross_group || '',
         conversion_factor: String(item.conversion_factor ?? 1),
       })),
+      dual_compliance: question.dual_compliance === true,
     });
     setCreating(false);
   };
@@ -229,7 +233,14 @@ export default function GestionPreguntasPage() {
       region: isSuperAdmin ? draft.region : profile?.region || draft.region,
       is_active: draft.is_active,
       is_scored: scored,
-      numeric_mode: countType ? 'multi_item_difference' : null,
+      dual_compliance: draft.dual_compliance,
+      numeric_mode: countType
+        ? 'multi_item_difference'
+        : draft.question_type === 'product_writeoff'
+          ? 'product_writeoff_rows'
+          : draft.question_type === 'pending_deposit'
+            ? 'shift_values'
+            : null,
       item_schema: itemSchema,
     };
   };
@@ -242,7 +253,7 @@ export default function GestionPreguntasPage() {
       const { data, error } = await supabase
         .from('checklist_questions')
         .insert(payload)
-        .select('id, question_text, region, visit_type_id, score_points, is_active, question_type, is_scored, sort_order, created_at, numeric_mode, item_schema')
+        .select('id, question_text, region, visit_type_id, score_points, is_active, question_type, is_scored, sort_order, created_at, numeric_mode, item_schema, dual_compliance')
         .single<QuestionRow>();
 
       if (error || !data) throw error || new Error('No se devolvio la pregunta creada.');
@@ -505,6 +516,7 @@ function QuestionForm({
             question_type: value,
             score_points: ['follow_up', 'additional_novelty', 'inventory', 'raw_material_count'].includes(value) ? '0' : current.score_points,
             item_schema: isCountType(value) ? current.item_schema : [],
+            dual_compliance: ['pending_deposit', 'product_writeoff'].includes(value) ? true : current.dual_compliance,
           }))}
         />
         <CompactPicker label="Tipo de visita" value={draft.visit_type_id} options={visitTypes.filter((item) => item !== allOption)} onChange={(value) => setDraft((current) => ({ ...current, visit_type_id: value }))} />
@@ -520,6 +532,13 @@ function QuestionForm({
         <View style={styles.activeField}>
           <Text style={styles.label}>Estado</Text>
           <View style={styles.activeRow}><Text style={styles.activeText}>{draft.is_active ? 'Activa' : 'Inactiva'}</Text><Switch value={draft.is_active} onValueChange={(value) => setDraft((current) => ({ ...current, is_active: value }))} /></View>
+        </View>
+        <View style={styles.activeField}>
+          <Text style={styles.label}>Calificación dual</Text>
+          <View style={styles.activeRow}>
+            <Text style={styles.activeText}>{draft.dual_compliance ? 'Sí' : 'No'}</Text>
+            <Switch value={draft.dual_compliance} onValueChange={(value) => setDraft((current) => ({ ...current, dual_compliance: value }))} />
+          </View>
         </View>
       </View>
 
