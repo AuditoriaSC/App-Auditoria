@@ -35,6 +35,8 @@ type VisitRow = {
   start_time: string | null;
   final_grade: number | null;
   final_percentage: number | null;
+  local_final_grade: number | null;
+  leader_final_grade: number | null;
   edited_after_send: boolean | null;
   last_resent_at: string | null;
   resent_count: number | null;
@@ -131,7 +133,7 @@ export default function AdminDashboard() {
 
     const { data: visitRows, error: visitsError } = await supabase
       .from('audit_reports')
-      .select('id, user_id, region, visit_type_id, responsible_name, auditor_team, local_codigo, local_code_snapshot, local_name_snapshot, responsible_code, responsible_name_snapshot, auditor_name_snapshot, status, should_send, start_date, start_time, final_grade, final_percentage, edited_after_send, last_resent_at, resent_count, last_edit_reason, created_at, updated_at, locales(nombre_local), profiles!audit_reports_user_id_fkey(full_name)')
+      .select('id, user_id, region, visit_type_id, responsible_name, auditor_team, local_codigo, local_code_snapshot, local_name_snapshot, responsible_code, responsible_name_snapshot, auditor_name_snapshot, status, should_send, start_date, start_time, final_grade, final_percentage, local_final_grade, leader_final_grade, edited_after_send, last_resent_at, resent_count, last_edit_reason, created_at, updated_at, locales(nombre_local), profiles!audit_reports_user_id_fkey(full_name)')
       .order('start_date', { ascending: false })
       .order('start_time', { ascending: false })
       .order('created_at', { ascending: false });
@@ -417,7 +419,7 @@ function VisitCard({ visit, canDelete, onDelete, onPress, onPdfError }: { visit:
       <View style={styles.cardFooter}>
         <Text style={styles.footerMetric}>{getAuditorName(visit)}</Text>
         <View style={styles.footerActions}>
-          <Text style={styles.footerGrade}>{hasGrade ? `Calificacion ${Number(visit.final_grade || 0).toFixed(2)} / 10` : 'Sin calificacion'}</Text>
+          <Text style={styles.footerGrade}>{hasGrade ? `Local ${Number(visit.local_final_grade ?? visit.final_grade ?? 0).toFixed(2)} / 10 · Líder ${visit.leader_final_grade == null ? 'Sin información' : `${Number(visit.leader_final_grade).toFixed(2)} / 10`}` : 'Sin calificación'}</Text>
           {visibleStatus !== 'EN_PROCESO' && (
             <TouchableOpacity style={styles.pdfButton} onPress={async (event) => { event.stopPropagation(); try { await downloadReportPdf(visit.id); } catch (error) { onPdfError(error instanceof Error ? error.message : 'No se pudo generar el PDF.'); } }}>
               <Text style={styles.pdfButtonText}>⇩ PDF</Text>

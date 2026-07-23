@@ -22,6 +22,8 @@ type ExportReportRow = {
   responsible_name_snapshot: string | null;
   start_date: string | null;
   final_grade: number | null;
+  local_final_grade: number | null;
+  leader_final_grade: number | null;
   status: string | null;
   should_send: boolean | null;
   edited_after_send: boolean | null;
@@ -37,6 +39,8 @@ type ExportReportRow = {
 type ExportAnswerRow = {
   report_id: string;
   value: string | null;
+  local_compliance: string | null;
+  leader_compliance: string | null;
   observation: string | null;
   numeric_items: unknown;
   checklist_questions?: {
@@ -155,7 +159,7 @@ export default function AdministradorRecursosPage() {
 
     let reportQuery = supabase
       .from('audit_reports')
-      .select('id, region, visit_type_id, local_name_snapshot, local_code_snapshot, auditor_name_snapshot, responsible_name_snapshot, start_date, final_grade, status, should_send, edited_after_send, last_edit_reason, last_edited_at, resent_count, last_resent_at, created_at, locales(nombre_local, codigo_interno), profiles!audit_reports_user_id_fkey(full_name)')
+      .select('id, region, visit_type_id, local_name_snapshot, local_code_snapshot, auditor_name_snapshot, responsible_name_snapshot, start_date, final_grade, local_final_grade, leader_final_grade, status, should_send, edited_after_send, last_edit_reason, last_edited_at, resent_count, last_resent_at, created_at, locales(nombre_local, codigo_interno), profiles!audit_reports_user_id_fkey(full_name)')
       .eq('status', 'finalized')
       .order('start_date', { ascending: false })
       .order('created_at', { ascending: false });
@@ -181,7 +185,7 @@ export default function AdministradorRecursosPage() {
     const reportIds = reports.map((report) => report.id);
     const { data: answersData, error: answersError } = await supabase
       .from('audit_answers_final')
-      .select('report_id, value, observation, numeric_items, checklist_questions(question_text, question_type, sort_order, created_at)')
+      .select('report_id, value, local_compliance, leader_compliance, observation, numeric_items, checklist_questions(question_text, question_type, sort_order, created_at)')
       .in('report_id', reportIds);
 
     if (answersError) {
@@ -206,7 +210,8 @@ export default function AdministradorRecursosPage() {
       'Fecha de Visita',
       'Nombre del Responsable',
       'Tipo de Visita',
-      'Calificacion Obtenida',
+      'Calificacion del Local',
+      'Calificacion del Lider',
     ];
     const dynamicColumns = buildDynamicColumns(answersByReport);
     const headers = [...baseHeaders, ...dynamicColumns.map((column) => column.header), 'Status de Envio', 'Editado Posterior al Envio', 'Motivo Ultima Edicion', 'Fecha Ultima Edicion', 'Cantidad Reenvios', 'Fecha Ultimo Reenvio'];
@@ -223,7 +228,8 @@ export default function AdministradorRecursosPage() {
         report.start_date || formatDateForCsv(report.created_at),
         report.responsible_name_snapshot || '',
         report.visit_type_id || '',
-        report.final_grade == null ? '' : Number(report.final_grade).toFixed(2),
+        report.local_final_grade == null && report.final_grade == null ? '' : Number(report.local_final_grade ?? report.final_grade).toFixed(2),
+        report.leader_final_grade == null ? '' : Number(report.leader_final_grade).toFixed(2),
         ...answerColumns,
         formatSendStatus(report),
         report.edited_after_send ? 'SI' : 'NO',
@@ -371,7 +377,16 @@ function buildDynamicColumns(answersByReport: Record<string, ExportAnswerRow[]>)
       return;
     }
 
-    addColumn(columns, `${questionKey}:answer`, `${questionText} Respuesta`, (_report, answers) => formatAnswerValue(findAnswer(answers, questionText)?.value || null));
+    const dual = answer.local_compliance !== null || answer.leader_compliance !== null;
+    if (dual) {
+      addColumn(columns, `${questionKey}:local-answer`, `${questionText} Local`, (_report, answers) => {
+        const found = findAnswer(answers, questionText);
+        return formatAnswerValue(found?.local_compliance || found?.value || null);
+      });
+      addColumn(columns, `${questionKey}:leader-answer`, `${questionText} Lider`, (_report, answers) => formatAnswerValue(findAnswer(answers, questionText)?.leader_compliance || null));
+    } else {
+      addColumn(columns, `${questionKey}:answer`, `${questionText} Respuesta`, (_report, answers) => formatAnswerValue(findAnswer(answers, questionText)?.value || null));
+    }
     addColumn(columns, `${questionKey}:observation`, `${questionText} Observacion`, (_report, answers) => findAnswer(answers, questionText)?.observation || '');
   });
 

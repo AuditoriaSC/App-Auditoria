@@ -10,6 +10,8 @@ type VisitApproval = {
   status: string;
   old_score: number | null;
   new_score: number | null;
+  old_leader_score: number | null;
+  new_leader_score: number | null;
   reason: string | null;
   requested_at: string;
   change_summary: { question?: string; old_value?: string; new_value?: string }[];
@@ -53,7 +55,7 @@ export default function AuthorizationsPage() {
     setUserId(user.id);
 
     const { data, error } = await supabase.from('audit_edit_approvals')
-      .select('id, requested_by, status, old_score, new_score, reason, requested_at, change_summary, audit_reports(id, region, local_name_snapshot, local_code_snapshot, auditor_name_snapshot), profiles!audit_edit_approvals_requested_by_fkey(full_name, email)')
+      .select('id, requested_by, status, old_score, new_score, old_leader_score, new_leader_score, reason, requested_at, change_summary, audit_reports(id, region, local_name_snapshot, local_code_snapshot, auditor_name_snapshot), profiles!audit_edit_approvals_requested_by_fkey(full_name, email)')
       .eq('status', 'pending')
       .order('requested_at', { ascending: true });
 
@@ -209,7 +211,8 @@ export default function AuthorizationsPage() {
           <Text style={styles.cardTitle}>{item.audit_reports?.local_name_snapshot || 'Visita'} · {item.audit_reports?.local_code_snapshot || ''}</Text>
           <Text style={styles.meta}>Auditor: {item.audit_reports?.auditor_name_snapshot || 'Sin dato'} · Región: {item.audit_reports?.region}</Text>
           <Text style={styles.meta}>Solicita: {item.profiles?.full_name || item.profiles?.email || 'Usuario'}</Text>
-          <Text style={styles.impact}>Calificación: {Number(item.old_score || 0).toFixed(2)} → {Number(item.new_score || 0).toFixed(2)}</Text>
+          <Text style={styles.impact}>Local: {Number(item.old_score || 0).toFixed(2)} → {Number(item.new_score || 0).toFixed(2)}</Text>
+          <Text style={styles.impact}>Líder: {Number(item.old_leader_score || 0).toFixed(2)} → {Number(item.new_leader_score || 0).toFixed(2)}</Text>
           {(item.change_summary || []).map((change, index) => (
             <Text key={index} style={styles.change}>{change.question || 'Pregunta'}: {change.old_value} → {change.new_value}</Text>
           ))}

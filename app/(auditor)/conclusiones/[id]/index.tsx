@@ -6,6 +6,7 @@ import { useDashboardBackHandler } from '../../../../src/navigation/useDashboard
 import { supabase } from '../../../../src/supabaseClient';
 import SignaturePad, { SignatureInputType } from '../../../../src/features/audits/components/signature-pad';
 import { AppNoticeModal } from '../../../../src/components/AppNoticeModal';
+import { calculateDualScore } from '../../../../src/features/audits/domain/dual-compliance';
 
 type SendChoice = boolean | null;
 
@@ -20,10 +21,13 @@ interface AnswerRecord {
   numeric_value_current?: number | null;
   numeric_value_previous?: number | null;
   numeric_items?: unknown[] | null;
+  local_compliance?: 'cumple' | 'no_cumple' | null;
+  leader_compliance?: 'cumple' | 'no_cumple' | null;
   checklist_questions?: {
     score_points: number;
     is_scored: boolean | null;
     question_type: string | null;
+    dual_compliance: boolean | null;
   } | null;
 }
 
@@ -73,6 +77,7 @@ export default function FinalizarReportePage() {
   const [loading, setLoading] = useState(true);
   const [rawAnswers, setRawAnswers] = useState<AnswerRecord[]>([]);
   const [weightedScore, setWeightedScore] = useState(0);
+  const [leaderWeightedScore, setLeaderWeightedScore] = useState(0);
   const [maxScore, setMaxScore] = useState(0);
   const [reportSnapshot, setReportSnapshot] = useState<ReportSnapshot | null>(null);
   const completionPreview = useMemo(() => new Date(), []);
@@ -95,7 +100,7 @@ export default function FinalizarReportePage() {
       const [{ data: answersData, error: answersError }, { data: reportData, error: reportError }] = await Promise.all([
         supabase
           .from('audit_answers_draft')
-          .select('*, checklist_questions(score_points, is_scored, question_type)')
+          .select('*, checklist_questions(score_points, is_scored, question_type, dual_compliance)')
           .eq('report_id', reportId),
         supabase
           .from('audit_reports')
@@ -113,19 +118,20 @@ export default function FinalizarReportePage() {
       }
 
       const answers = (answersData || []) as AnswerRecord[];
-      const scoredAnswers = answers.filter(isScoredAnswer);
-      const obtained = scoredAnswers.reduce((total, answer) => {
-        const points = Number(answer.checklist_questions?.score_points || 0);
-        return answer.value === 'cumple' ? total + points : total;
-      }, 0);
-      const possible = scoredAnswers.reduce(
-        (total, answer) => total + Number(answer.checklist_questions?.score_points || 0),
-        0,
-      );
+      const scores = calculateDualScore(answers.map((answer) => ({
+        questionId: answer.question_id,
+        points: Number(answer.checklist_questions?.score_points || 0),
+        isScored: isScoredAnswer(answer),
+        dualCompliance: answer.checklist_questions?.dual_compliance === true,
+        value: answer.value,
+        localCompliance: answer.local_compliance,
+        leaderCompliance: answer.leader_compliance,
+      })));
 
       setRawAnswers(answers);
-      setWeightedScore(roundToTwo(obtained));
-      setMaxScore(roundToTwo(possible));
+      setWeightedScore(roundToTwo(scores.localObtained));
+      setLeaderWeightedScore(roundToTwo(scores.leaderObtained));
+      setMaxScore(roundToTwo(scores.possible));
       setReportSnapshot(reportData || null);
       setLoading(false);
     }
@@ -193,7 +199,8 @@ export default function FinalizarReportePage() {
       const urlResponsable = responsibleSignature ? await uploadSignature(responsibleSignature, pathResponsable) : null;
 
       const finalScorePercentage = maxScore > 0 ? roundToTwo((weightedScore / maxScore) * 100) : 0;
-      const finalGradeBaseTen = maxScore > 0 ? roundToTwo((weightedScore / maxScore) * 10) : 0;
+      const localGradeBaseTen = maxScore > 0 ? roundToTwo((weightedScore / maxScore) * 10) : 0;
+      const leaderGradeBaseTen = maxScore > 0 ? roundToTwo((leaderWeightedScore / maxScore) * 10) : 0;
 
       const answersPayload = rawAnswers.map((answer) => ({
         report_id: reportId,
@@ -207,13 +214,36 @@ export default function FinalizarReportePage() {
         numeric_value_current: answer.numeric_value_current ?? null,
         numeric_value_previous: answer.numeric_value_previous ?? null,
         numeric_items: answer.numeric_items ?? [],
+        local_compliance: answer.local_compliance ?? null,
+        leader_compliance: answer.leader_compliance ?? null,
         created_at: completedAt.toISOString(),
       }));
 
-      const { error: errInsertAnswers } = await supabase
+      const { data: finalAnswers, error: errInsertAnswers } = await supabase
         .from('audit_answers_final')
-        .upsert(answersPayload, { onConflict: 'report_id,question_id' });
+        .upsert(answersPayload, { onConflict: 'report_id,question_id' })
+        .select('id, question_id');
       if (errInsertAnswers) throw errInsertAnswers;
+
+      const { data: draftDetailRows, error: detailRowsError } = await supabase
+        .from('audit_answer_detail_rows')
+        .select('question_id, row_kind, sort_order, lot_date, writeoff_date, description, quantity, record_date, notebook_amount, system_amount, responsible_id, responsible_code_snapshot, responsible_name_snapshot')
+        .eq('report_id', reportId)
+        .not('draft_answer_id', 'is', null);
+      if (detailRowsError) throw detailRowsError;
+
+      if ((draftDetailRows || []).length > 0) {
+        const finalAnswerByQuestion = new Map((finalAnswers || []).map((answer) => [answer.question_id, answer.id]));
+        const finalRows = (draftDetailRows || []).map((row) => ({
+          ...row,
+          report_id: reportId,
+          draft_answer_id: null,
+          final_answer_id: finalAnswerByQuestion.get(row.question_id),
+        }));
+        if (finalRows.some((row) => !row.final_answer_id)) throw new Error('No se pudo relacionar una línea con su respuesta final.');
+        const { error: insertDetailError } = await supabase.from('audit_answer_detail_rows').insert(finalRows);
+        if (insertDetailError) throw insertDetailError;
+      }
 
       const { error: errFinalizeReport } = await supabase
         .from('audit_reports')
@@ -229,7 +259,9 @@ export default function FinalizarReportePage() {
           should_send: shouldSend,
           end_time: endTime,
           final_percentage: finalScorePercentage,
-          final_grade: finalGradeBaseTen,
+          final_grade: localGradeBaseTen,
+          local_final_grade: localGradeBaseTen,
+          leader_final_grade: leaderGradeBaseTen,
           status: 'finalized',
           updated_at: completedAt.toISOString(),
         })
@@ -295,8 +327,12 @@ export default function FinalizarReportePage() {
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardLabel}>Calificacion</Text>
-        <Text style={styles.scoreText}>{weightedScore.toFixed(2)} / {maxScore.toFixed(2)} puntos</Text>
+        <Text style={styles.cardLabel}>Calificación del Local</Text>
+        <Text style={styles.scoreText}>{(maxScore > 0 ? weightedScore / maxScore * 10 : 0).toFixed(2)} / 10</Text>
+        <Text style={styles.scoreDetail}>{weightedScore.toFixed(2)} / {maxScore.toFixed(2)} puntos ponderados</Text>
+        <Text style={[styles.cardLabel, styles.leaderScoreLabel]}>Calificación del Líder</Text>
+        <Text style={styles.scoreText}>{(maxScore > 0 ? leaderWeightedScore / maxScore * 10 : 0).toFixed(2)} / 10</Text>
+        <Text style={styles.scoreDetail}>{leaderWeightedScore.toFixed(2)} / {maxScore.toFixed(2)} puntos ponderados</Text>
       </View>
 
       <View style={styles.card}>
@@ -410,6 +446,8 @@ const styles = StyleSheet.create({
   card: { backgroundColor: brandColors.white, borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 14, marginBottom: 14 },
   cardLabel: { fontSize: 12, fontWeight: '900', color: brandColors.textSecondary, marginBottom: 8 },
   scoreText: { fontSize: 28, fontWeight: '900', color: brandColors.textPrimary },
+  scoreDetail: { color: brandColors.textSecondary, fontWeight: '700', fontSize: 12, marginTop: 2 },
+  leaderScoreLabel: { marginTop: 18 },
   timeValue: { fontSize: 18, fontWeight: '900', color: brandColors.textPrimary },
   clockHint: { color: brandColors.textSecondary, fontSize: 12, fontWeight: '700', marginTop: 5 },
   colorSection: { marginBottom: 10 },

@@ -10,6 +10,8 @@ interface AuditReport {
   created_at: string;
   final_percentage: number;
   final_grade: number;
+  local_final_grade: number | null;
+  leader_final_grade: number | null;
   status: string;
   profiles: {
     full_name: string | null;
@@ -49,18 +51,18 @@ export default function HistoricoAuditoriasPage() {
     setExporting(true);
     try {
       // 1. Definir encabezados de las columnas del CSV
-      let csvContent = 'ID Reporte,Fecha Cierre,Auditor,Porcentaje,Nota Final,Estado\n';
+      let csvContent = 'ID Reporte,Fecha Cierre,Auditor,Calificacion Local,Calificacion Lider,Estado\n';
 
       // 2. Insertar registros sanitizados fila por fila
       reports.forEach((r) => {
         const id = r.id;
         const fecha = r.created_at ? r.created_at.substring(0, 10) : '2026-06-02';
         const auditor = r.profiles?.full_name ? r.profiles.full_name.replace(/,/g, ' ') : 'Anonimo';
-        const porcentaje = `${r.final_percentage}%`;
-        const nota = r.final_grade;
+        const notaLocal = r.local_final_grade ?? r.final_grade;
+        const notaLider = r.leader_final_grade ?? '';
         const estado = r.status;
 
-        csvContent += `${id},${fecha},${auditor},${porcentaje},${nota},${estado}\n`;
+        csvContent += `${id},${fecha},${auditor},${notaLocal},${notaLider},${estado}\n`;
       });
 
       // 3. Crear ruta física temporal en el sistema de archivos del móvil/PC
@@ -114,7 +116,8 @@ export default function HistoricoAuditoriasPage() {
         <Text style={styles.emptyText}>No se encuentran reportes consolidados.</Text>
       ) : (
         reports.map((report) => {
-          const esAprobado = report.final_percentage >= 85;
+          const localGrade = report.local_final_grade ?? report.final_grade;
+          const esAprobado = localGrade >= 8.5;
           return (
             <View key={report.id} style={styles.reportCard}>
               <View style={{ flex: 1 }}>
@@ -125,9 +128,9 @@ export default function HistoricoAuditoriasPage() {
 
               <View style={styles.scoreContainer}>
                 <Text style={[styles.scoreText, esAprobado ? styles.textGreen : styles.textRed]}>
-                  {report.final_grade}/10
+                  Local: {localGrade}/10
                 </Text>
-                <Text style={styles.percentageText}>{report.final_percentage}%</Text>
+                <Text style={styles.percentageText}>Líder: {report.leader_final_grade == null ? 'Sin información' : `${report.leader_final_grade}/10`}</Text>
               </View>
             </View>
           );
