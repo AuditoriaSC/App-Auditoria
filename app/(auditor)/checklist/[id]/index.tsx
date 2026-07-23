@@ -1613,9 +1613,11 @@ function ProductWriteoffTable({
               <Text style={styles.removeDetailButtonText}>Eliminar</Text>
             </TouchableOpacity>
           </View>
-          <View style={styles.detailFieldsGrid}>
+          <View style={styles.writeoffDatesGrid}>
             <DateField label="Fecha del lote" value={row.lotDate} onChange={(lotDate) => onChange(row.id, { lotDate })} />
             <DateField label="Fecha de la baja" value={row.writeoffDate} onChange={(writeoffDate) => onChange(row.id, { writeoffDate })} />
+          </View>
+          <View style={styles.writeoffDetailsGrid}>
             <View style={[styles.detailField, styles.detailDescription]}>
               <Text style={styles.detailLabel}>Descripción</Text>
               <TextInput style={styles.detailInput} value={row.description} maxLength={500} onChangeText={(description) => onChange(row.id, { description })} placeholder="Producto dado de baja" placeholderTextColor={brandColors.inputPlaceholder} />
@@ -1828,7 +1830,8 @@ const styles = StyleSheet.create({
   detailTableTitle: { color: brandColors.textPrimary, fontSize: 15, fontWeight: '900' },
   detailRow: { borderWidth: 1, borderColor: brandColors.border, borderRadius: 8, padding: 10, backgroundColor: brandColors.white, gap: 9 },
   detailRowToolbar: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
-  detailFieldsGrid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: 8 },
+  writeoffDatesGrid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: 8 },
+  writeoffDetailsGrid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: 8 },
   depositFieldsGrid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: 8 },
   detailField: { flexGrow: 1, flexBasis: 145, minWidth: 130 },
   detailDescription: { flexBasis: 240 },
